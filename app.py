@@ -16,8 +16,9 @@ from datetime import datetime
 from flask import Flask, render_template, redirect, url_for, flash, request, send_file, abort, jsonify, session
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 from flask_bcrypt import Bcrypt
-from flask_wtf import FlaskForm
+from flask_wtf import FlaskForm, CSRFProtect
 from flask_wtf.file import FileField, FileAllowed
+from flask_wtf.csrf import generate_csrf
 from flask_session import Session
 from wtforms import StringField, PasswordField, FloatField, SelectField, SelectMultipleField, DateField, TextAreaField, BooleanField
 from wtforms.validators import InputRequired, Length, Optional, NumberRange
@@ -105,6 +106,14 @@ os.makedirs(app.config['TEMPLATE_FOLDER'], exist_ok=True)
 bcrypt = Bcrypt(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
+
+# CSRF protection for all forms and POST endpoints
+csrf = CSRFProtect(app)
+
+# ensure csrf_token is available in templates even if CSRFProtect fails to register
+@app.context_processor
+def inject_csrf_token():
+    return dict(csrf_token=generate_csrf)
 
 # Initialize database
 init_db(app, bcrypt)
@@ -411,8 +420,23 @@ def dashboard():
         incomplete_students = [item for item in incomplete_students if item['subject'] == current_user.subject]
         affected_students_count = len(incomplete_students)
     
+    # compute student groups for display (forms and learning areas)
+    students_by_class = {}
+    students_by_area = {}
+    student_query = Student.query
+    # restrict teacher view to their subject if assigned
+    if hasattr(current_user, 'is_teacher') and current_user.is_teacher() and current_user.subject:
+        student_query = student_query.filter_by(study_area=current_user.subject)
+
+    for s in student_query.all():
+        cls = s.class_name or 'Unspecified'
+        students_by_class[cls] = students_by_class.get(cls, 0) + 1
+        area = s.study_area or 'Unspecified'
+        students_by_area[area] = students_by_area.get(area, 0) + 1
+
     # For teachers, show only their assessments and student summaries for their subject
     teacher_student_summaries = None
+    grouped_students = None
     if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
         recent = Assessment.query.filter_by(teacher_id=current_user.id, archived=False)\
             .order_by(Assessment.date_recorded.desc()).limit(8).all()
@@ -474,6 +498,15 @@ def dashboard():
             
             # Sort by final grade descending
             teacher_student_summaries.sort(key=lambda x: x['final_grade'] or 0, reverse=True)
+            # group by class then by study area for easier display
+            grouped_students = {}
+            for summ in teacher_student_summaries:
+                cls = summ['student'].class_name or 'Unspecified'
+                area = summ['student'].study_area or 'Unspecified'
+                grouped_students.setdefault(cls, {})
+                grouped_students[cls].setdefault(area, []).append(summ)
+        else:
+            grouped_students = None
     else:
         recent = Assessment.query.filter_by(archived=False)\
             .order_by(Assessment.date_recorded.desc()).limit(8).all()
@@ -486,7 +519,10 @@ def dashboard():
         affected_students_count=affected_students_count,
         incomplete_students=incomplete_students,
         recent=recent,
-        teacher_student_summaries=teacher_student_summaries
+        teacher_student_summaries=teacher_student_summaries,
+        grouped_students=grouped_students,
+        students_by_class=students_by_class,
+        students_by_area=students_by_area
     )
 
 @app.route("/student/dashboard")
@@ -811,6 +847,7 @@ def student_edit(student_id):
 @app.route("/students/<int:student_id>/delete", methods=["POST"])
 @login_required
 @admin_required
+@csrf.exempt
 def student_delete(student_id):
     student = Student.query.get_or_404(student_id)
     student_name = student.full_name()
@@ -1374,6 +1411,7 @@ def assessment_edit(assessment_id):
 
 @app.route("/assessments/<int:assessment_id>/delete", methods=["POST"])
 @login_required
+@csrf.exempt
 def assessment_delete(assessment_id):
     assessment = Assessment.query.get_or_404(assessment_id)
     
@@ -1547,6 +1585,7 @@ def reset_password(user_id):
 @app.route("/users/<int:user_id>/delete", methods=["POST"])
 @login_required
 @admin_required
+@csrf.exempt
 def delete_user(user_id):
     if current_user.id == user_id:
         flash("You cannot delete your own account", "danger")
@@ -1804,6 +1843,7 @@ def edit_question(question_id):
 @app.route("/teacher/questions/<int:question_id>/delete", methods=["POST"])
 @login_required
 @teacher_required
+@csrf.exempt
 def delete_question(question_id):
     """Teacher can delete their pending questions"""
     question = Question.query.get_or_404(question_id)
@@ -2450,6 +2490,7 @@ def edit_quiz(quiz_id):
 
 @app.route("/teacher/quizzes/<int:quiz_id>/delete", methods=["POST"])
 @login_required
+@csrf.exempt
 def delete_quiz(quiz_id):
     """Delete a quiz"""
     if not (current_user.is_teacher() or current_user.is_admin()):

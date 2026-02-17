@@ -64,6 +64,7 @@
                             </a>
                             {% if u.id != current_user.id %}
                             <form method="POST" action="{{ url_for('delete_user', user_id=u.id) }}" style="display: inline;" onsubmit="return confirm('Delete this user?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn btn-sm btn-danger" title="Delete">
                                     <i class="bi bi-trash"></i>
                                 </button>
@@ -110,6 +111,7 @@
                             </a>
                             {% if u.id != current_user.id %}
                             <form method="POST" action="{{ url_for('delete_user', user_id=u.id) }}" style="display: inline;" onsubmit="return confirm('Delete this user?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn btn-sm btn-danger" title="Delete">
                                     <i class="bi bi-trash"></i>
                                 </button>
