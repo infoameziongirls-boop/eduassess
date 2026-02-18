@@ -542,6 +542,7 @@ def init_db(app, bcrypt):
     db.init_app(app)
     
     with app.app_context():
+        print(f"Initializing database at: {app.config['SQLALCHEMY_DATABASE_URI']}")
         db.create_all()
         
         # Create default settings if not exist

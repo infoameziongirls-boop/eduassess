@@ -5,10 +5,20 @@
 To prevent automatic deletion of manually added users (which occurs due to ephemeral storage on serverless platforms like Vercel), you must configure a persistent database. The app defaults to local SQLite, which is lost when containers recycle.
 
 ### For Local Development:
-- Set `DATABASE_URL=sqlite:///persistent.db` in your environment or in `run.bat`
-- Run `python migrate_db.py` once to create tables
+- **IMPORTANT**: Always use `run.bat` to start the app, not `python app.py` directly
+- The database is stored in `instance/persistent.db` and will persist between app restarts
+- **NEVER run `migrate_db.py` unless you're doing a schema migration** - it will delete all your data!
 
-### For Vercel Deployment:
+### Starting the App:
+```bash
+# Use this command to start the app (it sets the correct database path)
+run.bat
+```
+
+### Database Location:
+- Local database: `instance/persistent.db`
+- This file contains all your users, students, and assessments
+- **Backup this file regularly** using `backup.bat`
 1. Add Vercel Postgres to your project: Go to Vercel Dashboard → Project → Storage → Create Database → Postgres
 2. Copy the `DATABASE_URL` from the database settings
 3. In Vercel Project Settings → Environment Variables, set `DATABASE_URL` to the copied value
@@ -18,11 +28,16 @@ To prevent automatic deletion of manually added users (which occurs due to ephem
 - Set the `DATABASE_URL` environment variable to a PostgreSQL or MySQL connection string
 - Example: `postgresql://user:password@host:port/database`
 
-### Run Initial Migration:
-After setting up the persistent DB, run the migration once to create tables:
-```bash
-python migrate_db.py
-```
+### ⚠️ DANGER: Migration Script
+**DO NOT run `migrate_db.py` unless you are specifically doing a database schema migration!**
+
+This script will:
+- Delete all your users
+- Delete all student data  
+- Delete all assessments
+- Reset everything to default state
+
+Only run this if instructed to do so for a specific update. Otherwise, your data will be permanently lost.
 
 ### Backup Users:
 To backup user data periodically:
