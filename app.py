@@ -190,7 +190,7 @@ class StudentForm(FlaskForm):
 
 class AssessmentForm(FlaskForm):
     student_number = StringField("Student Number", validators=[Optional()])
-    student_name = SelectField("Student Name", choices=[], validators=[InputRequired()])
+    student_name = StringField("Student Name", validators=[InputRequired()])
     reference_number = StringField("Reference Number", validators=[Optional()])
     category = SelectField("Category", choices=app.config['ASSESSMENT_CATEGORIES'], validators=[InputRequired()])
     subject = SelectField("Subject", choices=[("", "-- Select Subject --")] + app.config['LEARNING_AREAS'], validators=[InputRequired()])
@@ -1327,9 +1327,6 @@ def new_assessment():
     for class_name in sorted(grouped_students.keys()):
         sorted_groups[class_name] = sorted(grouped_students[class_name], key=lambda s: s.full_name())
     
-    # Populate form choices
-    form.student_name.choices = [(s.student_number, s.full_name()) for s in students]
-    
     student_dict = {s.student_number: {'name': s.full_name(), 'ref': s.reference_number or ''} for s in students}
     
     # Get global settings
@@ -1356,10 +1353,12 @@ def new_assessment():
     if form.validate_on_submit():
         # Get student_number from either dropdown or manual input
         student_number = form.student_name.data or form.student_number.data.strip()
-        student = Student.query.filter_by(student_number=student_number).first()
         
+        # Validate that the student exists
+        student = Student.query.filter_by(student_number=student_number).first()
         if not student:
-            flash("Student not found. Please create the student first.", "danger")
+            flash("Invalid student selected. Please select a valid student.", "danger")
+            return redirect(url_for('new_assessment'))
         else:
             # Check if assessment already exists for this student, category, subject, term, academic_year, session, AND teacher
             existing_assessment = Assessment.query.filter_by(
@@ -1435,9 +1434,6 @@ def assessment_edit(assessment_id):
     for class_name in sorted(grouped_students.keys()):
         sorted_groups[class_name] = sorted(grouped_students[class_name], key=lambda s: s.full_name())
     
-    # Populate form choices
-    form.student_name.choices = [(s.student_number, s.full_name()) for s in students]
-    
     student_dict = {s.student_number: {'name': s.full_name(), 'ref': s.reference_number or ''} for s in students}
     
     # Pre-fill form
@@ -1446,6 +1442,13 @@ def assessment_edit(assessment_id):
     form.reference_number.data = assessment.student.reference_number
     
     if form.validate_on_submit():
+        # Validate that the student exists (in case it was changed)
+        student_number = form.student_name.data or form.student_number.data.strip()
+        student = Student.query.filter_by(student_number=student_number).first()
+        if not student:
+            flash("Invalid student selected. Please select a valid student.", "danger")
+            return redirect(url_for('assessment_edit', assessment_id=assessment_id))
+        
         # Set max_score based on category
         category = form.category.data
         max_score = app.config['CATEGORY_MAX_SCORES'].get(category, 100.0)
