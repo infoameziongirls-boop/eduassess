@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: eduassess
+    env: python
+    region: oregon
+    plan: standard
+    buildCommand: bash build.sh
+    startCommand: gunicorn wsgi:app
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: DEFAULT_ADMIN_USERNAME
+        value: admin
+      - key: PY_STDLIB_COLLECTIONS_ABC_COMPATIBLE
+        value: "1"
+    autoDeploy: true
+    disk:
+      name: data
+      mountPath: /app/instance
+      sizeGB: 1
+
+  - type: pserv
+    name: eduassess-db
+    ipAddress:
+      region: oregon
+    plan: standard
+    postgresVersion: 14
+
+  - type: background
+    name: eduassess-backup-scheduler
+    env: python
+    plan: standard
+    buildCommand: pip install -r requirements.txt
+    startCommand: python backup_scheduler.py
+    envVars:
+      - key: BACKUP_INTERVAL_HOURS
+        value: "6"
+      - key: HEALTH_CHECK_INTERVAL_HOURS
+        value: "12"
+    autoDeploy: true
