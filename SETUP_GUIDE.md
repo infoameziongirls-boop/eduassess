@@ -28,28 +28,21 @@ run.bat
 - Set the `DATABASE_URL` environment variable to a PostgreSQL or MySQL connection string
 - Example: `postgresql://user:password@host:port/database`
 
+### What Causes Data Loss:
+- Running `python app.py` directly instead of `run.bat`
+- Running `migrate_db.py` (deletes all data)
+- Deleting the `instance/assessment.db` file
+- App crashes that corrupt the database file
+
+### Prevention:
+- Always use `run.bat` to start the app
+- Regular backups with `backup.bat`
+- Don't run migration scripts unless specifically instructed
+
+### Checking Database Setup:
+Run `check_db.bat` to verify your database is properly configured and exists.
+
 ### ⚠️ DANGER: Migration Script
-**DO NOT run `migrate_db.py` unless you are specifically doing a database schema migration!**
-
-This script will:
-- Delete all your users
-- Delete all student data  
-- Delete all assessments
-- Reset everything to default state
-
-Only run this if instructed to do so for a specific update. Otherwise, your data will be permanently lost.
-
-### Backup Users:
-To backup user data periodically:
-```bash
-python backup_users.py
-# Or run backup.bat on Windows
-```
-This creates a JSON file in the `backups/` directory. Upload this to cloud storage (e.g., Google Drive, AWS S3) for safekeeping.
-
-For automated backups on Windows, use Task Scheduler to run `backup.bat` daily.
-
-## Step 1: Run Migration
 ```bash
 # Activate virtual environment first
 cd c:\Users\HP\Documents\school_assess_app_EXPERIMENTAL_ver_1
