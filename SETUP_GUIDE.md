@@ -1,5 +1,39 @@
 # Quick Setup Guide - EDUASSESS MODULE PRO
 
+## Important: Database Persistence Setup
+
+To prevent automatic deletion of manually added users (which occurs due to ephemeral storage on serverless platforms like Vercel), you must configure a persistent database. The app defaults to local SQLite, which is lost when containers recycle.
+
+### For Local Development:
+- Set `DATABASE_URL=sqlite:///persistent.db` in your environment or in `run.bat`
+- Run `python migrate_db.py` once to create tables
+
+### For Vercel Deployment:
+1. Add Vercel Postgres to your project: Go to Vercel Dashboard → Project → Storage → Create Database → Postgres
+2. Copy the `DATABASE_URL` from the database settings
+3. In Vercel Project Settings → Environment Variables, set `DATABASE_URL` to the copied value
+4. Redeploy the app
+
+### For Other Deployments:
+- Set the `DATABASE_URL` environment variable to a PostgreSQL or MySQL connection string
+- Example: `postgresql://user:password@host:port/database`
+
+### Run Initial Migration:
+After setting up the persistent DB, run the migration once to create tables:
+```bash
+python migrate_db.py
+```
+
+### Backup Users:
+To backup user data periodically:
+```bash
+python backup_users.py
+# Or run backup.bat on Windows
+```
+This creates a JSON file in the `backups/` directory. Upload this to cloud storage (e.g., Google Drive, AWS S3) for safekeeping.
+
+For automated backups on Windows, use Task Scheduler to run `backup.bat` daily.
+
 ## Step 1: Run Migration
 ```bash
 # Activate virtual environment first

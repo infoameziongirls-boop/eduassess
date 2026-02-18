@@ -1,0 +1,64 @@
+[
+  {
+    "id": 1,
+    "username": "admin",
+    "role": "admin",
+    "subject": null,
+    "classes": [],
+    "created_at": "2026-01-13T12:24:27.609070"
+  },
+  {
+    "id": 2,
+    "username": "Belinda",
+    "role": "teacher",
+    "subject": "business_management",
+    "classes": [
+      "form1"
+    ],
+    "created_at": "2026-01-13T15:37:36.913644"
+  },
+  {
+    "id": 3,
+    "username": "George",
+    "role": "teacher",
+    "subject": "chemistry",
+    "classes": [
+      "form1"
+    ],
+    "created_at": "2026-01-13T15:38:19.863795"
+  },
+  {
+    "id": 4,
+    "username": "Derrick",
+    "role": "teacher",
+    "subject": "music",
+    "classes": [
+      "form1"
+    ],
+    "created_at": "2026-01-13T15:39:05.512178"
+  },
+  {
+    "id": 5,
+    "username": "STU250030606118",
+    "role": "student",
+    "subject": null,
+    "classes": [],
+    "created_at": "2026-01-13T15:55:29.167647"
+  },
+  {
+    "id": 6,
+    "username": "STU250030606109",
+    "role": "student",
+    "subject": null,
+    "classes": [],
+    "created_at": "2026-01-25T16:25:28.361155"
+  },
+  {
+    "id": 7,
+    "username": "STU250030606100",
+    "role": "student",
+    "subject": null,
+    "classes": [],
+    "created_at": "2026-01-25T16:26:42.946810"
+  }
+]
