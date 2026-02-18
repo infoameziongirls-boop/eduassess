@@ -1327,6 +1327,9 @@ def new_assessment():
     for class_name in sorted(grouped_students.keys()):
         sorted_groups[class_name] = sorted(grouped_students[class_name], key=lambda s: s.full_name())
     
+    # Populate form choices
+    form.student_name.choices = [(s.student_number, s.full_name()) for s in students]
+    
     student_dict = {s.student_number: {'name': s.full_name(), 'ref': s.reference_number or ''} for s in students}
     
     # Get global settings
@@ -1431,6 +1434,9 @@ def assessment_edit(assessment_id):
     sorted_groups = {}
     for class_name in sorted(grouped_students.keys()):
         sorted_groups[class_name] = sorted(grouped_students[class_name], key=lambda s: s.full_name())
+    
+    # Populate form choices
+    form.student_name.choices = [(s.student_number, s.full_name()) for s in students]
     
     student_dict = {s.student_number: {'name': s.full_name(), 'ref': s.reference_number or ''} for s in students}
     
