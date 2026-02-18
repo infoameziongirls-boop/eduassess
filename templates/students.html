@@ -37,6 +37,33 @@
                     </form>
                 </div>
             </div>
+
+            <!-- Group and Sort Controls -->
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">Group By:</label>
+                    <div class="btn-group" role="group">
+                        <a href="{{ url_for('students', group_by='none', sort_by=current_sort_by, search=request.args.get('search', '')) }}" 
+                           class="btn btn-outline-primary {% if current_group_by == 'none' %}active{% endif %}">None</a>
+                        <a href="{{ url_for('students', group_by='class', sort_by=current_sort_by, search=request.args.get('search', '')) }}" 
+                           class="btn btn-outline-primary {% if current_group_by == 'class' %}active{% endif %}">Forms</a>
+                        <a href="{{ url_for('students', group_by='study_area', sort_by=current_sort_by, search=request.args.get('search', '')) }}" 
+                           class="btn btn-outline-primary {% if current_group_by == 'study_area' %}active{% endif %}">Learning Areas</a>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">Sort By:</label>
+                    <div class="btn-group" role="group">
+                        <a href="{{ url_for('students', group_by=current_group_by, sort_by='name', search=request.args.get('search', '')) }}" 
+                           class="btn btn-outline-secondary {% if current_sort_by == 'name' %}active{% endif %}">Name</a>
+                        <a href="{{ url_for('students', group_by=current_group_by, sort_by='class', search=request.args.get('search', '')) }}" 
+                           class="btn btn-outline-secondary {% if current_sort_by == 'class' %}active{% endif %}">Form</a>
+                        <a href="{{ url_for('students', group_by=current_group_by, sort_by='study_area', search=request.args.get('search', '')) }}" 
+                           class="btn btn-outline-secondary {% if current_sort_by == 'study_area' %}active{% endif %}">Learning Area</a>
+                    </div>
+                </div>
+            </div>
+
             <div class="table-responsive">
                 <table class="table table-hover">
                     <thead>
@@ -52,7 +79,13 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% for student in students %}
+                        {% for group_name, group_students in student_groups.items() %}
+                        {% if current_group_by != 'none' %}
+                        <tr class="table-secondary">
+                            <td colspan="8"><strong>{{ group_name }}</strong> ({{ group_students|length }} students)</td>
+                        </tr>
+                        {% endif %}
+                        {% for student in group_students %}
                         <tr>
                             <td>{{ loop.index }}</td>
                             <td>
@@ -141,14 +174,16 @@
                                 </div>
                             </td>
                         </tr>
-                        {% else %}
+                        {% endfor %}
+                        {% endfor %}
+                        {% if not student_groups %}
                         <tr>
                             <td colspan="8" class="text-center text-muted py-4">
                                 No students found. 
                                 <a href="{{ url_for('student_new') }}">Add your first student</a>
                             </td>
                         </tr>
-                        {% endfor %}
+                        {% endif %}
                     </tbody>
                 </table>
             </div>

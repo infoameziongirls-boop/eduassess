@@ -15,7 +15,20 @@
                         <p class="form-control-plaintext">{{ student_full_name }}</p>
                         <input type="hidden" name="student_name" value="{{ form.student_name.data }}">
                     {% else %}
-                        {{ form.student_name(class="form-select") }}
+                        <select name="student_name" class="form-select" id="student_name">
+                            <option value="">-- Select Student --</option>
+                            {% for class_name, students_in_class in grouped_students.items() %}
+                            <optgroup label="Form: {{ class_name }}">
+                                {% for student in students_in_class %}
+                                <option value="{{ student.student_number }}" 
+                                        data-ref="{{ student.reference_number or student.student_number }}"
+                                        {% if form.student_name.data == student.student_number %}selected{% endif %}>
+                                    {{ student.full_name() }} ({{ student.student_number }})
+                                </option>
+                                {% endfor %}
+                            </optgroup>
+                            {% endfor %}
+                        </select>
                     {% endif %}
                     {% for error in form.student_name.errors %}
                         <span class="text-danger">{{ error }}</span>

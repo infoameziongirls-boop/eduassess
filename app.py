@@ -773,18 +773,57 @@ def student_dashboard():
 @login_required
 def students():
     search = request.args.get("search", "").strip()
+    group_by = request.args.get("group_by", "none")
+    sort_by = request.args.get("sort_by", "name")
+    
+    query = Student.query
     
     if search:
-        students = Student.query.filter(
+        query = query.filter(
             (Student.student_number.ilike(f"%{search}%")) |
             (Student.first_name.ilike(f"%{search}%")) |
             (Student.last_name.ilike(f"%{search}%")) |
             (Student.reference_number.ilike(f"%{search}%"))
-        ).order_by(Student.last_name, Student.first_name).all()
-    else:
-        students = Student.query.order_by(Student.last_name, Student.first_name).all()
+        )
     
-    return render_template("students.html", students=students)
+    students = query.all()
+    
+    # Group students if requested
+    if group_by == 'class':
+        grouped_students = {}
+        for student in students:
+            key = student.class_name or 'Unspecified'
+            grouped_students.setdefault(key, []).append(student)
+    elif group_by == 'study_area':
+        grouped_students = {}
+        for student in students:
+            key = student.study_area or 'Unspecified'
+            grouped_students.setdefault(key, []).append(student)
+    else:
+        grouped_students = {'All Students': students}
+    
+    # Sort groups and students within groups
+    sorted_groups = {}
+    for group_name, group_students in grouped_students.items():
+        if sort_by == 'name':
+            sorted_students = sorted(group_students, key=lambda s: (s.last_name, s.first_name))
+        elif sort_by == 'class':
+            sorted_students = sorted(group_students, key=lambda s: s.class_name or '')
+        elif sort_by == 'study_area':
+            sorted_students = sorted(group_students, key=lambda s: s.study_area or '')
+        sorted_groups[group_name] = sorted_students
+    
+    # Sort group names
+    if group_by in ['class', 'study_area']:
+        sorted_group_names = sorted(sorted_groups.keys())
+        grouped_students = {name: sorted_groups[name] for name in sorted_group_names}
+    else:
+        grouped_students = sorted_groups
+    
+    return render_template("students.html", 
+                         student_groups=grouped_students,
+                         current_group_by=group_by,
+                         current_sort_by=sort_by)
 
 @app.route("/students/new", methods=["GET", "POST"])
 @login_required
@@ -1276,9 +1315,18 @@ def new_assessment():
         
     form = AssessmentForm()
     
-    # Populate student choices
+    # Populate student choices - group by class
     students = Student.query.all()
-    form.student_name.choices = [("", "-- Select Student --")] + [(s.student_number, s.full_name()) for s in students]
+    grouped_students = {}
+    for student in students:
+        class_name = student.class_name or 'Unspecified'
+        grouped_students.setdefault(class_name, []).append(student)
+    
+    # Sort groups and students
+    sorted_groups = {}
+    for class_name in sorted(grouped_students.keys()):
+        sorted_groups[class_name] = sorted(grouped_students[class_name], key=lambda s: s.full_name())
+    
     student_dict = {s.student_number: {'name': s.full_name(), 'ref': s.reference_number or ''} for s in students}
     
     # Get global settings
@@ -1357,7 +1405,7 @@ def new_assessment():
             flash(f"Assessment saved for {student.full_name()}", "success")
             return redirect(url_for("student_view", student_id=student.id))
     
-    return render_template("assessment_form.html", form=form, students=students, student_dict=student_dict, student_full_name=student_obj.full_name() if student_obj else None)
+    return render_template("assessment_form.html", form=form, grouped_students=sorted_groups, student_dict=student_dict, student_full_name=student_obj.full_name() if student_obj else None)
 
 @app.route("/assessments/<int:assessment_id>/edit", methods=["GET", "POST"])
 @login_required
@@ -1372,9 +1420,18 @@ def assessment_edit(assessment_id):
         
     form = AssessmentForm(obj=assessment)
     
-    # Populate student choices
+    # Populate student choices - group by class
     students = Student.query.all()
-    form.student_name.choices = [("", "-- Select Student --")] + [(s.student_number, s.full_name()) for s in students]
+    grouped_students = {}
+    for student in students:
+        class_name = student.class_name or 'Unspecified'
+        grouped_students.setdefault(class_name, []).append(student)
+    
+    # Sort groups and students
+    sorted_groups = {}
+    for class_name in sorted(grouped_students.keys()):
+        sorted_groups[class_name] = sorted(grouped_students[class_name], key=lambda s: s.full_name())
+    
     student_dict = {s.student_number: {'name': s.full_name(), 'ref': s.reference_number or ''} for s in students}
     
     # Pre-fill form
@@ -1407,7 +1464,7 @@ def assessment_edit(assessment_id):
         flash("Assessment updated successfully", "success")
         return redirect(url_for("student_view", student_id=assessment.student_id))
     
-    return render_template("assessment_form.html", form=form, assessment=assessment, students=students, student_dict=student_dict)
+    return render_template("assessment_form.html", form=form, assessment=assessment, grouped_students=sorted_groups, student_dict=student_dict)
 
 @app.route("/assessments/<int:assessment_id>/delete", methods=["POST"])
 @login_required
