@@ -1,4 +1,5 @@
 from datetime import datetime
+import os
 from db import db
 from flask_login import UserMixin
 import json
@@ -540,7 +541,7 @@ class QuizAttempt(db.Model):
 
 def init_db(app, bcrypt):
     db.init_app(app)
-    
+
     with app.app_context():
         print(f"Initializing database at: {app.config['SQLALCHEMY_DATABASE_URI']}")
         db.create_all()
