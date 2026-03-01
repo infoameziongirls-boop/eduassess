@@ -1,1 +1,1 @@
-web: python startup.py && gunicorn wsgi:app
+web: python startup.py && python -m gunicorn wsgi:app
