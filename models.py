@@ -1,7 +1,9 @@
 from datetime import datetime
 import os
+import time
 from db import db
 from flask_login import UserMixin
+from sqlalchemy.exc import OperationalError
 import json
 
 class SubjectArea:
@@ -544,7 +546,20 @@ def init_db(app, bcrypt):
 
     with app.app_context():
         print(f"Initializing database at: {app.config['SQLALCHEMY_DATABASE_URI']}")
-        db.create_all()
+        
+        # Wait for database to be ready (max 30 seconds)
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                db.create_all()
+                print("Database tables created successfully")
+                break
+            except OperationalError as e:
+                if attempt == max_retries - 1:
+                    print(f"✗ Failed to connect to database after {max_retries} attempts")
+                    raise
+                print(f"⚠ Database not ready, retrying in 2 seconds... ({attempt+1}/{max_retries})")
+                time.sleep(2)
         
         # Create default settings if not exist
         if not Setting.query.first():
@@ -555,6 +570,7 @@ def init_db(app, bcrypt):
             )
             db.session.add(default_settings)
             db.session.commit()
+            print("Default settings created")
         
         if User.query.count() == 0:
             default_username = app.config.get("DEFAULT_ADMIN_USERNAME", "admin")

@@ -1,6 +1,6 @@
 #!/bin/bash
-# Render build script
-# Runs during deployment to initialize the application
+# Render build script - Database initialization moved to runtime (gunicorn startup)
+# The build phase does not have access to PostgreSQL or the persistent disk
 
 echo "=================================================="
 echo "EDUASSESS - RENDER BUILD PROCESS"
@@ -12,13 +12,6 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 echo ""
-echo "Step 2: Initializing application..."
-python startup.py
-
-echo ""
-echo "Step 3: Running health check..."
-python db_health_check.py
-
-echo ""
-echo "✓ Build process completed successfully!"
+echo "✓ Build completed successfully!"
+echo "   Database initialization will run when the app starts."
 echo "=================================================="

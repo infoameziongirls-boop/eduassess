@@ -91,14 +91,19 @@ app = Flask(__name__, static_folder='public')
 env = os.environ.get('FLASK_ENV', 'development')
 app.config.from_object(config[env])
 
-# File upload configuration
-app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads')
-app.config['TEMPLATE_FOLDER'] = os.path.join(os.path.dirname(__file__), 'templates_excel')
+# Get persistent directory from environment (default to local 'instance' for development)
+persistent_dir = os.environ.get('PERSISTENT_DIR', os.path.join(os.path.dirname(__file__), 'instance'))
+
+# File upload configuration - use persistent disk in production
+app.config['UPLOAD_FOLDER'] = os.path.join(persistent_dir, 'uploads')
+app.config['TEMPLATE_FOLDER'] = os.path.join(persistent_dir, 'templates_excel')
+app.config['SESSION_FILE_DIR'] = os.path.join(persistent_dir, 'flask_sessions')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # Create necessary folders
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['TEMPLATE_FOLDER'], exist_ok=True)
+os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
 
 # -------------------------
 # Extensions
@@ -120,15 +125,9 @@ init_db(app, bcrypt)
 
 # Configure session for multi-worker support
 app.config['SESSION_TYPE'] = 'filesystem'  # Can be changed to 'redis' for production
-app.config['SESSION_FILE_DIR'] = os.path.join(os.path.dirname(__file__), 'flask_sessions')
 app.config['SESSION_PERMANENT'] = False
 app.config['SESSION_USE_SIGNER'] = False
 Session(app)
-
-# Create necessary folders
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-os.makedirs(app.config['TEMPLATE_FOLDER'], exist_ok=True)
-os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
 # Activity Logging
 # -------------------------
 def log_activity(user, action, details=None):

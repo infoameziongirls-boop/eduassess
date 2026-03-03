@@ -3,8 +3,16 @@ import os
 class Config:
     """Base configuration"""
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
-    # For SQLite on Windows, use forward slashes and proper file URI format
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:////tmp/assessment.db' if os.name != 'nt' else 'sqlite:///assessment.db'
+    
+    # Database URI - uses PostgreSQL in production via DATABASE_URL environment variable
+    # Falls back to SQLite for local development
+    DATABASE_URL = os.environ.get('DATABASE_URL')
+    if DATABASE_URL:
+        # Fix Render's postgres:// -> postgresql:// compatibility issue for SQLAlchemy 1.4+
+        if DATABASE_URL.startswith('postgres://'):
+            DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    
+    SQLALCHEMY_DATABASE_URI = DATABASE_URL or 'sqlite:///assessment.db'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # User roles
