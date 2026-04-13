@@ -787,6 +787,71 @@ def student_dashboard():
         quiz_details=quiz_details
     )
 
+@app.route("/dashboard")
+@login_required
+def dashboard_redirect():
+    """Alias for dashboard at root path"""
+    if hasattr(current_user, 'is_student') and current_user.is_student():
+        return redirect(url_for("student_dashboard"))
+    
+    # Teacher/Admin dashboard
+    student_count = Student.query.count()
+    assessment_count = Assessment.query.filter_by(archived=False).count()
+    users_count = User.query.count()
+    
+    # Get incomplete assessments data
+    incomplete_students = get_incomplete_assessments()
+    affected_students_count = len(incomplete_students)
+    
+    # For teachers, filter incomplete assessments to only their assigned study areas
+    if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
+        assigned_areas = current_user.get_assigned_study_areas(app.config)
+        if assigned_areas:
+            # Filter incomplete students to only those in assigned study areas
+            filtered_incomplete = []
+            for item in incomplete_students:
+                # Check if any student in this subject belongs to an assigned study area
+                students_in_subject = Student.query.filter_by(study_area=item['subject']).all()
+                for student in students_in_subject:
+                    if current_user.can_access_student(student, app.config):
+                        filtered_incomplete.append(item)
+                        break
+            incomplete_students = filtered_incomplete
+            affected_students_count = len(incomplete_students)
+    
+    # compute student groups for display (forms and learning areas)
+    students_by_class = {}
+    students_by_area = {}
+    student_query = Student.query
+    
+    # restrict teacher view to their assigned study areas
+    if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
+        assigned_areas = current_user.get_assigned_study_areas(app.config)
+        if assigned_areas:
+            student_query = student_query.filter(Student.study_area.in_(assigned_areas))
+
+    for s in student_query.all():
+        cls = s.class_name or 'Unspecified'
+        students_by_class[cls] = students_by_class.get(cls, 0) + 1
+        area = s.study_area or 'Unspecified'
+        students_by_area[area] = students_by_area.get(area, 0) + 1
+
+    return render_template(
+        "dashboard.html",
+        student_count=student_count,
+        assessment_count=assessment_count,
+        users_count=users_count,
+        incomplete_students=incomplete_students,
+        affected_students_count=affected_students_count,
+        students_by_class=students_by_class,
+        students_by_area=students_by_area,
+    )
+
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    """Admin login page - redirects to main login"""
+    return redirect(url_for("login"))
+
 # -------------------------
 # Student Management Routes
 # -------------------------
