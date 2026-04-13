@@ -183,6 +183,60 @@
             border-top: 1px solid rgba(255,255,255,0.2);
             margin: 20px 0;
         }
+        .nav-tray {
+            margin-bottom: 8px;
+        }
+        .nav-tray-toggle {
+            width: 100%;
+            text-decoration: none;
+            color: rgba(255,255,255,0.9) !important;
+            padding: 14px 24px !important;
+            border-radius: 12px;
+            margin: 6px 12px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            border: none;
+            background: none;
+            text-align: left;
+        }
+        .nav-tray-toggle:hover {
+            background: rgba(59, 130, 246, 0.2);
+            color: white !important;
+            transform: translateX(8px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+        .nav-tray-toggle::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+            transition: left 0.5s;
+        }
+        .nav-tray-toggle:hover::before {
+            left: 100%;
+        }
+        .nav-tray-toggle:focus {
+            outline: none;
+            box-shadow: none;
+        }
+        .nav-tray-content .nav-link {
+            padding: 8px 24px 8px 36px;
+            margin: 2px 12px;
+            font-size: 0.9em;
+        }
+        .nav-tray-content .nav-link:hover {
+            transform: translateX(4px);
+        }
+        .tray-icon {
+            transition: transform 0.3s ease;
+        }
+        .nav-tray-toggle[aria-expanded="true"] .tray-icon {
+            transform: rotate(90deg);
+        }
         .btn {
             border-radius: 10px;
             font-weight: 500;
@@ -272,49 +326,129 @@
             <div class="col-md-2 sidebar p-0 d-flex flex-column" id="sidebar">
                 <div class="p-3">
                     <nav class="nav flex-column">
-                        <!-- Dashboard Link -->
+                        <!-- Dashboard Tray -->
                         {% if current_user.is_admin() or current_user.is_teacher() %}
-                        <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
-                            <i class="bi bi-speedometer2"></i> Dashboard
-                        </a>
+                        <div class="nav-tray">
+                            <button class="nav-tray-toggle btn btn-link nav-link text-start p-0 mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#dashboardTray" aria-expanded="true">
+                                <i class="bi bi-chevron-down me-2 tray-icon"></i>
+                                <i class="bi bi-speedometer2"></i> Dashboard
+                            </button>
+                            <div class="collapse show" id="dashboardTray">
+                                <div class="nav-tray-content ps-3">
+                                    <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
+                                        <i class="bi bi-house"></i> Main Dashboard
+                                    </a>
+                                    <a class="nav-link {% if request.endpoint and 'students' in request.endpoint %}active{% endif %}" href="{{ url_for('students') }}">
+                                        <i class="bi bi-people"></i> Students Dashboard
+                                    </a>
+                                    <a class="nav-link {% if request.endpoint and 'assessments' in request.endpoint %}active{% endif %}" href="{{ url_for('assessments_list') }}">
+                                        <i class="bi bi-clipboard-data"></i> Assessment Dashboard
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                         {% endif %}
                         
-                        <!-- Students Link -->
+                        <!-- Examinations and Quiz Tray -->
                         {% if current_user.is_admin() or current_user.is_teacher() %}
-                        <a class="nav-link {% if request.endpoint and 'students' in request.endpoint %}active{% endif %}" href="{{ url_for('students') }}">
-                            <i class="bi bi-people"></i> Students
-                        </a>
+                        <div class="nav-tray">
+                            <button class="nav-tray-toggle btn btn-link nav-link text-start p-0 mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#examinationsTray" aria-expanded="false">
+                                <i class="bi bi-chevron-right me-2 tray-icon"></i>
+                                <i class="bi bi-card-checklist"></i> Examinations & Quiz
+                            </button>
+                            <div class="collapse" id="examinationsTray">
+                                <div class="nav-tray-content ps-3">
+                                    {% if current_user.is_admin() %}
+                                    <a class="nav-link {% if request.endpoint and 'admin_question_bank' in request.endpoint %}active{% endif %}" href="{{ url_for('admin_question_bank') }}">
+                                        <i class="bi bi-shield-check"></i> Moderate Questions
+                                    </a>
+                                    {% endif %}
+                                    {% if current_user.is_teacher() %}
+                                    <a class="nav-link {% if request.endpoint and ('teacher_question_bank' in request.endpoint or 'create_question' in request.endpoint or 'edit_question' in request.endpoint) %}active{% endif %}" href="{{ url_for('teacher_question_bank') }}">
+                                        <i class="bi bi-question-circle"></i> Question Bank
+                                    </a>
+                                    <a class="nav-link {% if request.endpoint and ('teacher_quizzes' in request.endpoint or 'create_quiz' in request.endpoint) %}active{% endif %}" href="{{ url_for('teacher_quizzes') }}">
+                                        <i class="bi bi-card-checklist"></i> Create Quizzes
+                                    </a>
+                                    {% endif %}
+                                    <a class="nav-link {% if request.endpoint and ('teacher_quiz_results' in request.endpoint or 'quiz_results_view' in request.endpoint) %}active{% endif %}" href="{{ url_for('teacher_quiz_results') }}">
+                                        <i class="bi bi-bar-chart-line"></i> Quiz Results
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                         {% endif %}
                         
-                        <!-- Assessments Link -->
+                        <!-- Student Management Tray -->
                         {% if current_user.is_admin() or current_user.is_teacher() %}
-                        <a class="nav-link {% if request.endpoint and 'assessments' in request.endpoint %}active{% endif %}" href="{{ url_for('assessments_list') }}">
-                            <i class="bi bi-clipboard-data"></i> Assessments
-                        </a>
+                        <div class="nav-tray">
+                            <button class="nav-tray-toggle btn btn-link nav-link text-start p-0 mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#studentManagementTray" aria-expanded="false">
+                                <i class="bi bi-chevron-right me-2 tray-icon"></i>
+                                <i class="bi bi-person-plus"></i> Student Management
+                            </button>
+                            <div class="collapse" id="studentManagementTray">
+                                <div class="nav-tray-content ps-3">
+                                    <a class="nav-link" href="{{ url_for('student_new') }}">
+                                        <i class="bi bi-person-add"></i> Register Students
+                                    </a>
+                                    <a class="nav-link" href="{{ url_for('students') }}">
+                                        <i class="bi bi-pencil-square"></i> Update Student Details
+                                    </a>
+                                    <a class="nav-link" href="{{ url_for('new_assessment') }}">
+                                        <i class="bi bi-plus-circle"></i> Capture Assessment
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                         {% endif %}
                         
-                        <!-- Question Bank Links -->
+                        <!-- Settings Tray -->
                         {% if current_user.is_admin() %}
-                        <a class="nav-link {% if request.endpoint and 'admin_question_bank' in request.endpoint %}active{% endif %}" href="{{ url_for('admin_question_bank') }}">
-                            <i class="bi bi-shield-check"></i> Moderate Questions
-                        </a>
-                        <a class="nav-link {% if request.endpoint and ('teacher_quiz_results' in request.endpoint or 'quiz_results_view' in request.endpoint) %}active{% endif %}" href="{{ url_for('teacher_quiz_results') }}">
-                            <i class="bi bi-bar-chart-line"></i> Quiz Results
-                        </a>
-                        {% elif current_user.is_teacher() %}
-                        <a class="nav-link {% if request.endpoint and ('teacher_question_bank' in request.endpoint or 'create_question' in request.endpoint or 'edit_question' in request.endpoint) %}active{% endif %}" href="{{ url_for('teacher_question_bank') }}">
-                            <i class="bi bi-question-circle"></i> Question Bank
-                        </a>
-                        <a class="nav-link {% if request.endpoint and ('teacher_quizzes' in request.endpoint or 'create_quiz' in request.endpoint) %}active{% endif %}" href="{{ url_for('teacher_quizzes') }}">
-                            <i class="bi bi-card-checklist"></i> Quizzes
-                        </a>
-                        <a class="nav-link {% if request.endpoint and ('teacher_quiz_results' in request.endpoint or 'quiz_results_view' in request.endpoint) %}active{% endif %}" href="{{ url_for('teacher_quiz_results') }}">
-                            <i class="bi bi-bar-chart-line"></i> Quiz Results
-                        </a>
-                        {% elif current_user.is_student() %}
-                        <a class="nav-link {% if request.endpoint and 'student_quizzes' in request.endpoint %}active{% endif %}" href="{{ url_for('student_quizzes') }}">
-                            <i class="bi bi-card-checklist"></i> Take Quizzes
-                        </a>
+                        <div class="nav-tray">
+                            <button class="nav-tray-toggle btn btn-link nav-link text-start p-0 mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#settingsTray" aria-expanded="false">
+                                <i class="bi bi-chevron-right me-2 tray-icon"></i>
+                                <i class="bi bi-gear"></i> Settings
+                            </button>
+                            <div class="collapse" id="settingsTray">
+                                <div class="nav-tray-content ps-3">
+                                    <a class="nav-link {% if request.endpoint and 'users' in request.endpoint %}active{% endif %}" href="{{ url_for('users') }}">
+                                        <i class="bi bi-person-gear"></i> Users
+                                    </a>
+                                    <a class="nav-link {% if request.endpoint and 'class_management' in request.endpoint %}active{% endif %}" href="{{ url_for('class_management') }}">
+                                        <i class="bi bi-diagram-3"></i> Class Management
+                                    </a>
+                                    <a class="nav-link {% if request.endpoint and 'admin_settings' in request.endpoint %}active{% endif %}" href="{{ url_for('admin_settings') }}">
+                                        <i class="bi bi-gear"></i> System Settings
+                                    </a>
+                                    <a class="nav-link {% if request.endpoint and 'admin_activity_logs' in request.endpoint %}active{% endif %}" href="{{ url_for('admin_activity_logs') }}">
+                                        <i class="bi bi-journal-text"></i> Activity Logs
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                        
+                        <!-- Exports Tray -->
+                        {% if current_user.is_admin() or current_user.is_teacher() %}
+                        <div class="nav-tray">
+                            <button class="nav-tray-toggle btn btn-link nav-link text-start p-0 mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#exportsTray" aria-expanded="false">
+                                <i class="bi bi-chevron-right me-2 tray-icon"></i>
+                                <i class="bi bi-download"></i> Exports & Imports
+                            </button>
+                            <div class="collapse" id="exportsTray">
+                                <div class="nav-tray-content ps-3">
+                                    <a class="nav-link" href="{{ url_for('export_csv') }}">
+                                        <i class="bi bi-file-earmark-text"></i> Export CSV
+                                    </a>
+                                    <a class="nav-link" href="{{ url_for('export_all_students_excel') }}">
+                                        <i class="bi bi-file-earmark-excel"></i> Export Excel
+                                    </a>
+                                    <a class="nav-link" href="{{ url_for('import_excel') }}">
+                                        <i class="bi bi-upload"></i> Import Excel
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                         {% endif %}
                         
                         <!-- Student Dashboard Link -->
@@ -322,37 +456,10 @@
                         <a class="nav-link {% if request.endpoint == 'student_dashboard' %}active{% endif %}" href="{{ url_for('student_dashboard') }}">
                             <i class="bi bi-eye"></i> My Assessments
                         </a>
-                        {% endif %}
-                        
-                        <!-- Users Management (Admin only) -->
-                        {% if current_user.is_admin() %}
-                        <a class="nav-link {% if request.endpoint and 'users' in request.endpoint %}active{% endif %}" href="{{ url_for('users') }}">
-                            <i class="bi bi-person-gear"></i> Users
-                        </a>
-                        <a class="nav-link {% if request.endpoint and 'admin_settings' in request.endpoint %}active{% endif %}" href="{{ url_for('admin_settings') }}">
-                            <i class="bi bi-gear"></i> Settings
-                        </a>
-                        <a class="nav-link {% if request.endpoint and 'admin_activity_logs' in request.endpoint %}active{% endif %}" href="{{ url_for('admin_activity_logs') }}">
-                            <i class="bi bi-journal-text"></i> Activity Logs
+                        <a class="nav-link {% if request.endpoint and 'student_quizzes' in request.endpoint %}active{% endif %}" href="{{ url_for('student_quizzes') }}">
+                            <i class="bi bi-card-checklist"></i> Take Quizzes
                         </a>
                         {% endif %}
-                        
-                        <div class="nav-divider"></div>
-                        
-                        <!-- Export/Import Section -->
-                        {% if current_user.is_admin() or current_user.is_teacher() %}
-                        <a class="nav-link" href="{{ url_for('export_csv') }}">
-                            <i class="bi bi-file-earmark-text"></i> Export CSV
-                        </a>
-                        <a class="nav-link" href="{{ url_for('export_all_students_excel') }}">
-                            <i class="bi bi-file-earmark-excel"></i> Export Excel
-                        </a>
-                        <a class="nav-link" href="{{ url_for('import_excel') }}">
-                            <i class="bi bi-upload"></i> Import Excel
-                        </a>
-                        {% endif %}
-                        
-                    </nav>
                 </div>
             </div>
 
@@ -489,6 +596,26 @@
             const sidebar = document.getElementById('sidebar');
             sidebar.classList.toggle('show');
         }
+        
+        // Handle nav tray collapse events
+        document.addEventListener('DOMContentLoaded', function() {
+            const trayToggles = document.querySelectorAll('.nav-tray-toggle');
+            trayToggles.forEach(toggle => {
+                toggle.addEventListener('click', function() {
+                    const icon = this.querySelector('.tray-icon');
+                    const isExpanded = this.getAttribute('aria-expanded') === 'true';
+                    
+                    // Update icon rotation
+                    if (isExpanded) {
+                        icon.classList.remove('bi-chevron-down');
+                        icon.classList.add('bi-chevron-right');
+                    } else {
+                        icon.classList.remove('bi-chevron-right');
+                        icon.classList.add('bi-chevron-down');
+                    }
+                });
+            });
+        });
     </script>
     <style>
         .ripple-effect {

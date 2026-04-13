@@ -72,30 +72,31 @@ class Config:
         ('term3', 'Term 3')
     ]
     
-    # Study/Learning Areas
+    # Study/Learning Areas - Updated to match new structure
     STUDY_AREAS = [
-        ('science_a', 'SCIENCE A'),
-        ('science_b', 'SCIENCE B'),
         ('visual_performing_arts', 'VISUAL AND PERFORMING ARTS'),
         ('home_economics_a', 'HOME ECONOMICS A'),
         ('home_economics_b', 'HOME ECONOMICS B'),
         ('home_economics_c', 'HOME ECONOMICS C'),
+        ('home_economics_d', 'HOME ECONOMICS D'),
         ('home_economics_e', 'HOME ECONOMICS E'),
         ('home_economics_f', 'HOME ECONOMICS F'),
-        ('general_arts_1a', 'GENERAL ARTS 1_A'),
-        ('general_arts_2b', 'GENERAL ARTS 2_B'),
-        ('general_arts_3a_c', 'GENERAL ARTS 3a_C'),
-        ('general_arts_3b_d', 'GENERAL ARTS 3b_D'),
-        ('general_arts_4a_e', 'GENERAL ARTS 4a_E'),
-        ('general_arts_4b_f', 'GENERAL ARTS 4b_F'),
-        ('general_arts_5a_g', 'GENERAL ARTS 5a_G'),
-        ('general_arts_5b_h', 'GENERAL ARTS 5b_H'),
-        ('general_arts_6a_i', 'GENERAL ARTS 6a_I'),
-        ('general_arts_6b_j', 'GENERAL ARTS 6b_J'),
         ('business_a', 'BUSINESS A'),
         ('business_b', 'BUSINESS B'),
         ('business_c', 'BUSINESS C'),
-        ('business_d', 'BUSINESS D')
+        ('business_d', 'BUSINESS D'),
+        ('science_a', 'SCIENCE A'),
+        ('science_b', 'SCIENCE B'),
+        ('general_arts_1', 'GENERAL ARTS 1'),
+        ('general_arts_2', 'GENERAL ARTS 2'),
+        ('general_arts_3a', 'GENERAL ARTS 3A'),
+        ('general_arts_3b', 'GENERAL ARTS 3B'),
+        ('general_arts_4a', 'GENERAL ARTS 4A'),
+        ('general_arts_4b', 'GENERAL ARTS 4B'),
+        ('general_arts_5a', 'GENERAL ARTS 5A'),
+        ('general_arts_5b', 'GENERAL ARTS 5B'),
+        ('general_arts_6a', 'GENERAL ARTS 6A'),
+        ('general_arts_6b', 'GENERAL ARTS 6B')
     ]
     
     # Complete Learning Areas/Subjects
@@ -164,16 +165,101 @@ class Config:
         'end_term': 'End of Term Exam'
     }
     
-    # Pagination
-    ASSESSMENTS_PER_PAGE = 25
-    STUDENTS_PER_PAGE = 30
-    
-    # Default admin credentials
-    DEFAULT_ADMIN_USERNAME = 'admin'
-    DEFAULT_ADMIN_PASSWORD = 'Admin@123'
-    
-    # Student login credentials
-    DEFAULT_STUDENT_PASSWORD = 'Student@123'
+    # Study Area Subject Mappings
+    STUDY_AREA_SUBJECTS = {
+        'visual_performing_arts': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['clothing_textile', 'arts_design_foundation', 'arts_design_studio', 'design_communication_technology', 'music']
+        },
+        'home_economics_a': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['management_in_living', 'food_nutrition', 'biology', 'economics', 'music']
+        },
+        'home_economics_b': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['management_in_living', 'clothing_textile', 'biology', 'economics', 'music']
+        },
+        'home_economics_c': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['management_in_living', 'food_nutrition', 'biology', 'arts_design_studio', 'music']
+        },
+        'home_economics_d': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['management_in_living', 'clothing_textile', 'biology', 'arts_design_studio', 'music']
+        },
+        'home_economics_e': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['management_in_living', 'food_nutrition', 'biology', 'french', 'music']
+        },
+        'home_economics_f': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['management_in_living', 'clothing_textile', 'biology', 'french', 'music']
+        },
+        'business_a': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['business_management', 'accounting', 'economics', 'additional_mathematics', 'geography']
+        },
+        'business_b': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['business_management', 'accounting', 'economics', 'computing_in_business', 'geography']
+        },
+        'business_c': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['business_management', 'accounting', 'economics', 'additional_mathematics', 'french']
+        },
+        'business_d': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['business_management', 'accounting', 'economics', 'computing_in_business', 'french']
+        },
+        'science_a': {
+            'core': ['mathematics', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['biology', 'chemistry', 'physics', 'additional_mathematics', 'geography', 'economics']
+        },
+        'science_b': {
+            'core': ['mathematics', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['biology', 'chemistry', 'physics', 'additional_mathematics', 'geography', 'french']
+        },
+        'general_arts_1': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['lit_in_english', 'christian_religious_studies', 'history', 'ghanaian_language', 'french']
+        },
+        'general_arts_2': {
+            'core': ['mathematics', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['geography', 'economics', 'government', 'religious_moral_education', 'additional_mathematics']
+        },
+        'general_arts_3a': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['history', 'music', 'lit_in_english', 'religious_moral_education', 'ghanaian_language']
+        },
+        'general_arts_3b': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['history', 'music', 'lit_in_english', 'religious_moral_education', 'french']
+        },
+        'general_arts_4a': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['music', 'economics', 'geography', 'religious_moral_education', 'ghanaian_language']
+        },
+        'general_arts_4b': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['music', 'economics', 'geography', 'religious_moral_education', 'french']
+        },
+        'general_arts_5a': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['music', 'history', 'government', 'ghanaian_language', 'religious_moral_education']
+        },
+        'general_arts_5b': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['music', 'history', 'government', 'french', 'religious_moral_education']
+        },
+        'general_arts_6a': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['government', 'economics', 'biology', 'chemistry', 'christian_religious_studies']
+        },
+        'general_arts_6b': {
+            'core': ['mathematics', 'general_science', 'social_studies', 'english_language', 'physical_education_health', 'ict'],
+            'electives': ['government', 'economics', 'biology', 'management_in_living', 'christian_religious_studies']
+        }
+    }
 
 
 class DevelopmentConfig(Config):

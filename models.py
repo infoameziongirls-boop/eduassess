@@ -82,6 +82,45 @@ class User(UserMixin, db.Model):
             return None
         return self.subject.replace('_', ' ').title()
     
+    def get_assigned_study_areas(self, config):
+        """Get study areas that offer this teacher's subject"""
+        if not self.subject or not self.is_teacher():
+            return []
+        
+        study_area_subjects = config.get('STUDY_AREA_SUBJECTS') if isinstance(config, dict) else config.get('STUDY_AREA_SUBJECTS')
+        if not study_area_subjects:
+            return []
+        
+        assigned_areas = []
+        for area_key, subjects in study_area_subjects.items():
+            if self.subject in subjects.get('core', []) or self.subject in subjects.get('electives', []):
+                assigned_areas.append(area_key)
+        
+        return assigned_areas
+    
+    def can_access_student(self, student, config):
+        """Check if teacher can access a specific student based on subject and study area"""
+        if not self.is_teacher() or not self.subject:
+            return False
+        
+        # Teacher can access student if:
+        # 1. Student is in a study area that offers the teacher's subject
+        # 2. Student has assessments in the teacher's subject
+        if student.study_area:
+            assigned_areas = self.get_assigned_study_areas(config)
+            if student.study_area in assigned_areas:
+                return True
+        
+        # Also check if teacher has already assessed this student in their subject
+        from models import Assessment
+        existing_assessment = Assessment.query.filter_by(
+            student_id=student.id,
+            teacher_id=self.id,
+            subject=self.subject
+        ).first()
+        
+        return existing_assessment is not None
+    
     def __repr__(self):
         return f"<User id={self.id}>"
 
