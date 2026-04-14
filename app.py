@@ -378,7 +378,7 @@ def student_login():
             user = User.query.filter_by(username=student_number).first()
             if not user:
                 # Create a student user account if it doesn't exist
-                password = app.config['DEFAULT_STUDENT_PASSWORD']
+                password = app.config.get('DEFAULT_STUDENT_PASSWORD', 'Student@123')
                 pw_hash = bcrypt.generate_password_hash(password).decode("utf-8")
                 user = User(
                     username=student_number,
