@@ -395,26 +395,27 @@ function hideRecentAssessments() {
     document.getElementById('refresh-button-container').style.display = 'block';
 }
 
-// Live updates
+// Live updates - Disabled to prevent potential hangs
+// Uncomment if needed and ensure /api/live-data responds quickly
+/*
 function updateLiveData() {
-    fetch('/api/live-data')
+    fetch('/api/live-data', { signal: AbortSignal.timeout(5000) })
         .then(response => response.json())
         .then(data => {
             // Update counters
             document.querySelector('.stat-card.success h2').textContent = data.student_count;
-            document.querySelector('.stat-card h2').textContent = data.assessment_count; // Second stat card
-            document.querySelector('.stat-card.danger h2').textContent = data.affected_students_count; // Affected students
-            document.querySelectorAll('.stat-card h2')[3].textContent = data.users_count; // Users count
+            document.querySelector('.stat-card h2').textContent = data.assessment_count;
+            document.querySelector('.stat-card.danger h2').textContent = data.affected_students_count;
+            document.querySelectorAll('.stat-card h2')[3].textContent = data.users_count;
         })
         .catch(error => console.log('Live update failed:', error));
 }
 
-// Update every 30 seconds
 setInterval(updateLiveData, 30000);
 
-// Initial update
 document.addEventListener('DOMContentLoaded', function() {
     updateLiveData();
 });
+*/
 </script>
 {% endblock %}

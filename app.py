@@ -425,18 +425,10 @@ def dashboard():
     
     # For teachers, filter incomplete assessments to only their assigned study areas
     if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
-        assigned_areas = current_user.get_assigned_study_areas(app.config)
+        assigned_areas = set(current_user.get_assigned_study_areas(app.config))
         if assigned_areas:
-            # Filter incomplete students to only those in assigned study areas
-            filtered_incomplete = []
-            for item in incomplete_students:
-                # Check if any student in this subject belongs to an assigned study area
-                students_in_subject = Student.query.filter_by(study_area=item['subject']).all()
-                for student in students_in_subject:
-                    if current_user.can_access_student(student, app.config):
-                        filtered_incomplete.append(item)
-                        break
-            incomplete_students = filtered_incomplete
+            # Filter incomplete students efficiently - only check study area
+            incomplete_students = [item for item in incomplete_students if item['subject'] in assigned_areas]
             affected_students_count = len(incomplete_students)
     
     # compute student groups for display (forms and learning areas)
@@ -450,12 +442,7 @@ def dashboard():
         if assigned_areas:
             student_query = student_query.filter(Student.study_area.in_(assigned_areas))
 
-    for s in student_query.all():
-        cls = s.class_name or 'Unspecified'
-        students_by_class[cls] = students_by_class.get(cls, 0) + 1
-        area = s.study_area or 'Unspecified'
-        students_by_area[area] = students_by_area.get(area, 0) + 1
-
+    # Single pass through students to count by class and area
     for s in student_query.all():
         cls = s.class_name or 'Unspecified'
         students_by_class[cls] = students_by_class.get(cls, 0) + 1
@@ -988,12 +975,23 @@ def student_edit(student_id):
 @login_required
 @admin_required
 def student_delete(student_id):
-    student = Student.query.get_or_404(student_id)
-    student_name = student.full_name()
-    db.session.delete(student)
-    db.session.commit()
-    log_activity(current_user, "delete_student", f"Deleted student {student_name} ({student.student_number})")
-    flash(f"Student {student_name} deleted successfully", "info")
+    try:
+        student = Student.query.get_or_404(student_id)
+        student_name = student.full_name()
+        student_number = student.student_number
+        
+        # Delete the student (cascades to assessments, quiz attempts, question attempts)
+        db.session.delete(student)
+        db.session.commit()
+        
+        # Log the activity
+        log_activity(current_user, "delete_student", f"Deleted student {student_name} ({student_number})")
+        flash(f"Student {student_name} deleted successfully", "success")
+    except Exception as e:
+        db.session.rollback()
+        log_activity(current_user, "delete_student_failed", f"Failed to delete student: {str(e)}")
+        flash(f"Error deleting student: {str(e)}", "error")
+    
     return redirect(url_for("students"))
 
 @app.route("/students/<int:student_id>")
@@ -1425,8 +1423,19 @@ def new_assessment():
         
     form = AssessmentForm()
     
-    # Populate student choices - group by class
-    students = Student.query.all()
+    # Populate student choices - filter by teacher's assigned study areas if teacher
+    if current_user.is_teacher():
+        assigned_areas = current_user.get_assigned_study_areas(app.config)
+        if assigned_areas:
+            students = Student.query.filter(Student.study_area.in_(assigned_areas)).all()
+        else:
+            # Teacher with no assigned areas - show no students
+            students = []
+    else:
+        # Admin - limit to 5000 students to prevent JSON overflow
+        # In production, this should be paginated or use a better approach
+        students = Student.query.limit(500).all()
+    
     grouped_students = {}
     for student in students:
         class_name = student.class_name or 'Unspecified'

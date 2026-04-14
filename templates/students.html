@@ -195,17 +195,15 @@
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Simplified delete modal behaviour: hide immediately and let form submit normally
+    // Handle delete modal form submission
     const deleteModals = document.querySelectorAll('[id^="deleteModal"]');
     deleteModals.forEach(modal => {
         const form = modal.querySelector('form');
-        const deleteBtn = modal.querySelector('.btn-danger');
-        if (form && deleteBtn) {
-            form.addEventListener('submit', function() {
-                const bsModal = bootstrap.Modal.getInstance(modal);
-                if (bsModal) {
-                    bsModal.hide();
-                }
+        if (form) {
+            // Simply allow the form to submit without blocking
+            form.addEventListener('submit', function(e) {
+                // Let default form submission happen
+                // No need to prevent or manually handle
             });
         }
     });
