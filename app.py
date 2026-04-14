@@ -1838,6 +1838,98 @@ def class_management():
                          teacher_assignments=teacher_assignments,
                          unassigned_areas=unassigned_areas)
 
+@app.route("/admin/class-register")
+@login_required
+@admin_required
+def class_register():
+    """Admin interface for viewing class register organized by forms and study areas"""
+    study_areas = app.config['STUDY_AREAS']
+    study_area_subjects = app.config['STUDY_AREA_SUBJECTS']
+    
+    # Get all students
+    students = Student.query.all()
+    
+    # Group students by form and class
+    forms_data = {}
+    
+    # Define form levels (Form 1, Form 2, Form 3)
+    form_levels = ['Form 1', 'Form 2', 'Form 3']
+    
+    # Initialize forms structure
+    for form in form_levels:
+        forms_data[form] = {
+            'total_students': 0,
+            'study_areas': {}
+        }
+        # Initialize study areas for each form
+        for area_key, area_name in study_areas:
+            forms_data[form]['study_areas'][area_key] = {
+                'name': area_name,
+                'classes': {},
+                'total_students': 0
+            }
+    
+    # Group students by form and study area
+    for student in students:
+        # Determine form based on class_name (assuming class names contain form info)
+        student_form = None
+        if student.class_name:
+            class_lower = student.class_name.lower()
+            if 'form 1' in class_lower or '1' in class_lower and 'form' in class_lower:
+                student_form = 'Form 1'
+            elif 'form 2' in class_lower or '2' in class_lower and 'form' in class_lower:
+                student_form = 'Form 2'
+            elif 'form 3' in class_lower or '3' in class_lower and 'form' in class_lower:
+                student_form = 'Form 3'
+        
+        # If form not determined from class_name, try to infer from study area
+        if not student_form and student.study_area:
+            # For now, put unassigned students in Form 1 as default
+            student_form = 'Form 1'
+        
+        # Default to Form 1 if still not determined
+        if not student_form:
+            student_form = 'Form 1'
+        
+        # Get study area
+        study_area = student.study_area or 'unassigned'
+        
+        # Initialize study area if not exists
+        if study_area not in forms_data[student_form]['study_areas']:
+            forms_data[student_form]['study_areas'][study_area] = {
+                'name': study_area.replace('_', ' ').title(),
+                'classes': {},
+                'total_students': 0
+            }
+        
+        # Get class name
+        class_name = student.class_name or 'Unassigned'
+        
+        # Initialize class if not exists
+        if class_name not in forms_data[student_form]['study_areas'][study_area]['classes']:
+            forms_data[student_form]['study_areas'][study_area]['classes'][class_name] = []
+        
+        # Add student to class
+        forms_data[student_form]['study_areas'][study_area]['classes'][class_name].append(student)
+        
+        # Update counts
+        forms_data[student_form]['study_areas'][study_area]['total_students'] += 1
+        forms_data[student_form]['total_students'] += 1
+    
+    # Sort classes within each study area
+    for form_data in forms_data.values():
+        for study_area_data in form_data['study_areas'].values():
+            # Sort classes alphabetically
+            study_area_data['classes'] = dict(sorted(study_area_data['classes'].items()))
+            # Sort students within each class by last name
+            for class_students in study_area_data['classes'].values():
+                class_students.sort(key=lambda s: (s.last_name or '', s.first_name or ''))
+    
+    return render_template("class_register.html", 
+                         forms_data=forms_data,
+                         study_areas=study_areas,
+                         study_area_subjects=study_area_subjects)
+
 # -------------------------  
 # Teacher Routes
 # -------------------------

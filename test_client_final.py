@@ -30,6 +30,10 @@ def test_endpoints():
         response = client.get('/admin/login')
         print(f'Admin login: {response.status_code}')
 
+        # Test class register page (should be 403 without login)
+        response = client.get('/admin/class-register')
+        print(f'Class register: {response.status_code}')
+
         print("All endpoint tests completed successfully!")
 
 if __name__ == '__main__':

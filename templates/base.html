@@ -417,6 +417,9 @@
                                     <a class="nav-link {% if request.endpoint and 'class_management' in request.endpoint %}active{% endif %}" href="{{ url_for('class_management') }}">
                                         <i class="bi bi-diagram-3"></i> Class Management
                                     </a>
+                                    <a class="nav-link {% if request.endpoint and 'class_register' in request.endpoint %}active{% endif %}" href="{{ url_for('class_register') }}">
+                                        <i class="bi bi-journal-bookmark"></i> Class Register
+                                    </a>
                                     <a class="nav-link {% if request.endpoint and 'admin_settings' in request.endpoint %}active{% endif %}" href="{{ url_for('admin_settings') }}">
                                         <i class="bi bi-gear"></i> System Settings
                                     </a>
