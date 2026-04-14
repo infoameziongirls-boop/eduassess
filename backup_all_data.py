@@ -55,9 +55,9 @@ def backup_all_data():
             
             backup_summary['backup_files']['users'] = str(users_file)
             backup_summary['data_summary']['users'] = len(user_data)
-            print(f"✓ Backed up {len(user_data)} users")
+            print(f"[OK] Backed up {len(user_data)} users")
         except Exception as e:
-            print(f"✗ Failed to backup users: {str(e)}")
+            print(f"[FAIL] Failed to backup users: {str(e)}")
         
         # Backup Students
         try:
@@ -84,9 +84,9 @@ def backup_all_data():
             
             backup_summary['backup_files']['students'] = str(students_file)
             backup_summary['data_summary']['students'] = len(student_data)
-            print(f"✓ Backed up {len(student_data)} students")
+            print(f"[OK] Backed up {len(student_data)} students")
         except Exception as e:
-            print(f"✗ Failed to backup students: {str(e)}")
+            print(f"[FAIL] Failed to backup students: {str(e)}")
         
         # Backup Assessments
         try:
@@ -118,20 +118,20 @@ def backup_all_data():
             
             backup_summary['backup_files']['assessments'] = str(assessments_file)
             backup_summary['data_summary']['assessments'] = len(assessment_data)
-            print(f"✓ Backed up {len(assessment_data)} assessments")
+            print(f"[OK] Backed up {len(assessment_data)} assessments")
         except Exception as e:
-            print(f"✗ Failed to backup assessments: {str(e)}")
+            print(f"[FAIL] Failed to backup assessments: {str(e)}")
         
         # Write backup summary
         try:
             summary_file = backup_dir / f'backup_summary_{timestamp}.json'
             with open(summary_file, 'w') as f:
                 json.dump(backup_summary, f, indent=2)
-            print(f"\n✓ Backup summary saved to: {summary_file}")
+            print(f"\n[OK] Backup summary saved to: {summary_file}")
         except Exception as e:
-            print(f"✗ Failed to save backup summary: {str(e)}")
+            print(f"[FAIL] Failed to save backup summary: {str(e)}")
         
-        print(f"✓ All backups completed successfully at {timestamp}")
+        print(f"[OK] All backups completed successfully at {timestamp}")
         print(f"  Backup directory: {backup_dir.absolute()}")
         print("="*60 + "\n")
         

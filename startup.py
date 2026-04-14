@@ -26,12 +26,12 @@ def initialize_database():
             
             # Create all tables
             db.create_all()
-            print("✓ Database tables initialized")
+            print("[OK] Database tables initialized")
             
             # Check if default admin exists
             admin_count = User.query.filter_by(role='admin').count()
             if admin_count == 0:
-                print("✓ Creating default admin user...")
+                print("[OK] Creating default admin user...")
                 
                 default_username = os.environ.get('DEFAULT_ADMIN_USERNAME', 'admin')
                 default_password = os.environ.get('DEFAULT_ADMIN_PASSWORD', 'Admin@123')
@@ -48,12 +48,12 @@ def initialize_database():
                 print(f"  Username: {default_username}")
                 print(f"  ** CHANGE THIS PASSWORD IMMEDIATELY **")
             else:
-                print(f"✓ Found {admin_count} admin user(s)")
+                print(f"[OK] Found {admin_count} admin user(s)")
             
             # Check if settings exist
             settings = Setting.query.first()
             if not settings:
-                print("✓ Creating default settings...")
+                print("[OK] Creating default settings...")
                 default_settings = Setting(
                     current_term='term1',
                     current_academic_year='2025-2026',
@@ -62,11 +62,11 @@ def initialize_database():
                 db.session.add(default_settings)
                 db.session.commit()
             else:
-                print("✓ Settings already configured")
+                print("[OK] Settings already configured")
             
             # Get data summary
             user_count = User.query.count()
-            print(f"\n📊 Data Summary:")
+            print(f"\n[DATA SUMMARY]")
             print(f"   Users: {user_count}")
             
             try:
@@ -78,11 +78,11 @@ def initialize_database():
             except:
                 pass
         
-        print("\n✓ Database initialization completed successfully!")
+        print("\n[OK] Database initialization completed successfully!")
         return True
         
     except Exception as e:
-        print(f"\n✗ Database initialization failed: {str(e)}")
+        print(f"\n[FAIL] Database initialization failed: {str(e)}")
         import traceback
         traceback.print_exc()
         return False

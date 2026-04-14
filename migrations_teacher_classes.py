@@ -27,9 +27,9 @@ def migrate_to_multiple_classes():
                     # Add the classes column
                     conn.execute(db.text('ALTER TABLE users ADD COLUMN classes TEXT'))
                     conn.commit()
-                print("✓ 'classes' column added successfully")
+                print("[OK] 'classes' column added successfully")
             else:
-                print("✓ 'classes' column already exists")
+                print("[OK] 'classes' column already exists")
             
             # Migrate existing data from class_name to classes
             teachers = User.query.filter_by(role='teacher').all()
@@ -43,15 +43,15 @@ def migrate_to_multiple_classes():
             
             if migrated_count > 0:
                 db.session.commit()
-                print(f"✓ Migrated {migrated_count} teacher(s) to multiple classes format")
+                print(f"[OK] Migrated {migrated_count} teacher(s) to multiple classes format")
             else:
-                print("✓ No migration needed - all teachers already using multiple classes format")
+                print("[OK] No migration needed - all teachers already using multiple classes format")
             
             print("\nMigration completed successfully!")
             return True
             
         except Exception as e:
-            print(f"✗ Migration failed: {str(e)}", file=sys.stderr)
+            print(f"[FAIL] Migration failed: {str(e)}", file=sys.stderr)
             db.session.rollback()
             return False
 

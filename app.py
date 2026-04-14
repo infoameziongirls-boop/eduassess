@@ -3665,9 +3665,9 @@ if __name__ == "__main__":
         scheduler = BackgroundScheduler()
         scheduler.add_job(run_backup_job, 'interval', hours=6, id='auto_backup', name='Automatic Backup Every 6 Hours')
         scheduler.start()
-        print("✓ Automatic backup scheduler started (backs up every 6 hours)")
+        print("[OK] Automatic backup scheduler started (backs up every 6 hours)")
     except Exception as e:
-        print(f"⚠️  Could not start backup scheduler: {e}")
+        print(f"[INFO] Could not start backup scheduler: {e}")
     
     app.run(
         debug=app.config.get('DEBUG', True), 

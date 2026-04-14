@@ -76,7 +76,7 @@ def start_scheduler_apscheduler():
     
     scheduler.start()
     
-    print("\n✓ Scheduler started with jobs:")
+    print("\n[OK] Scheduler started with jobs:")
     print("  - Full backup every 6 hours")
     print("  - Health check every 12 hours")
     print("="*60 + "\n")
@@ -101,7 +101,7 @@ def start_scheduler_simple():
     last_backup = datetime.now()
     last_health_check = datetime.now()
     
-    print(f"\n✓ Scheduler configured with:")
+    print(f"\n[OK] Scheduler configured with:")
     print(f"  - Backup interval: {backup_interval_hours} hours")
     print(f"  - Health check interval: {health_check_interval_hours} hours")
     print("="*60 + "\n")

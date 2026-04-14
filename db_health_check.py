@@ -27,7 +27,7 @@ def check_database_health():
             db_exists = os.path.exists(db_path)
             print(f"Database Type: SQLite (Local)")
             print(f"Database Path: {db_path}")
-            print(f"Database Exists: {'✓ YES' if db_exists else '✗ NO - New database will be created'}")
+            print(f"Database Exists: {'[YES]' if db_exists else '[NO] - New database will be created'}")
             
             if db_exists:
                 db_size = os.path.getsize(db_path)
@@ -36,8 +36,8 @@ def check_database_health():
         # Check if using PostgreSQL (Render)
         elif 'postgres' in db_uri.lower():
             print(f"Database Type: PostgreSQL (Cloud - Render)")
-            print("✓ Using persistent cloud database")
-            print("✓ Data will persist across deployments")
+            print("[OK] Using persistent cloud database")
+            print("[OK] Data will persist across deployments")
         
         # Try to connect and check tables
         try:
@@ -53,10 +53,10 @@ def check_database_health():
                 print(f"  Users: {user_count}")
                 print(f"  Students: {student_count}")
                 print(f"  Assessments: {assessment_count}")
-                print(f"\n✓ Database connection successful!")
+                print(f"\n[OK] Database connection successful!")
                 
         except Exception as e:
-            print(f"\n✗ Database connection failed: {str(e)}")
+            print(f"\n[FAIL] Database connection failed: {str(e)}")
             print("This usually means the database hasn't been initialized yet.")
             print("The app will create the database on first run.")
         
