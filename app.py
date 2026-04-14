@@ -164,8 +164,8 @@ def log_activity(user, action, details=None):
 # -------------------------
 
 class StudentLoginForm(FlaskForm):
-    first_name = StringField("First Name", validators=[InputRequired(), Length(min=1, max=120)])
-    student_number = StringField("Student Number", validators=[InputRequired(), Length(min=1, max=50)])
+    username = StringField("First Name", validators=[InputRequired(), Length(min=1, max=120)])
+    password = PasswordField("Student Number or Reference Number", validators=[InputRequired(), Length(min=1, max=50)])
 
 class LoginForm(FlaskForm):
     username = StringField("Username", validators=[InputRequired(), Length(min=3, max=80)])
@@ -363,37 +363,43 @@ def logout():
 
 @app.route("/student/login", methods=["GET", "POST"])
 def student_login():
-    """Student login using first name and student number"""
+    """Student login using first name as username and student number or reference number as password"""
     
     form = StudentLoginForm()
     if form.validate_on_submit():
-        first_name = form.first_name.data.strip()
-        student_number = form.student_number.data.strip()
+        first_name = form.username.data.strip()
+        password_attempt = form.password.data.strip()
         
-        # Find student by first name and student number
-        student = Student.query.filter_by(first_name=first_name, student_number=student_number).first()
+        # Find student by first name
+        student = Student.query.filter_by(first_name=first_name).first()
         
         if student:
-            # Check if there's a user account for this student
-            user = User.query.filter_by(username=student_number).first()
-            if not user:
-                # Create a student user account if it doesn't exist
-                password = app.config.get('DEFAULT_STUDENT_PASSWORD', 'Student@123')
-                pw_hash = bcrypt.generate_password_hash(password).decode("utf-8")
-                user = User(
-                    username=student_number,
-                    password_hash=pw_hash,
-                    role="student"
-                )
-                db.session.add(user)
-                db.session.commit()
+            # Check if password matches either student_number or reference_number
+            password_valid = (password_attempt == student.student_number or 
+                            password_attempt == student.reference_number)
             
-            login_user(user)
-            log_activity(user, "student_login", f"Student {student.full_name()} ({student.student_number}) logged in")
-            flash("Student login successful", "success")
-            return redirect(url_for("student_dashboard"))
+            if password_valid:
+                # Check if there's a user account for this student
+                user = User.query.filter_by(username=student.student_number).first()
+                if not user:
+                    # Create a student user account if it doesn't exist
+                    pw_hash = bcrypt.generate_password_hash(password_attempt).decode("utf-8")
+                    user = User(
+                        username=student.student_number,
+                        password_hash=pw_hash,
+                        role="student"
+                    )
+                    db.session.add(user)
+                    db.session.commit()
+                
+                login_user(user)
+                log_activity(user, "student_login", f"Student {student.full_name()} ({student.student_number}) logged in")
+                flash("Student login successful", "success")
+                return redirect(url_for("student_dashboard"))
+            else:
+                flash("Invalid password (student number or reference number). Please try again.", "danger")
         else:
-            flash("Invalid first name or student number. Please check your details.", "danger")
+            flash("Student not found. Please check your first name.", "danger")
     
     return render_template("student_login.html", form=form)
 
