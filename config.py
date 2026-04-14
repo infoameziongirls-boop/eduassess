@@ -152,6 +152,9 @@ class Config:
         'end_term': 0.15
     }
     
+    # Pagination settings
+    ASSESSMENTS_PER_PAGE = 20
+    
     # Category display labels - updated to match new categories
     CATEGORY_LABELS = {
         'ica1': 'Individual Assessment 1',

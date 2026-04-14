@@ -120,6 +120,15 @@ csrf = CSRFProtect(app)
 def inject_csrf_token():
     return dict(csrf_token=generate_csrf)
 
+@app.context_processor
+def utility_processor():
+    def safe_url_for(endpoint, **values):
+        try:
+            return url_for(endpoint, **values)
+        except Exception:
+            return None
+    return dict(safe_url_for=safe_url_for)
+
 # Initialize database
 init_db(app, bcrypt)
 
@@ -978,7 +987,6 @@ def student_edit(student_id):
 @app.route("/students/<int:student_id>/delete", methods=["POST"])
 @login_required
 @admin_required
-@csrf.exempt
 def student_delete(student_id):
     student = Student.query.get_or_404(student_id)
     student_name = student.full_name()
@@ -1109,8 +1117,14 @@ def student_view(student_id):
         comment=comment,
         subject=subject,
         all_subjects=all_subjects,
-        study_areas_dict=dict(app.config['STUDY_AREAS'])
+        study_areas_dict=dict(app.config['STUDY_AREAS']),
+        CATEGORY_LABELS=app.config['CATEGORY_LABELS']
     )
+
+@app.route("/students/<int:student_id>/detail")
+@login_required
+def student_detail(student_id):
+    return student_view(student_id)
 
 @app.route("/students/bulk-import", methods=["GET", "POST"])
 @login_required
@@ -3642,6 +3656,18 @@ if __name__ == "__main__":
     print(f"Database: {app.config['SQLALCHEMY_DATABASE_URI']}")
     print(f"Access at: http://127.0.0.1:5000")
     print("="*60 + "\n")
+    
+    # Start automatic backup scheduler
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from backup_scheduler import run_backup_job
+        
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(run_backup_job, 'interval', hours=6, id='auto_backup', name='Automatic Backup Every 6 Hours')
+        scheduler.start()
+        print("✓ Automatic backup scheduler started (backs up every 6 hours)")
+    except Exception as e:
+        print(f"⚠️  Could not start backup scheduler: {e}")
     
     app.run(
         debug=app.config.get('DEBUG', True), 
