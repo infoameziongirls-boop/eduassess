@@ -21,6 +21,11 @@ class Config:
         ('teacher', 'Teacher')
     ]
     
+    # Default passwords
+    DEFAULT_ADMIN_USERNAME = os.environ.get('DEFAULT_ADMIN_USERNAME', 'admin')
+    DEFAULT_ADMIN_PASSWORD = os.environ.get('DEFAULT_ADMIN_PASSWORD', 'Admin@123')
+    DEFAULT_STUDENT_PASSWORD = os.environ.get('DEFAULT_STUDENT_PASSWORD', 'Student@123')
+    
     # Template configuration
     TEMPLATE_FOLDER = 'templates_excel'
     ASSESSMENT_TEMPLATE_FILE = 'student_template.xlsx'
