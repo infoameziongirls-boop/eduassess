@@ -171,21 +171,23 @@ class Student(UserMixin, db.Model):
         
         return template_data
     
-    def to_template_dict(self, subject=None):
-        """Convert student data to template dictionary format"""
-        # Format name as Surname Firstname Othername
-        name_parts = [self.last_name, self.first_name]
-        if self.middle_name:
-            name_parts.append(self.middle_name)
-        formatted_name = ' '.join(name_parts)
-        
-        return {
-            'name': formatted_name,
-            'student_number': self.student_number,
-            'ref_id': self.reference_number or self.student_number,
-            'study_area': (subject or self.study_area or "Not Specified").upper(),
-            **self.get_assessments_for_template(subject)
+    def get_class_display(self):
+        """Get formatted class name for display"""
+        if not self.class_name:
+            return None
+        class_mapping = {
+            'form1': 'Form 1',
+            'form2': 'Form 2',
+            'form3': 'Form 3'
         }
+        return class_mapping.get(self.class_name.lower(), self.class_name.replace('_', ' ').title())
+    
+    def get_study_area_display(self):
+        """Get formatted study area name for display"""
+        if not self.study_area:
+            return None
+        # This will be overridden by config in templates, but for model use
+        return self.study_area.replace('_', ' ').title()
     
     # Relationships
     assessments = db.relationship(

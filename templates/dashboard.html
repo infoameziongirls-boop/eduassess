@@ -155,7 +155,7 @@
                         {% for summary in summaries %}
                         <tr>
                             <td><a href="{{ url_for('student_view', student_id=summary.student.id) }}" class="text-decoration-none fw-semibold">{{ summary.student.full_name() }}</a></td>
-                            <td>{{ summary.student.class_name or '-' }}</td>
+                            <td>{{ summary.student.get_class_display() or '-' }}</td>
                             <td>
                                 {% if summary.final_grade %}
                                     {% if summary.final_grade >= 70 %}
@@ -221,7 +221,7 @@
                         {% for summary in teacher_student_summaries %}
                         <tr>
                             <td><a href="{{ url_for('student_view', student_id=summary.student.id) }}" class="text-decoration-none fw-semibold">{{ summary.student.full_name() }}</a></td>
-                            <td>{{ summary.student.class_name or '-' }}</td>
+                            <td>{{ summary.student.get_class_display() or '-' }}</td>
                             <td>
                                 {% if summary.final_grade %}
                                     {% if summary.final_grade >= 70 %}

@@ -13,7 +13,7 @@
                             <p class="mb-0 opacity-75">
                                 <i class="bi bi-person-badge me-2"></i> Reference: {{ student.reference_number }} |
                                 <i class="bi bi-hash me-2"></i> Student No: {{ student.student_number }} |
-                                <i class="bi bi-building me-2"></i> Class: {{ student.class_name or 'N/A' }}
+                                <i class="bi bi-building me-2"></i> Class: {{ student.get_class_display() or 'N/A' }}
                             </p>
                         </div>
                         <div class="col-md-4 text-end">

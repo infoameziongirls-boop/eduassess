@@ -112,7 +112,7 @@
                             <div class="card border-primary">
                                 <div class="card-body text-center">
                                     <h6 class="card-title">{{ student_data['student'].full_name() }}</h6>
-                                    <small class="text-muted">{{ student_data['student'].student_number }} | {{ student_data['student'].class_name or 'N/A' }}</small>
+                                    <small class="text-muted">{{ student_data['student'].student_number }} | {{ student_data['student'].get_class_display() or 'N/A' }}</small>
                                     <div class="mb-2 mt-2">
                                         {% if student_data['grade'] == 'A1' %}
                                             <div class="bg-success text-white rounded-circle d-flex align-items-center justify-content-center mx-auto" style="width: 80px; height: 80px; font-size: 1.2rem; font-weight: bold;">

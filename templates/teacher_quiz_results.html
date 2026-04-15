@@ -97,7 +97,7 @@
                                         </td>
                                         <td>
                                             {% if student %}
-                                                {{ student.study_area or 'N/A' }}
+                                                {{ student.study_area|replace('_', ' ')|title or 'N/A' }}
                                             {% else %}
                                                 N/A
                                             {% endif %}

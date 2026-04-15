@@ -54,14 +54,14 @@
                                     </td>
                                     <td>
                                         {% if student %}
-                                            {{ student.class_name or 'N/A' }}
+                                            {{ student.get_class_display() or 'N/A' }}
                                         {% else %}
                                             N/A
                                         {% endif %}
                                     </td>
                                     <td>
                                         {% if student %}
-                                            {{ student.study_area or 'N/A' }}
+                                            {{ student.study_area|replace('_', ' ')|title or 'N/A' }}
                                         {% else %}
                                             N/A
                                         {% endif %}
