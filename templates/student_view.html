@@ -14,6 +14,10 @@
                 <h3>{{ student.full_name() }}</h3>
                 <p class="text-muted mb-1">
                     <strong>Student Number:</strong> {{ student.student_number }}<br>
+                    {% if student.reference_number and student.reference_number != student.student_number %}
+                        <strong>Reference Number:</strong> {{ student.reference_number }}<br>
+                    {% endif %}
+                    <strong>Class:</strong> {{ student.class_name or 'Not specified' }}<br>
                     <strong>Learning Area:</strong> {{ study_areas_dict.get(student.study_area, student.study_area or 'Not specified') }}
                 </p>
             </div>

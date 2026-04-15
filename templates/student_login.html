@@ -200,7 +200,7 @@
                     
                     <div class="mb-3">
                         {{ form.username.label(class="form-label") }}
-                        {{ form.username(class="form-control form-control-lg form-control-student", placeholder="e.g. John") }}
+                        {{ form.username(class="form-control form-control-lg form-control-student", placeholder="e.g. John", autofocus=True, autocomplete="username") }}
                         {% if form.username.errors %}
                             <div class="text-danger small mt-2">
                                 {% for error in form.username.errors %}{{ error }}{% endfor %}
@@ -210,7 +210,7 @@
                     
                     <div class="mb-4">
                         {{ form.password.label(class="form-label") }}
-                        {{ form.password(class="form-control form-control-lg form-control-student", placeholder="e.g. STU123456") }}
+                        {{ form.password(class="form-control form-control-lg form-control-student", placeholder="e.g. STU123456", autocomplete="current-password") }}
                         {% if form.password.errors %}
                             <div class="text-danger small mt-2">
                                 {% for error in form.password.errors %}{{ error }}{% endfor %}

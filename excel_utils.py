@@ -82,7 +82,7 @@ class ExcelTemplateHandler:
             # Write student data (adjust column indices based on your template)
             ws.cell(row=row, column=1, value=student.student_number)
             ws.cell(row=row, column=2, value=student.full_name())
-            ws.cell(row=row, column=3, value=student.learning_area if student.learning_area else "")
+            ws.cell(row=row, column=3, value=student.study_area if student.study_area else "")
             
             # Calculate summary for each category
             summary = student.get_assessment_summary()
@@ -108,7 +108,7 @@ class ExcelTemplateHandler:
         # Adjust these cell references based on your template
         ws['B2'] = student.student_number
         ws['B3'] = student.full_name()
-        ws['B4'] = student.learning_area if student.learning_area else ""
+        ws['B4'] = student.study_area if student.study_area else ""
         ws['B5'] = datetime.now().strftime('%Y-%m-%d')
     
     def _write_assessments(self, ws, assessments, config):
@@ -273,21 +273,28 @@ class StudentBulkImporter:
         students = []
         
         # Read data starting from start_row
+        def normalize(value):
+            if value is None:
+                return None
+            if isinstance(value, float) and value.is_integer():
+                value = int(value)
+            return str(value).strip()
+
         for row in ws.iter_rows(min_row=start_row, values_only=True):
             # Skip empty rows
             if not any(row):
                 continue
-            
+
             # Map columns to fields (adjust indices based on your template)
             student_data = {
-                'student_number': row[0],      # Column A
-                'first_name': row[1],          # Column B
-                'last_name': row[2],           # Column C
-                'middle_name': row[3] if len(row) > 3 else None,  # Column D
-                'class_name': row[4] if len(row) > 4 else None,   # Column E
-                'study_area': row[5] if len(row) > 5 else None    # Column F
+                'student_number': normalize(row[0]) if len(row) > 0 else None,
+                'first_name': normalize(row[1]) if len(row) > 1 else None,
+                'last_name': normalize(row[2]) if len(row) > 2 else None,
+                'middle_name': normalize(row[3]) if len(row) > 3 else None,
+                'class_name': normalize(row[4]) if len(row) > 4 else None,
+                'study_area': normalize(row[5]) if len(row) > 5 else None
             }
-            
+
             # Validate required fields
             if student_data['student_number'] and student_data['first_name'] and student_data['last_name']:
                 students.append(student_data)
@@ -359,85 +366,87 @@ class QuestionBulkImporter:
 
 def create_default_template(output_path):
     """
-    Create a default Excel template if none exists
-    
+    Create a default Excel template if none exists.
+    This template matches the layout expected by template_updater.AssessmentTemplateUpdater.
+
     Args:
         output_path: Where to save the template
     """
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    
+    from openpyxl.styles import Font, PatternFill
+
     wb = Workbook()
     ws = wb.active
-    ws.title = "Student Assessment"
-    
-    # Header styling
+    ws.title = "ASSESSMENT TEMPLATE"
+
     header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
     header_font = Font(bold=True, color="FFFFFF", size=12)
-    
-    # Student Info Section
-    ws['A1'] = "STUDENT INFORMATION"
-    ws['A1'].font = Font(bold=True, size=14)
-    ws['A1'].fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-    ws['A1'].font = Font(bold=True, color="FFFFFF", size=14)
-    
-    ws['A2'] = "Student Number:"
-    ws['A3'] = "Full Name:"
-    ws['A4'] = "Learning Area:"
-    ws['A5'] = "Report Date:"
-    
-    # Make labels bold
-    for cell in ['A2', 'A3', 'A4', 'A5']:
-        ws[cell].font = Font(bold=True)
-    
-    # Assessment Categories Headers
-    categories = [
-        ("A7", "INDIVIDUAL ASSESSMENTS (I.A)"),
-        ("A12", "INDIVIDUAL PROJECTS (I.P.A)"),
-        ("A17", "PRACTICAL PORTFOLIO (P.P)"),
-        ("A22", "MID-SEMESTER EXAM (M.S.E)"),
-        ("A27", "END-OF-TERM EXAM (E.T.E)")
+
+    # Top-level information
+    ws['A1'] = "SCHOOL:"
+    ws['A2'] = "SUBJECT:"
+    ws['A3'] = "TERM/YEAR:"
+    ws['A4'] = "FORM:"
+
+    ws['E5'] = "CONTINUOUS ASSESSMENT SHEET - 2025"
+    ws['E5'].font = Font(bold=True)
+
+    ws['B7'] = "TOTAL STUDENTS"
+    ws['C7'] = "=COUNTA(B10:B110)"
+    ws['D7'] = "Points/Weighting:"
+    ws['E7'] = 50
+    ws['F7'] = 50
+    ws['G7'] = 100
+    ws['H7'] = 50
+    ws['I7'] = 50
+    ws['J7'] = 100
+
+    ws['E6'] = "INDIVIDUAL CLASS ASSESSMENT"
+    ws['G6'] = "SUB TOTAL (I.C.A.)"
+    ws['H6'] = "INDIVIDUAL CLASS PROJECT"
+    ws['J6'] = "SUB TOTAL TEST(C.P)"
+
+    # Row 9 headers for the student table
+    headers = [
+        "Serial Number", "Name of Students", "Ref. Id", "Study Area",
+        "ICA1", "ICA2", "SUB TOTAL (I.C.A.)", "ICP1", "ICP2", "SUB TOTAL TEST(C.P)",
+        "GP1", "GP2", "SUB TOTAL (G.P)", "Practical", "Mid Term", "Total Class",
+        "%", "AVG. CLASS", "End Term", "AVG. EXAMS SC.", "Total 50 + 50",
+        "GPA", "Grade", None, "INSTRUCTIONS"
     ]
-    
-    for cell, title in categories:
-        ws[cell] = title
-        ws[cell].font = Font(bold=True, size=12)
-        ws[cell].fill = header_fill
-        ws[cell].font = Font(bold=True, color="FFFFFF", size=12)
-    
-    # Column headers for each section
-    col_headers = ["Subject", "Score", "Max Score", "Percentage", "Term", "Session", "Assessor", "Comments"]
-    header_row = 8
-    
-    for _ in range(5):  # 5 categories
-        for idx, header in enumerate(col_headers):
-            cell = ws.cell(row=header_row, column=idx+1, value=header)
-            cell.font = Font(bold=True)
-            cell.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
-        header_row += 5
-    
-    # Summary Section
-    ws['A34'] = "SUMMARY"
-    ws['A34'].font = Font(bold=True, size=14)
-    ws['A34'].fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-    ws['A34'].font = Font(bold=True, color="FFFFFF", size=14)
-    
-    summary_headers = ["Category", "Count", "Average"]
-    for idx, header in enumerate(summary_headers):
-        cell = ws.cell(row=35, column=idx+1, value=header)
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
-    
-    # Set column widths
-    ws.column_dimensions['A'].width = 20
-    ws.column_dimensions['B'].width = 10
-    ws.column_dimensions['C'].width = 12
-    ws.column_dimensions['D'].width = 12
-    ws.column_dimensions['E'].width = 10
-    ws.column_dimensions['F'].width = 15
-    ws.column_dimensions['G'].width = 15
-    ws.column_dimensions['H'].width = 30
-    
+
+    for idx, header in enumerate(headers, start=1):
+        ws.cell(row=9, column=idx, value=header)
+        if header:
+            ws.cell(row=9, column=idx).font = header_font
+            ws.cell(row=9, column=idx).fill = header_fill
+
+    # Set up the first data row formulas so the template is usable without a custom file
+    row = 10
+    ws[f"G{row}"] = f"=MIN(100, (SUM(E{row}:F{row})))"
+    ws[f"J{row}"] = f"=MIN(100,(SUM(H{row}:I{row})))"
+    ws[f"M{row}"] = f"=MIN(100,(SUM(K{row}:L{row})))"
+    ws[f"P{row}"] = f"=MIN(500, (SUM(G{row},J{row},M{row},N{row},O{row})))"
+    ws[f"Q{row}"] = f"=P{row}/500*100"
+    ws[f"R{row}"] = f"=MIN(50, (ROUNDUP(SUM(Q{row})/2,0)))"
+    ws[f"T{row}"] = f"=MIN(50, (ROUNDUP(SUM(S{row})/2,0)))"
+    ws[f"U{row}"] = f"=MIN(100, (SUM(R{row},T{row})))"
+    ws[f"V{row}"] = f"=U{row}"
+    ws[f"W{row}"] = (
+        f"=IF(U{row}>=80,\"4.0\",IF(U{row}>=70,\"3.5\",IF(U{row}>=65,\"3.0\","
+        f"IF(U{row}>=60,\"2.5\",IF(U{row}>=55,\"2.0\",IF(U{row}>=50,\"1.5\","
+        f"IF(U{row}>=45,\"1.0\",IF(U{row}>=40,\"0.5\",IF(U{row}<40,\"0.0\"))))))))))"
+    )
+    ws[f"X{row}"] = (
+        f"=IF(U{row}>=80,\"A1\",IF(U{row}>=70,\"B2\",IF(U{row}>=65,\"B3\","
+        f"IF(U{row}>=60,\"C4\",IF(U{row}>=55,\"C5\",IF(U{row}>=50,\"C6\","
+        f"IF(U{row}>=45,\"D7\",IF(U{row}>=40,\"E8\",IF(U{row}<40,\"F9\"))))))))))"
+    )
+
+    # Set column widths for readability
+    for col, width in zip('ABCDEFGHIJKLMNOPQRSTUVWX', [10, 25, 15, 15, 8, 8, 15, 8, 8, 15, 8, 8, 15, 12, 12, 15, 10, 12, 12, 15, 10, 10, 12, 20]):
+        ws.column_dimensions[col].width = width
+
     wb.save(output_path)
     return output_path
 

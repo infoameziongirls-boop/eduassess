@@ -11,7 +11,7 @@
             <div class="col-md-6">
                 <div class="mb-3">
                     {{ form.student_number.label(class="form-label") }}
-                    {{ form.student_number(class="form-control") }}
+                    {{ form.student_number(class="form-control", autocomplete="off") }}
                     {% for error in form.student_number.errors %}
                         <span class="text-danger">{{ error }}</span>
                     {% endfor %}
@@ -27,12 +27,20 @@
                 </div>
             </div>
         </div>
+
+        {% if student and student.reference_number %}
+        <div class="mb-3">
+            <label class="form-label">Reference Number</label>
+            <input type="text" class="form-control" value="{{ student.reference_number }}" readonly>
+            <div class="form-text">Automatically generated when the student is created.</div>
+        </div>
+        {% endif %}
         
         <div class="row">
             <div class="col-md-4">
                 <div class="mb-3">
                     {{ form.first_name.label(class="form-label") }}
-                    {{ form.first_name(class="form-control") }}
+                    {{ form.first_name(class="form-control", autocomplete="given-name") }}
                     {% for error in form.first_name.errors %}
                         <span class="text-danger">{{ error }}</span>
                     {% endfor %}
@@ -41,7 +49,7 @@
             <div class="col-md-4">
                 <div class="mb-3">
                     {{ form.last_name.label(class="form-label") }}
-                    {{ form.last_name(class="form-control") }}
+                    {{ form.last_name(class="form-control", autocomplete="family-name") }}
                     {% for error in form.last_name.errors %}
                         <span class="text-danger">{{ error }}</span>
                     {% endfor %}
@@ -50,7 +58,7 @@
             <div class="col-md-4">
                 <div class="mb-3">
                     {{ form.middle_name.label(class="form-label") }}
-                    {{ form.middle_name(class="form-control") }}
+                    {{ form.middle_name(class="form-control", autocomplete="additional-name") }}
                     {% for error in form.middle_name.errors %}
                         <span class="text-danger">{{ error }}</span>
                     {% endfor %}

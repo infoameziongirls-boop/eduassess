@@ -77,9 +77,9 @@ def update_database():
                 print("Adding 'date_of_birth' column to students table...")
                 db.engine.execute('ALTER TABLE students ADD COLUMN date_of_birth DATE')
             
-            if 'gender' not in student_columns:
-                print("Adding 'gender' column to students table...")
-                db.engine.execute('ALTER TABLE students ADD COLUMN gender VARCHAR(10)')
+            if 'study_area' not in student_columns:
+                print("Adding 'study_area' column to students table...")
+                db.engine.execute('ALTER TABLE students ADD COLUMN study_area VARCHAR(50)')
             
             # Check columns in assessments table
             assessment_columns = [col['name'] for col in inspector.get_columns('assessments')]
