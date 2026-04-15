@@ -2099,7 +2099,7 @@ def class_register():
     # Get all students
     students = Student.query.all()
     
-    # Group students by form and class
+    # Group students by form and study area
     forms_data = {}
     
     # Define form levels (Form 1, Form 2, Form 3)
@@ -2115,7 +2115,7 @@ def class_register():
         for area_key, area_name in study_areas:
             forms_data[form]['study_areas'][area_key] = {
                 'name': area_name,
-                'classes': {},
+                'students': [],
                 'total_students': 0
             }
     
@@ -2148,32 +2148,21 @@ def class_register():
         if study_area not in forms_data[student_form]['study_areas']:
             forms_data[student_form]['study_areas'][study_area] = {
                 'name': study_area.replace('_', ' ').title(),
-                'classes': {},
+                'students': [],
                 'total_students': 0
             }
         
-        # Get class name
-        class_name = student.class_name or 'Unassigned'
-        
-        # Initialize class if not exists
-        if class_name not in forms_data[student_form]['study_areas'][study_area]['classes']:
-            forms_data[student_form]['study_areas'][study_area]['classes'][class_name] = []
-        
-        # Add student to class
-        forms_data[student_form]['study_areas'][study_area]['classes'][class_name].append(student)
+        # Add student to study area
+        forms_data[student_form]['study_areas'][study_area]['students'].append(student)
         
         # Update counts
         forms_data[student_form]['study_areas'][study_area]['total_students'] += 1
         forms_data[student_form]['total_students'] += 1
     
-    # Sort classes within each study area
+    # Sort students within each study area by last name
     for form_data in forms_data.values():
         for study_area_data in form_data['study_areas'].values():
-            # Sort classes alphabetically
-            study_area_data['classes'] = dict(sorted(study_area_data['classes'].items()))
-            # Sort students within each class by last name
-            for class_students in study_area_data['classes'].values():
-                class_students.sort(key=lambda s: (s.last_name or '', s.first_name or ''))
+            study_area_data['students'].sort(key=lambda s: (s.last_name or '', s.first_name or ''))
     
     return render_template("class_register.html", 
                          forms_data=forms_data,
