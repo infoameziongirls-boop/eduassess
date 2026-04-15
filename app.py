@@ -157,6 +157,34 @@ def log_activity(user, action, details=None):
         # Log to console if database logging fails
         print(f"Failed to log activity: {e}")
 
+
+def calculate_short_answer_score(answer, question):
+    """Score short answer questions using exact and keyword matching."""
+    if not answer or not question:
+        return 0.0
+
+    normalized_answer = answer.strip().lower()
+    normalized_expected = (question.correct_answer or '').strip().lower()
+    
+    # Exact match gets full marks
+    if normalized_answer == normalized_expected:
+        return float(question.marks or 0.0)
+
+    # Keyword-based partial credit if keywords are configured
+    keywords = question.keywords or []
+    if isinstance(keywords, str):
+        keywords = [keywords]
+    keywords = [kw.strip().lower() for kw in keywords if kw]
+    if keywords:
+        matches = sum(1 for kw in keywords if kw in normalized_answer)
+        return round(float(question.marks or 0.0) * min(matches / len(keywords), 1.0), 1)
+
+    # Otherwise, reward partial credit if the expected answer appears in the response
+    if normalized_expected and normalized_expected in normalized_answer:
+        return round(float(question.marks or 0.0) * 0.75, 1)
+
+    return 0.0
+
 # -------------------------
 # Forms - FIXED: Remove duplicate definitions
 # -------------------------
@@ -1838,6 +1866,8 @@ def class_management():
     """Admin interface for managing study areas and subjects"""
     study_areas = app.config['STUDY_AREAS']
     study_area_subjects = app.config['STUDY_AREA_SUBJECTS']
+    class_levels = app.config['CLASS_LEVELS']
+    learning_areas = app.config['LEARNING_AREAS']
     
     # Get teacher assignments overview
     teachers = User.query.filter_by(role='teacher').all()
@@ -1864,8 +1894,199 @@ def class_management():
     return render_template("class_management.html", 
                          study_areas=study_areas,
                          study_area_subjects=study_area_subjects,
+                         class_levels=class_levels,
+                         learning_areas=learning_areas,
                          teacher_assignments=teacher_assignments,
                          unassigned_areas=unassigned_areas)
+
+# -------------------------------
+# Class & Subject Management API Routes
+# -------------------------------
+
+@app.route("/admin/api/class-levels", methods=["POST"])
+@login_required
+@admin_required
+def manage_class_levels():
+    """API endpoint for managing class levels (add/delete)"""
+    data = request.get_json()
+    action = data.get('action')
+    
+    if action == 'add':
+        level_key = data.get('key', '').strip().lower().replace(' ', '_')
+        level_name = data.get('name', '').strip()
+        
+        if not level_key or not level_name:
+            return jsonify({'success': False, 'message': 'Key and name are required'})
+        
+        # Check if key already exists
+        existing_keys = [level[0] for level in app.config['CLASS_LEVELS']]
+        if level_key in existing_keys:
+            return jsonify({'success': False, 'message': 'Class level key already exists'})
+        
+        # Add to config
+        app.config['CLASS_LEVELS'].append((level_key, level_name))
+        
+        log_activity(current_user, "add_class_level", f"Added class level: {level_name} ({level_key})")
+        return jsonify({'success': True, 'message': f'Class level "{level_name}" added successfully'})
+    
+    elif action == 'delete':
+        level_key = data.get('key')
+        
+        if not level_key:
+            return jsonify({'success': False, 'message': 'Class level key is required'})
+        
+        # Find and remove the level
+        original_length = len(app.config['CLASS_LEVELS'])
+        app.config['CLASS_LEVELS'] = [level for level in app.config['CLASS_LEVELS'] if level[0] != level_key]
+        
+        if len(app.config['CLASS_LEVELS']) < original_length:
+            level_name = data.get('name', level_key)
+            log_activity(current_user, "delete_class_level", f"Deleted class level: {level_name} ({level_key})")
+            return jsonify({'success': True, 'message': f'Class level "{level_name}" deleted successfully'})
+        else:
+            return jsonify({'success': False, 'message': 'Class level not found'})
+    
+    return jsonify({'success': False, 'message': 'Invalid action'})
+
+@app.route("/admin/api/study-areas", methods=["POST"])
+@login_required
+@admin_required
+def manage_study_areas():
+    """API endpoint for managing study areas (add/edit/delete)"""
+    data = request.get_json()
+    action = data.get('action')
+    
+    if action == 'add':
+        area_key = data.get('key', '').strip().lower().replace(' ', '_')
+        area_name = data.get('name', '').strip().upper()
+        
+        if not area_key or not area_name:
+            return jsonify({'success': False, 'message': 'Key and name are required'})
+        
+        # Check if key already exists
+        existing_keys = [area[0] for area in app.config['STUDY_AREAS']]
+        if area_key in existing_keys:
+            return jsonify({'success': False, 'message': 'Study area key already exists'})
+        
+        # Add to config
+        app.config['STUDY_AREAS'].append((area_key, area_name))
+        
+        # Initialize empty subjects configuration
+        if 'STUDY_AREA_SUBJECTS' not in app.config:
+            app.config['STUDY_AREA_SUBJECTS'] = {}
+        app.config['STUDY_AREA_SUBJECTS'][area_key] = {'core': [], 'electives': []}
+        
+        log_activity(current_user, "add_study_area", f"Added study area: {area_name} ({area_key})")
+        return jsonify({'success': True, 'message': f'Study area "{area_name}" added successfully'})
+    
+    elif action == 'edit':
+        original_key = data.get('original_key')
+        new_key = data.get('key', '').strip().lower().replace(' ', '_')
+        new_name = data.get('name', '').strip().upper()
+        
+        if not original_key or not new_key or not new_name:
+            return jsonify({'success': False, 'message': 'Original key, new key, and new name are required'})
+        
+        # Find and update the area
+        for i, (key, name) in enumerate(app.config['STUDY_AREAS']):
+            if key == original_key:
+                app.config['STUDY_AREAS'][i] = (new_key, new_name)
+                
+                # Update subjects configuration if key changed
+                if new_key != original_key and 'STUDY_AREA_SUBJECTS' in app.config:
+                    if original_key in app.config['STUDY_AREA_SUBJECTS']:
+                        app.config['STUDY_AREA_SUBJECTS'][new_key] = app.config['STUDY_AREA_SUBJECTS'].pop(original_key)
+                
+                log_activity(current_user, "edit_study_area", f"Edited study area: {original_key} -> {new_key} ({new_name})")
+                return jsonify({'success': True, 'message': f'Study area updated successfully'})
+        
+        return jsonify({'success': False, 'message': 'Study area not found'})
+    
+    elif action == 'delete':
+        area_key = data.get('key')
+        
+        if not area_key:
+            return jsonify({'success': False, 'message': 'Study area key is required'})
+        
+        # Find and remove the area
+        original_length = len(app.config['STUDY_AREAS'])
+        app.config['STUDY_AREAS'] = [area for area in app.config['STUDY_AREAS'] if area[0] != area_key]
+        
+        if len(app.config['STUDY_AREAS']) < original_length:
+            # Remove from subjects configuration
+            if 'STUDY_AREA_SUBJECTS' in app.config and area_key in app.config['STUDY_AREA_SUBJECTS']:
+                del app.config['STUDY_AREA_SUBJECTS'][area_key]
+            
+            area_name = data.get('name', area_key)
+            log_activity(current_user, "delete_study_area", f"Deleted study area: {area_name} ({area_key})")
+            return jsonify({'success': True, 'message': f'Study area "{area_name}" deleted successfully'})
+        else:
+            return jsonify({'success': False, 'message': 'Study area not found'})
+    
+    return jsonify({'success': False, 'message': 'Invalid action'})
+
+@app.route("/admin/api/study-area-subjects/<area_key>", methods=["GET", "POST"])
+@login_required
+@admin_required
+def manage_study_area_subjects(area_key):
+    """API endpoint for managing subjects within a study area"""
+    if 'STUDY_AREA_SUBJECTS' not in app.config:
+        app.config['STUDY_AREA_SUBJECTS'] = {}
+    
+    if area_key not in app.config['STUDY_AREA_SUBJECTS']:
+        app.config['STUDY_AREA_SUBJECTS'][area_key] = {'core': [], 'electives': []}
+    
+    if request.method == 'GET':
+        return jsonify(app.config['STUDY_AREA_SUBJECTS'][area_key])
+    
+    elif request.method == 'POST':
+        data = request.get_json()
+        subject_key = data.get('subject_key')
+        action = data.get('action')  # 'add_core', 'add_elective', 'remove'
+        
+        if not subject_key or not action:
+            return jsonify({'success': False, 'message': 'Subject key and action are required'})
+        
+        subjects_config = app.config['STUDY_AREA_SUBJECTS'][area_key]
+        
+        if action == 'add_core':
+            if subject_key not in subjects_config['core']:
+                subjects_config['core'].append(subject_key)
+                # Remove from electives if present
+                if subject_key in subjects_config['electives']:
+                    subjects_config['electives'].remove(subject_key)
+                log_activity(current_user, "add_subject_to_study_area", f"Added {subject_key} as core subject to {area_key}")
+                return jsonify({'success': True, 'message': f'Subject added to core subjects'})
+            else:
+                return jsonify({'success': False, 'message': 'Subject already in core subjects'})
+        
+        elif action == 'add_elective':
+            if subject_key not in subjects_config['electives']:
+                subjects_config['electives'].append(subject_key)
+                # Remove from core if present
+                if subject_key in subjects_config['core']:
+                    subjects_config['core'].remove(subject_key)
+                log_activity(current_user, "add_subject_to_study_area", f"Added {subject_key} as elective subject to {area_key}")
+                return jsonify({'success': True, 'message': f'Subject added to elective subjects'})
+            else:
+                return jsonify({'success': False, 'message': 'Subject already in elective subjects'})
+        
+        elif action == 'remove':
+            removed = False
+            if subject_key in subjects_config['core']:
+                subjects_config['core'].remove(subject_key)
+                removed = True
+            if subject_key in subjects_config['electives']:
+                subjects_config['electives'].remove(subject_key)
+                removed = True
+            
+            if removed:
+                log_activity(current_user, "remove_subject_from_study_area", f"Removed {subject_key} from {area_key}")
+                return jsonify({'success': True, 'message': f'Subject removed from study area'})
+            else:
+                return jsonify({'success': False, 'message': 'Subject not found in study area'})
+    
+    return jsonify({'success': False, 'message': 'Invalid request'})
 
 @app.route("/admin/class-register")
 @login_required

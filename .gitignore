@@ -6,6 +6,7 @@ __pycache__/
 venv/
 env/
 .pytest_cache/
+instance/
 
 # --- Web / Node.js ---
 node_modules/

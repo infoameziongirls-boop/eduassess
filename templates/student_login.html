@@ -199,21 +199,21 @@
                     {{ form.hidden_tag() }}
                     
                     <div class="mb-3">
-                        {{ form.first_name.label(class="form-label") }}
-                        {{ form.first_name(class="form-control form-control-lg form-control-student", placeholder="e.g. John") }}
-                        {% if form.first_name.errors %}
+                        {{ form.username.label(class="form-label") }}
+                        {{ form.username(class="form-control form-control-lg form-control-student", placeholder="e.g. John") }}
+                        {% if form.username.errors %}
                             <div class="text-danger small mt-2">
-                                {% for error in form.first_name.errors %}{{ error }}{% endfor %}
+                                {% for error in form.username.errors %}{{ error }}{% endfor %}
                             </div>
                         {% endif %}
                     </div>
                     
                     <div class="mb-4">
-                        {{ form.student_number.label(class="form-label") }}
-                        {{ form.student_number(class="form-control form-control-lg form-control-student", placeholder="e.g. STU123456") }}
-                        {% if form.student_number.errors %}
+                        {{ form.password.label(class="form-label") }}
+                        {{ form.password(class="form-control form-control-lg form-control-student", placeholder="e.g. STU123456") }}
+                        {% if form.password.errors %}
                             <div class="text-danger small mt-2">
-                                {% for error in form.student_number.errors %}{{ error }}{% endfor %}
+                                {% for error in form.password.errors %}{{ error }}{% endfor %}
                             </div>
                         {% endif %}
                     </div>

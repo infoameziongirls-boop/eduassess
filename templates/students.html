@@ -200,10 +200,18 @@ document.addEventListener('DOMContentLoaded', function() {
     deleteModals.forEach(modal => {
         const form = modal.querySelector('form');
         if (form) {
-            // Simply allow the form to submit without blocking
             form.addEventListener('submit', function(e) {
-                // Let default form submission happen
-                // No need to prevent or manually handle
+                // Close the modal immediately when form is submitted
+                const modalElement = modal;
+                const modalInstance = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
+                modalInstance.hide();
+                
+                // Disable the submit button to prevent double submission
+                const submitBtn = form.querySelector('button[type="submit"]');
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Deleting...';
+                }
             });
         }
     });

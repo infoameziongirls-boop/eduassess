@@ -6,6 +6,59 @@
         <h1 class="mb-2"><i class="bi bi-diagram-3 text-primary"></i> Class & Subject Management</h1>
         <p class="text-muted mb-0">Manage study areas, subjects, and teacher assignments</p>
     </div>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+</div>
+
+<!-- Class & Subject Management -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="bi bi-gear"></i> Class & Subject Management
+                </h5>
+                <div class="btn-group" role="group">
+                    <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#manageClassLevelsModal">
+                        <i class="bi bi-plus-circle"></i> Manage Class Levels
+                    </button>
+                    <button type="button" class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#manageStudyAreasModal">
+                        <i class="bi bi-diagram-3"></i> Manage Study Areas
+                    </button>
+                    <button type="button" class="btn btn-outline-info btn-sm" data-bs-toggle="modal" data-bs-target="#manageSubjectsModal">
+                        <i class="bi bi-book"></i> Manage Subjects
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="text-center">
+                            <i class="bi bi-mortarboard-fill text-primary fs-1 mb-2"></i>
+                            <h6>Class Levels</h6>
+                            <p class="text-muted small">Form 1, Form 2, Form 3</p>
+                            <small class="text-muted">{{ class_levels|length }} levels configured</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-center">
+                            <i class="bi bi-diagram-3-fill text-success fs-1 mb-2"></i>
+                            <h6>Study Areas</h6>
+                            <p class="text-muted small">Class groups and specializations</p>
+                            <small class="text-muted">{{ study_areas|length }} areas configured</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-center">
+                            <i class="bi bi-book-fill text-info fs-1 mb-2"></i>
+                            <h6>Subjects</h6>
+                            <p class="text-muted small">Available learning areas</p>
+                            <small class="text-muted">{{ learning_areas|length }} subjects configured</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Study Areas Overview -->
@@ -152,6 +205,217 @@
     </div>
 </div>
 
+<!-- Manage Class Levels Modal -->
+<div class="modal fade" id="manageClassLevelsModal" tabindex="-1" aria-labelledby="manageClassLevelsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="manageClassLevelsModalLabel">
+                    <i class="bi bi-mortarboard"></i> Manage Class Levels
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <h6>Current Class Levels</h6>
+                    <div class="row" id="classLevelsList">
+                        {% for level_key, level_name in class_levels %}
+                        <div class="col-md-4 mb-2">
+                            <div class="d-flex justify-content-between align-items-center bg-light p-2 rounded">
+                                <span>{{ level_name }}</span>
+                                <button type="button" class="btn btn-outline-danger btn-sm" onclick="deleteClassLevel('{{ level_key }}', '{{ level_name }}')">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <hr>
+                <div>
+                    <h6>Add New Class Level</h6>
+                    <form id="addClassLevelForm">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <input type="text" class="form-control" id="newClassLevelKey" placeholder="Key (e.g., form4)" required>
+                            </div>
+                            <div class="col-md-6">
+                                <input type="text" class="form-control" id="newClassLevelName" placeholder="Display Name (e.g., Form 4)" required>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary mt-2">
+                            <i class="bi bi-plus"></i> Add Class Level
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Manage Study Areas Modal -->
+<div class="modal fade" id="manageStudyAreasModal" tabindex="-1" aria-labelledby="manageStudyAreasModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="manageStudyAreasModalLabel">
+                    <i class="bi bi-diagram-3"></i> Manage Study Areas
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <h6>Current Study Areas</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Key</th>
+                                    <th>Name</th>
+                                    <th>Core Subjects</th>
+                                    <th>Elective Subjects</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="studyAreasTable">
+                                {% for area_key, area_name in study_areas %}
+                                <tr>
+                                    <td><code>{{ area_key }}</code></td>
+                                    <td>{{ area_name }}</td>
+                                    <td>
+                                        <small>
+                                            {% if area_key in study_area_subjects %}
+                                                {{ study_area_subjects[area_key]['core']|length }} subjects
+                                            {% else %}
+                                                0 subjects
+                                            {% endif %}
+                                        </small>
+                                    </td>
+                                    <td>
+                                        <small>
+                                            {% if area_key in study_area_subjects %}
+                                                {{ study_area_subjects[area_key]['electives']|length }} subjects
+                                            {% else %}
+                                                0 subjects
+                                            {% endif %}
+                                        </small>
+                                    </td>
+                                    <td>
+                                        <button type="button" class="btn btn-outline-primary btn-sm me-1" onclick="editStudyArea('{{ area_key }}')">
+                                            <i class="bi bi-pencil"></i> Edit
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="deleteStudyArea('{{ area_key }}', '{{ area_name }}')">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <hr>
+                <div>
+                    <h6>Add/Edit Study Area</h6>
+                    <form id="studyAreaForm">
+                        <input type="hidden" id="studyAreaAction" value="add">
+                        <input type="hidden" id="originalStudyAreaKey" value="">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="studyAreaKey" class="form-label">Key</label>
+                                <input type="text" class="form-control" id="studyAreaKey" placeholder="e.g., general_arts_7" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="studyAreaName" class="form-label">Display Name</label>
+                                <input type="text" class="form-control" id="studyAreaName" placeholder="e.g., GENERAL ARTS 7" required>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <button type="submit" class="btn btn-success">
+                                <i class="bi bi-plus"></i> <span id="studyAreaSubmitText">Add Study Area</span>
+                            </button>
+                            <button type="button" class="btn btn-secondary ms-2" onclick="resetStudyAreaForm()">
+                                <i class="bi bi-arrow-counterclockwise"></i> Reset
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Manage Subjects Modal -->
+<div class="modal fade" id="manageSubjectsModal" tabindex="-1" aria-labelledby="manageSubjectsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="manageSubjectsModalLabel">
+                    <i class="bi bi-book"></i> Manage Subjects
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Available Subjects</h6>
+                        <div class="mb-3">
+                            <input type="text" class="form-control" id="subjectSearch" placeholder="Search subjects...">
+                        </div>
+                        <div class="border rounded p-2" style="max-height: 300px; overflow-y: auto;" id="subjectsList">
+                            {% for subject_key, subject_name in learning_areas %}
+                            <div class="form-check subject-item" data-subject-key="{{ subject_key }}">
+                                <input class="form-check-input" type="checkbox" id="subject_{{ subject_key }}" value="{{ subject_key }}">
+                                <label class="form-check-label" for="subject_{{ subject_key }}">
+                                    {{ subject_name }}
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Study Area Configuration</h6>
+                        <div class="mb-3">
+                            <label for="subjectStudyAreaSelect" class="form-label">Select Study Area</label>
+                            <select class="form-select" id="subjectStudyAreaSelect">
+                                <option value="">Choose a study area...</option>
+                                {% for area_key, area_name in study_areas %}
+                                <option value="{{ area_key }}">{{ area_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div id="studyAreaSubjectsConfig" class="d-none">
+                            <div class="mb-3">
+                                <h6>Core Subjects</h6>
+                                <div id="coreSubjectsList" class="border rounded p-2" style="min-height: 100px;">
+                                    <!-- Core subjects will be loaded here -->
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <h6>Elective Subjects</h6>
+                                <div id="electiveSubjectsList" class="border rounded p-2" style="min-height: 100px;">
+                                    <!-- Elective subjects will be loaded here -->
+                                </div>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-success btn-sm" onclick="addSelectedToCore()">
+                                    <i class="bi bi-plus"></i> Add to Core
+                                </button>
+                                <button type="button" class="btn btn-info btn-sm" onclick="addSelectedToElectives()">
+                                    <i class="bi bi-plus"></i> Add to Electives
+                                </button>
+                                <button type="button" class="btn btn-warning btn-sm" onclick="removeFromStudyArea()">
+                                    <i class="bi bi-dash"></i> Remove Selected
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Unassigned Study Areas -->
 {% if unassigned_areas %}
 <div class="row">
@@ -290,6 +554,386 @@ document.addEventListener('DOMContentLoaded', function() {
             toggleAllBtn.setAttribute('data-state', isCollapsed ? 'expanded' : 'collapsed');
         });
     }
+
+    // Class Level Management
+    const addClassLevelForm = document.getElementById('addClassLevelForm');
+    if (addClassLevelForm) {
+        addClassLevelForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const key = document.getElementById('newClassLevelKey').value.trim();
+            const name = document.getElementById('newClassLevelName').value.trim();
+            
+            fetch('/admin/api/class-levels', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+                },
+                body: JSON.stringify({
+                    action: 'add',
+                    key: key,
+                    name: name
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert(data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while adding the class level');
+            });
+        });
+    }
+
+    // Study Area Management
+    const studyAreaForm = document.getElementById('studyAreaForm');
+    if (studyAreaForm) {
+        studyAreaForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const action = document.getElementById('studyAreaAction').value;
+            const key = document.getElementById('studyAreaKey').value.trim();
+            const name = document.getElementById('studyAreaName').value.trim();
+            const originalKey = document.getElementById('originalStudyAreaKey').value;
+            
+            const payload = {
+                action: action,
+                key: key,
+                name: name
+            };
+            
+            if (action === 'edit') {
+                payload.original_key = originalKey;
+            }
+            
+            fetch('/admin/api/study-areas', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert(data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while managing the study area');
+            });
+        });
+    }
+
+    // Subject search functionality
+    const subjectSearch = document.getElementById('subjectSearch');
+    if (subjectSearch) {
+        subjectSearch.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            const subjectItems = document.querySelectorAll('.subject-item');
+            
+            subjectItems.forEach(item => {
+                const label = item.querySelector('.form-check-label').textContent.toLowerCase();
+                if (label.includes(searchTerm)) {
+                    item.style.display = 'block';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        });
+    }
+
+    // Study area selection for subject management
+    const subjectStudyAreaSelect = document.getElementById('subjectStudyAreaSelect');
+    if (subjectStudyAreaSelect) {
+        subjectStudyAreaSelect.addEventListener('change', function() {
+            const selectedArea = this.value;
+            const configDiv = document.getElementById('studyAreaSubjectsConfig');
+            
+            if (selectedArea) {
+                configDiv.classList.remove('d-none');
+                loadStudyAreaSubjects(selectedArea);
+            } else {
+                configDiv.classList.add('d-none');
+            }
+        });
+    }
 });
-</script>
+
+// Global functions for modal actions
+function deleteClassLevel(key, name) {
+    if (confirm(`Are you sure you want to delete the class level "${name}"? This action cannot be undone.`)) {
+        fetch('/admin/api/class-levels', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+            },
+            body: JSON.stringify({
+                action: 'delete',
+                key: key,
+                name: name
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert(data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while deleting the class level');
+        });
+    }
+}
+
+function editStudyArea(key) {
+    // Find the study area in the table
+    const rows = document.querySelectorAll('#studyAreasTable tr');
+    let areaName = '';
+    
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length > 0 && cells[0].textContent.includes(key)) {
+            areaName = cells[1].textContent;
+        }
+    });
+    
+    document.getElementById('studyAreaAction').value = 'edit';
+    document.getElementById('originalStudyAreaKey').value = key;
+    document.getElementById('studyAreaKey').value = key;
+    document.getElementById('studyAreaName').value = areaName;
+    document.getElementById('studyAreaSubmitText').textContent = 'Update Study Area';
+    
+    // Scroll to form
+    document.getElementById('studyAreaForm').scrollIntoView({ behavior: 'smooth' });
+}
+
+function resetStudyAreaForm() {
+    document.getElementById('studyAreaAction').value = 'add';
+    document.getElementById('originalStudyAreaKey').value = '';
+    document.getElementById('studyAreaKey').value = '';
+    document.getElementById('studyAreaName').value = '';
+    document.getElementById('studyAreaSubmitText').textContent = 'Add Study Area';
+}
+
+function deleteStudyArea(key, name) {
+    if (confirm(`Are you sure you want to delete the study area "${name}"? This will also remove all subject assignments for this area. This action cannot be undone.`)) {
+        fetch('/admin/api/study-areas', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+            },
+            body: JSON.stringify({
+                action: 'delete',
+                key: key,
+                name: name
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert(data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while deleting the study area');
+        });
+    }
+}
+
+function loadStudyAreaSubjects(areaKey) {
+    fetch(`/admin/api/study-area-subjects/${areaKey}`)
+    .then(response => response.json())
+    .then(data => {
+        const coreList = document.getElementById('coreSubjectsList');
+        const electiveList = document.getElementById('electiveSubjectsList');
+        
+        // Clear existing
+        coreList.innerHTML = '';
+        electiveList.innerHTML = '';
+        
+        // Add core subjects
+        if (data.core && data.core.length > 0) {
+            data.core.forEach(subjectKey => {
+                const subjectName = getSubjectName(subjectKey);
+                coreList.innerHTML += `
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span>${subjectName}</span>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeSubjectFromStudyArea('${areaKey}', '${subjectKey}')">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    </div>
+                `;
+            });
+        } else {
+            coreList.innerHTML = '<p class="text-muted small">No core subjects assigned</p>';
+        }
+        
+        // Add elective subjects
+        if (data.electives && data.electives.length > 0) {
+            data.electives.forEach(subjectKey => {
+                const subjectName = getSubjectName(subjectKey);
+                electiveList.innerHTML += `
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span>${subjectName}</span>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeSubjectFromStudyArea('${areaKey}', '${subjectKey}')">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    </div>
+                `;
+            });
+        } else {
+            electiveList.innerHTML = '<p class="text-muted small">No elective subjects assigned</p>';
+        }
+    })
+    .catch(error => {
+        console.error('Error loading study area subjects:', error);
+    });
+}
+
+function getSubjectName(subjectKey) {
+    // This is a simple mapping - in a real app, you'd get this from the server
+    const subjectMap = {
+        {% for key, name in learning_areas %}
+        '{{ key }}': '{{ name }}',
+        {% endfor %}
+    };
+    return subjectMap[subjectKey] || subjectKey;
+}
+
+function addSelectedToCore() {
+    const selectedArea = document.getElementById('subjectStudyAreaSelect').value;
+    const selectedSubjects = getSelectedSubjects();
+    
+    if (!selectedArea) {
+        alert('Please select a study area first');
+        return;
+    }
+    
+    if (selectedSubjects.length === 0) {
+        alert('Please select subjects to add');
+        return;
+    }
+    
+    selectedSubjects.forEach(subjectKey => {
+        addSubjectToStudyArea(selectedArea, subjectKey, 'add_core');
+    });
+}
+
+function addSelectedToElectives() {
+    const selectedArea = document.getElementById('subjectStudyAreaSelect').value;
+    const selectedSubjects = getSelectedSubjects();
+    
+    if (!selectedArea) {
+        alert('Please select a study area first');
+        return;
+    }
+    
+    if (selectedSubjects.length === 0) {
+        alert('Please select subjects to add');
+        return;
+    }
+    
+    selectedSubjects.forEach(subjectKey => {
+        addSubjectToStudyArea(selectedArea, subjectKey, 'add_elective');
+    });
+}
+
+function removeFromStudyArea() {
+    const selectedArea = document.getElementById('subjectStudyAreaSelect').value;
+    
+    if (!selectedArea) {
+        alert('Please select a study area first');
+        return;
+    }
+    
+    // For now, we'll remove from both core and elective if present
+    // In a more sophisticated implementation, you'd check which list they're in
+    const selectedSubjects = getSelectedSubjects();
+    
+    if (selectedSubjects.length === 0) {
+        alert('Please select subjects to remove');
+        return;
+    }
+    
+    selectedSubjects.forEach(subjectKey => {
+        removeSubjectFromStudyArea(selectedArea, subjectKey);
+    });
+}
+
+function getSelectedSubjects() {
+    const checkboxes = document.querySelectorAll('#subjectsList input[type="checkbox"]:checked');
+    return Array.from(checkboxes).map(cb => cb.value);
+}
+
+function addSubjectToStudyArea(areaKey, subjectKey, action) {
+    fetch(`/admin/api/study-area-subjects/${areaKey}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+        },
+        body: JSON.stringify({
+            subject_key: subjectKey,
+            action: action
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            loadStudyAreaSubjects(areaKey);
+            // Uncheck the subject
+            const checkbox = document.querySelector(`#subjectsList input[value="${subjectKey}"]`);
+            if (checkbox) checkbox.checked = false;
+        } else {
+            alert(data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred while adding the subject');
+    });
+}
+
+function removeSubjectFromStudyArea(areaKey, subjectKey) {
+    fetch(`/admin/api/study-area-subjects/${areaKey}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+        },
+        body: JSON.stringify({
+            subject_key: subjectKey,
+            action: 'remove'
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            loadStudyAreaSubjects(areaKey);
+        } else {
+            alert(data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('An error occurred while removing the subject');
+    });
+}
 {% endblock %}
