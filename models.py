@@ -1,6 +1,7 @@
 from datetime import datetime
 import os
 import time
+import math
 from db import db
 from flask_login import UserMixin
 from sqlalchemy.exc import OperationalError
@@ -277,6 +278,11 @@ class Student(UserMixin, db.Model):
         """Calculate final grade using raw scores to match Excel template calculation"""
         summary = self.get_assessment_summary(subject, teacher_id)
         
+        # Check if student has any assessments at all
+        has_assessments = any(cat in summary for cat in ['ica1', 'ica2', 'icp1', 'icp2', 'gp1', 'gp2', 'practical', 'mid_term', 'end_term'])
+        if not has_assessments:
+            return None
+        
         # Template calculation logic - use raw scores directly
         # Class assessments: ica1, ica2, icp1, icp2, gp1, gp2, practical, mid_term
         class_categories = ['ica1', 'ica2', 'icp1', 'icp2', 'gp1', 'gp2', 'practical', 'mid_term']
@@ -293,20 +299,20 @@ class Student(UserMixin, db.Model):
         class_percent = (class_total_points / 500.0) * 100
         
         # Class score contribution (R in template) = min(50, roundup(class_percent / 2, 0))
-        class_score = min(50.0, round(class_percent / 2))
+        class_score = min(50.0, math.ceil(class_percent / 2))
         
         # Exam assessment: end_term
         exam_raw_score = 0.0
         if 'end_term' in summary:
             exam_raw_score = summary['end_term']["total_score"]
         
-        # Exam score contribution (T in template) = min(50, roundup(exam_raw_score / 2, 0))
-        exam_score = min(50.0, round(exam_raw_score / 2))
+        # Exam score contribution (T in template) = min(100, roundup(exam_raw_score / 2, 0))
+        exam_score = min(100.0, math.ceil(exam_raw_score / 2))
         
         # Final grade (U in template) = min(100, class_score + exam_score)
         final_grade = min(100.0, class_score + exam_score)
         
-        return round(final_grade, 2)  # Round to 2 decimal places
+        return float(round(final_grade, 2))  # Round to 2 decimal places and ensure float
     
     def get_gpa_and_grade(self):
         """Calculate GPA and Grade Letter to match Excel template"""

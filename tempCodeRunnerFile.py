@@ -21,7 +21,6 @@ from flask_wtf import FlaskForm, CSRFProtect
 from flask_wtf.file import FileField, FileAllowed
 from flask_wtf.csrf import generate_csrf
 from flask_session import Session
-from flask_migrate import Migrate
 from wtforms import StringField, PasswordField, FloatField, SelectField, SelectMultipleField, DateField, TextAreaField, BooleanField
 from wtforms.validators import InputRequired, Length, Optional, NumberRange
 
@@ -200,9 +199,6 @@ def utility_processor():
 
 # Initialize database
 init_db(app, bcrypt)
-
-# Initialize Flask-Migrate
-migrate = Migrate(app, db)
 
 # Configure session for multi-worker support
 app.config['SESSION_TYPE'] = 'filesystem'  # Can be changed to 'redis' for production

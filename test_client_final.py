@@ -30,9 +30,12 @@ def test_endpoints():
         response = client.get('/admin/login')
         print(f'Admin login: {response.status_code}')
 
-        # Test class register page (should be 403 without login)
-        response = client.get('/admin/class-register')
-        print(f'Class register: {response.status_code}')
+        # Test health check
+        response = client.get('/health')
+        print(f'Health check: {response.status_code}')
+        if response.status_code == 200:
+            data = response.get_json()
+            print(f'Health status: {data.get("status")}, DB: {data.get("database")}')
 
         print("All endpoint tests completed successfully!")
 

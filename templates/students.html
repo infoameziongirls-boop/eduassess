@@ -96,10 +96,10 @@
                                     {{ student.full_name() }}
                                 </a>
                             </td>
-                            <td>{{ student.class_name or 'N/A' }}</td>
+                            <td>{{ student.get_class_display() or 'N/A' }}</td>
                             <td>
                                 {% if student.study_area %}
-                                <span class="badge bg-info">{{ student.study_area|replace('_', ' ')|title }}</span>
+                                <span class="badge bg-info">{{ student.get_study_area_display() }}</span>
                                 {% else %}
                                 <span class="text-muted">N/A</span>
                                 {% endif %}

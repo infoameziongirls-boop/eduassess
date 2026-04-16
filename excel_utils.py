@@ -303,6 +303,44 @@ class StudentBulkImporter:
         return students
 
 
+class TeacherBulkImporter:
+    """Handle bulk import of teachers and admin users from Excel"""
+
+    def __init__(self, file_path):
+        self.file_path = file_path
+
+    def import_teachers(self, start_row=2):
+        wb = load_workbook(self.file_path, data_only=True)
+        ws = wb.active
+
+        teachers = []
+
+        def normalize(value):
+            if value is None:
+                return None
+            if isinstance(value, float) and value.is_integer():
+                value = int(value)
+            return str(value).strip()
+
+        for row in ws.iter_rows(min_row=start_row, values_only=True):
+            if not any(row):
+                continue
+
+            teacher_data = {
+                'username': normalize(row[0]) if len(row) > 0 else None,
+                'password': normalize(row[1]) if len(row) > 1 else None,
+                'role': normalize(row[2]) if len(row) > 2 else None,
+                'subject': normalize(row[3]) if len(row) > 3 else None,
+                'classes': normalize(row[4]) if len(row) > 4 else None
+            }
+
+            if teacher_data['username']:
+                teachers.append(teacher_data)
+
+        wb.close()
+        return teachers
+
+
 class QuestionBulkImporter:
     """Handle bulk import of questions from Excel"""
     
@@ -479,9 +517,9 @@ def create_student_import_template(output_path):
     
     # Sample data
     sample_data = [
-        ["STU001", "John", "Doe", "Michael", "Grade 10", "Mathematics"],
-        ["STU002", "Jane", "Smith", "", "Grade 9", "Science"],
-        ["STU003", "Bob", "Johnson", "William", "Grade 11", "English"]
+        ["STU001", "John", "Doe", "Michael", "Form 1", "Home Economics A"],
+        ["STU002", "Jane", "Smith", "", "Form 2", "General Arts 4B"],
+        ["STU003", "Bob", "Johnson", "William", "Form 3", "Business A"]
     ]
     
     for row_idx, row_data in enumerate(sample_data, start=2):
@@ -493,6 +531,46 @@ def create_student_import_template(output_path):
     for idx, width in enumerate(column_widths):
         ws.column_dimensions[chr(65 + idx)].width = width
     
+    wb.save(output_path)
+    return output_path
+
+
+def create_teacher_import_template(output_path):
+    """
+    Create a teacher bulk import Excel template
+    
+    Args:
+        output_path: Where to save the template
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Teacher Import"
+
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=12)
+
+    headers = ["Username", "Password", "Role", "Subject", "Classes"]
+    for idx, header in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=idx, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+
+    sample_data = [
+        ["teacher1", "Teacher@123", "teacher", "Mathematics", "Form 1"],
+        ["teacher2", "Teacher@123", "teacher", "English Language", "Form 2"],
+        ["admin1", "Admin@123", "admin", "", ""]
+    ]
+
+    for row_idx, row_data in enumerate(sample_data, start=2):
+        for col_idx, value in enumerate(row_data, start=1):
+            ws.cell(row=row_idx, column=col_idx, value=value)
+
+    for idx, width in enumerate([20, 20, 15, 20, 25], start=1):
+        ws.column_dimensions[chr(64 + idx)].width = width
+
     wb.save(output_path)
     return output_path
 
