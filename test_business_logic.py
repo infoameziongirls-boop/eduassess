@@ -5,7 +5,7 @@ import os
 # Add the project root to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from models import Student, Assessment, db
+from models import Student, Assessment, User, Quiz, Question, QuizAttempt, db
 from app import app
 import tempfile
 
@@ -309,6 +309,147 @@ class TestGradeCalculation:
         # Exam: 0
         # Final: 50
         assert final_grade == 50.0
+
+
+class TestStudentLoginAndQuizAttempt:
+    @pytest.fixture
+    def app_context(self):
+        app.config['TESTING'] = True
+        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+        app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+        with app.app_context():
+            db.create_all()
+            yield app
+            db.session.remove()
+            db.drop_all()
+
+    @pytest.fixture
+    def client(self, app_context):
+        app.config['WTF_CSRF_ENABLED'] = False
+        return app.test_client()
+
+    def create_student(self, first_name, last_name, student_number, reference_number=None):
+        student = Student(
+            first_name=first_name,
+            last_name=last_name,
+            student_number=student_number,
+            reference_number=reference_number,
+            class_name='form1',
+            study_area='science'
+        )
+        db.session.add(student)
+        db.session.commit()
+        return student
+
+    def create_admin_user(self):
+        user = User(username='admin', password_hash='x', role='admin')
+        db.session.add(user)
+        db.session.commit()
+        return user
+
+    def create_question(self, creator_id, subject='math'):
+        question = Question(
+            subject=subject,
+            question_text='Test question?',
+            question_type='mcq',
+            options=['A', 'B', 'C', 'D'],
+            correct_answer='A',
+            marks=1.0,
+            created_by=creator_id,
+            status='approved'
+        )
+        db.session.add(question)
+        db.session.commit()
+        return question
+
+    def create_quiz(self, question_ids, created_by, subject='math'):
+        quiz = Quiz(
+            title='Sample Quiz',
+            subject=subject,
+            description='Test quiz',
+            questions=question_ids,
+            created_by=created_by
+        )
+        db.session.add(quiz)
+        db.session.commit()
+        return quiz
+
+    def test_student_login_accepts_trimmed_database_values(self, client):
+        student = self.create_student(
+            first_name='Jane',
+            last_name='Doe',
+            student_number=' STU999 ',
+            reference_number=' REF999 '
+        )
+
+        response = client.post(
+            '/student/login',
+            data={
+                'username': 'Jane Doe',
+                'password': 'STU999'
+            },
+            follow_redirects=False
+        )
+
+        assert response.status_code == 302
+        assert '/student/dashboard' in response.headers['Location']
+
+        user = User.query.filter_by(username='STU999').first()
+        assert user is not None
+        assert user.role == 'student'
+
+    def test_quiz_attempt_started_at_and_time_taken_are_handled_correctly(self, client):
+        student = self.create_student(
+            first_name='John',
+            last_name='Smith',
+            student_number='STU888',
+            reference_number=' REF888 '
+        )
+        admin = self.create_admin_user()
+        question = self.create_question(creator_id=admin.id, subject='math')
+        quiz = self.create_quiz([question.id], created_by=admin.id, subject='math')
+
+        login_response = client.post(
+            '/student/login',
+            data={
+                'username': 'John Smith',
+                'password': 'STU888'
+            },
+            follow_redirects=False
+        )
+        assert login_response.status_code == 302
+
+        get_response = client.get(f'/student/quizzes/{quiz.id}/take')
+        assert get_response.status_code == 200
+
+        attempt = QuizAttempt.query.filter_by(
+            student_id=student.id,
+            quiz_id=quiz.id,
+            status='in_progress'
+        ).first()
+        assert attempt is not None
+        assert attempt.started_at is not None
+
+        attempt.started_at = None
+        db.session.commit()
+
+        post_response = client.post(
+            f'/student/quizzes/{quiz.id}/take',
+            data={f'answer_{question.id}': 'A'},
+            follow_redirects=False
+        )
+        assert post_response.status_code == 302
+        assert '/quiz/results' in post_response.headers['Location']
+
+        attempt = QuizAttempt.query.filter_by(
+            student_id=student.id,
+            quiz_id=quiz.id
+        ).first()
+        assert attempt is not None
+        assert attempt.completed_at is not None
+        assert attempt.time_taken == 0
+        assert attempt.status == 'completed'
 
 
 if __name__ == '__main__':

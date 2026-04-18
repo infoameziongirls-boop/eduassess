@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Parent Dashboard - EduAssess Module{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-5">
+    <div>
+        <h1 class="mb-2"><i class="bi bi-house-heart text-primary"></i> Parent Dashboard</h1>
+        <p class="text-muted mb-0">Monitor your children's academic progress</p>
+    </div>
+    <div class="d-none d-md-block">
+        <div class="text-end">
+            <div class="text-muted small">Welcome back</div>
+            <div class="fw-semibold">{{ current_user.username }}</div>
+        </div>
+    </div>
+</div>
+
+{% if students_data %}
+<div class="row">
+    {% for data in students_data %}
+    <div class="col-lg-6 col-xl-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">
+                    <i class="bi bi-person-circle text-primary"></i>
+                    {{ data.student.full_name() }}
+                </h5>
+                <small class="text-muted">{{ data.student.get_class_display() }} • {{ data.student.get_study_area_display() }}</small>
+            </div>
+            <div class="card-body">
+                <!-- Overall Grade -->
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted small">Overall Grade</span>
+                        {% if data.final_grade %}
+                        <span class="badge bg-{{ 'success' if data.final_grade >= 70 else 'warning' if data.final_grade >= 50 else 'danger' }} fs-6">
+                            {{ "%.1f"|format(data.final_grade) }}%
+                        </span>
+                        {% else %}
+                        <span class="badge bg-secondary">No Data</span>
+                        {% endif %}
+                    </div>
+                    {% if data.final_grade %}
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar {{ 'bg-success' if data.final_grade >= 70 else 'bg-warning' if data.final_grade >= 50 else 'bg-danger' }}"
+                             style="width: {{ data.final_grade }}%"></div>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Recent Assessments -->
+                <div>
+                    <h6 class="text-muted mb-2">
+                        <i class="bi bi-clipboard-data"></i> Recent Assessments
+                    </h6>
+                    {% if data.recent_assessments %}
+                    <div class="list-group list-group-flush">
+                        {% for assessment in data.recent_assessments %}
+                        <div class="list-group-item px-0 py-2">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="flex-grow-1">
+                                    <div class="fw-semibold small">{{ assessment.subject }}</div>
+                                    <div class="text-muted small">{{ assessment.category|title }} • {{ assessment.term|title }}</div>
+                                </div>
+                                <div class="text-end">
+                                    <div class="badge bg-{{ 'success' if assessment.get_percentage() >= 70 else 'warning' if assessment.get_percentage() >= 50 else 'danger' }} small">
+                                        {{ "%.1f"|format(assessment.get_percentage()) }}%
+                                    </div>
+                                    <div class="text-muted small mt-1">{{ assessment.date_recorded.strftime('%b %d') }}</div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-center py-3">
+                        <i class="bi bi-info-circle text-muted mb-2"></i>
+                        <div class="text-muted small">No assessments yet</div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-footer bg-transparent">
+                <a href="{{ url_for('student_view', student_id=data.student.id) }}" class="btn btn-outline-primary btn-sm w-100">
+                    <i class="bi bi-eye"></i> View Full Details
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-5">
+    <i class="bi bi-house-heart fs-1 text-muted mb-3"></i>
+    <h4 class="text-muted mb-2">No Students Assigned</h4>
+    <p class="text-muted">Please contact your school administrator to assign students to your account.</p>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -198,22 +198,12 @@
                 <form method="POST">
                     {{ form.hidden_tag() }}
                     
-                    <div class="mb-3">
-                        {{ form.username.label(class="form-label") }}
-                        {{ form.username(class="form-control form-control-lg form-control-student", placeholder="e.g. John", autofocus=True, autocomplete="username") }}
-                        {% if form.username.errors %}
-                            <div class="text-danger small mt-2">
-                                {% for error in form.username.errors %}{{ error }}{% endfor %}
-                            </div>
-                        {% endif %}
-                    </div>
-                    
                     <div class="mb-4">
-                        {{ form.password.label(class="form-label") }}
-                        {{ form.password(class="form-control form-control-lg form-control-student", placeholder="e.g. STU123456", autocomplete="current-password") }}
-                        {% if form.password.errors %}
+                        {{ form.identifier.label(class="form-label") }}
+                        {{ form.identifier(class="form-control form-control-lg form-control-student", placeholder="Enter your Student Number or Reference Number", autofocus=True, autocomplete="username") }}
+                        {% if form.identifier.errors %}
                             <div class="text-danger small mt-2">
-                                {% for error in form.password.errors %}{{ error }}{% endfor %}
+                                {% for error in form.identifier.errors %}{{ error }}{% endfor %}
                             </div>
                         {% endif %}
                     </div>
@@ -221,6 +211,13 @@
                     <button type="submit" class="btn btn-login-student btn-lg w-100">
                         <i class="bi bi-box-arrow-in-right"></i> Enter Portal
                     </button>
+                    
+                    <div class="help-text-student mt-4">
+                        <strong><i class="bi bi-question-circle"></i> Login Format:</strong><br>
+                        <small>
+                            Enter your Student Number or Reference Number exactly as issued by the school.
+                        </small>
+                    </div>
                 </form>
                 
                 <div class="login-footer-student">
@@ -231,8 +228,8 @@
                     
                     <div class="help-text-student">
                         <i class="bi bi-info-circle"></i>
-                        <strong>Don't know your student number?</strong><br>
-                        <small>Ask your teacher or check your enrollment confirmation email.</small>
+                        <strong>Lost your credentials?</strong><br>
+                        <small>Contact your teacher or administrator for assistance.</small>
                     </div>
                 </div>
             </div>

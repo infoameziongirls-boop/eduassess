@@ -1,3 +1,4 @@
+# from template_updater import calculate_scores_from_template, scores_from_assessments, CATEGORY_MAX
 from datetime import datetime
 import os
 import time
@@ -242,7 +243,15 @@ class Student(UserMixin, db.Model):
         
         for cat, data in summary.items():
             if data["count"] > 0:
-                data["avg_percent"] = data["total_score"] / data["count"]  # Average raw score
+                # Calculate average percentage: sum(score/max_score * 100) / count
+                total_percentage = 0.0
+                for assessment in assessments:
+                    if assessment.category == cat:
+                        if assessment.max_score > 0:
+                            total_percentage += (assessment.score / assessment.max_score) * 100
+                        else:
+                            total_percentage += 0.0
+                data["avg_percent"] = total_percentage / data["count"]
         
         return summary
     
@@ -274,87 +283,143 @@ class Student(UserMixin, db.Model):
         
         return summary
     
-    def calculate_final_grade(self, weights=None, subject=None, teacher_id=None):
-        """Calculate final grade using raw scores to match Excel template calculation"""
-        summary = self.get_assessment_summary(subject, teacher_id)
-        
-        # Check if student has any assessments at all
-        has_assessments = any(cat in summary for cat in ['ica1', 'ica2', 'icp1', 'icp2', 'gp1', 'gp2', 'practical', 'mid_term', 'end_term'])
-        if not has_assessments:
-            return None
-        
-        # Template calculation logic - use raw scores directly
-        # Class assessments: ica1, ica2, icp1, icp2, gp1, gp2, practical, mid_term
-        class_categories = ['ica1', 'ica2', 'icp1', 'icp2', 'gp1', 'gp2', 'practical', 'mid_term']
-        class_raw_total = 0.0
-        
-        for cat in class_categories:
-            if cat in summary:
-                class_raw_total += summary[cat]["total_score"]
-        
-        # Class total points (P in template) = min(500, sum of raw scores)
-        class_total_points = min(500.0, class_raw_total)
-        
-        # Class percentage (Q in template) = class_total_points / 500 * 100
-        class_percent = (class_total_points / 500.0) * 100
-        
-        # Class score contribution (R in template) = min(50, roundup(class_percent / 2, 0))
-        class_score = min(50.0, math.ceil(class_percent / 2))
-        
-        # Exam assessment: end_term
-        exam_raw_score = 0.0
-        if 'end_term' in summary:
-            exam_raw_score = summary['end_term']["total_score"]
-        
-        # Exam score contribution (T in template) = min(100, roundup(exam_raw_score / 2, 0))
-        exam_score = min(100.0, math.ceil(exam_raw_score / 2))
-        
-        # Final grade (U in template) = min(100, class_score + exam_score)
-        final_grade = min(100.0, class_score + exam_score)
-        
-        return float(round(final_grade, 2))  # Round to 2 decimal places and ensure float
-    
-    def get_gpa_and_grade(self):
-        """Calculate GPA and Grade Letter to match Excel template"""
-        final_percent = self.calculate_final_grade()
-        
-        if final_percent is None:
-            return {"gpa": "N/A", "grade": "N/A"}
-        
-        # GPA calculation matching Excel sheet grading scale
-        if final_percent >= 80:
-            gpa = "4.0"
-            grade = "A1"
-        elif final_percent >= 70:
-            gpa = "3.5"
-            grade = "B2"
-        elif final_percent >= 65:
-            gpa = "3.0"
-            grade = "B3"
-        elif final_percent >= 60:
-            gpa = "2.5"
-            grade = "C4"
-        elif final_percent >= 55:
-            gpa = "2.0"
-            grade = "C5"
-        elif final_percent >= 50:
-            gpa = "1.5"
-            grade = "C6"
-        elif final_percent >= 45:
-            gpa = "1.0"
-            grade = "D7"
-        elif final_percent >= 40:
-            gpa = "0.5"
-            grade = "E8"
-        else:
-            gpa = "0.0"
-            grade = "F9"
-        
-        return {"gpa": gpa, "grade": grade}
-    
-    def __repr__(self):
-        return f"<Student {self.student_number}: {self.full_name()}>"
+    def calculate_final_grade(self, subject=None, teacher_id=None):
+        """
+        Returns the final score (0-100) using the Excel template formula chain:
+            U = MIN(100, avg_class_score + avg_exam_score)
+        where:
+            avg_class_score = MIN(50, ROUNDUP( (total_class / 500 * 100) / 2, 0 ))
+            avg_exam_score  = MIN(50, ROUNDUP( end_term / 2, 0 ))
 
+        Only assessments matching subject/teacher_id are considered.
+        Returns None if no assessments exist.
+        """
+        from template_updater import calculate_scores_from_template, scores_from_assessments
+
+        query = [a for a in self.assessments if not a.archived]
+        if subject:
+            query = [a for a in query if a.subject == subject]
+        if teacher_id:
+            query = [a for a in query if a.teacher_id == teacher_id]
+
+        if not query:
+            return None
+
+        raw_scores = scores_from_assessments(query)
+        if not raw_scores:
+            return None
+
+        result = calculate_scores_from_template(raw_scores)
+        return result['final_score']
+
+    def get_gpa_and_grade(self, subject=None, teacher_id=None):
+        """
+        Returns {'gpa': float|'N/A', 'grade': str} derived from the Excel
+        formula chain (same thresholds as template cells W and X).
+        """
+        summary = self.get_overall_summary(subject=subject, teacher_id=teacher_id)
+        return {'gpa': summary['gpa'], 'grade': summary['grade']}
+
+
+    def get_overall_summary(self, subject=None, teacher_id=None):
+        """
+        Returns a dict with all intermediate scores (mirrors every formula cell
+        in the template) plus the final score, gpa and grade.
+
+        Keys returned:
+            ica1, ica2, ica_total,
+            icp1, icp2, icp_total,
+            gp1,  gp2,  gp_total,
+            practical, mid_term,
+            total_class_score, pct_100, avg_class_score,
+            end_term, avg_exam_score,
+            final_score, percentage, gpa, grade,
+            has_data (bool)
+        """
+        from template_updater import (calculate_scores_from_template,
+                                       scores_from_assessments, CATEGORY_MAX)
+
+        query = [a for a in self.assessments if not a.archived]
+        if subject:
+            query = [a for a in query if a.subject == subject]
+        if teacher_id:
+            query = [a for a in query if a.teacher_id == teacher_id]
+
+        empty = {
+            'ica1': 0, 'ica2': 0, 'ica_total': 0,
+            'icp1': 0, 'icp2': 0, 'icp_total': 0,
+            'gp1':  0, 'gp2':  0, 'gp_total':  0,
+            'practical': 0, 'mid_term': 0,
+            'total_class_score': 0, 'pct_100': 0, 'avg_class_score': 0,
+            'end_term': 0, 'avg_exam_score': 0,
+            'final_score': 0, 'percentage': 0,
+            'gpa': 'N/A', 'grade': 'N/A',
+            'has_data': False,
+        }
+
+        if not query:
+            return empty
+
+        raw_scores = scores_from_assessments(query)
+        if not raw_scores:
+            return empty
+
+        result = calculate_scores_from_template(raw_scores)
+
+        return {
+            'ica1':              raw_scores.get('ica1', 0),
+            'ica2':              raw_scores.get('ica2', 0),
+            'ica_total':         result['ica_total'],
+            'icp1':              raw_scores.get('icp1', 0),
+            'icp2':              raw_scores.get('icp2', 0),
+            'icp_total':         result['icp_total'],
+            'gp1':               raw_scores.get('gp1', 0),
+            'gp2':               raw_scores.get('gp2', 0),
+            'gp_total':          result['gp_total'],
+            'practical':         raw_scores.get('practical', 0),
+            'mid_term':          raw_scores.get('mid_term', 0),
+            'total_class_score': result['total_class_score'],
+            'pct_100':           result['pct_100'],
+            'avg_class_score':   result['avg_class_score'],
+            'end_term':          raw_scores.get('end_term', 0),
+            'avg_exam_score':    result['avg_exam_score'],
+            'final_score':       result['final_score'],
+            'percentage':        result['percentage'],
+            'gpa':               result['gpa'],
+            'grade':             result['grade'],
+            'has_data':          True,
+        }
+
+
+    def to_template_dict(self, subject=None):
+        """
+        Build the dict expected by AssessmentTemplateUpdater._write_student_row.
+        Pulls each category score from the student's assessments (most recent
+        per category if duplicates exist).
+        """
+        from template_updater import scores_from_assessments, CATEGORY_MAX
+
+        query = [a for a in self.assessments if not a.archived]
+        if subject:
+            query = [a for a in query if a.subject == subject]
+
+        raw = scores_from_assessments(query)
+
+        return {
+            'name':       self.full_name(),
+            'ref_id':     self.reference_number or '',
+            'study_area': self.get_study_area_display() or '',
+            'ica1':       raw.get('ica1',      0),
+            'ica2':       raw.get('ica2',      0),
+            'icp1':       raw.get('icp1',      0),
+            'icp2':       raw.get('icp2',      0),
+            'gp1':        raw.get('gp1',       0),
+            'gp2':        raw.get('gp2',       0),
+            'practical':  raw.get('practical', 0),
+            'mid_term':   raw.get('mid_term',  0),
+            'end_term':   raw.get('end_term',  0),
+        }
+ 
 
 class Assessment(db.Model):
     __tablename__ = "assessments"
@@ -376,8 +441,10 @@ class Assessment(db.Model):
     archived = db.Column(db.Boolean, default=False, index=True)
     
     def get_percentage(self):
-        # Return raw score as percentage to match user expectation
-        return self.score
+        """Return score as a percentage of max_score (0-100)."""
+        if self.max_score and self.max_score > 0:
+            return round((self.score / self.max_score) * 100, 2)
+        return 0.0
     
     def get_grade_letter(self):
         percentage = self.get_percentage()
@@ -451,7 +518,11 @@ class ActivityLog(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     
     # Relationship with cascade delete - when user is deleted, activity logs are also deleted
-    user = db.relationship("User", backref=db.backref("activity_logs", cascade="all, delete-orphan"), lazy=True)
+    user = db.relationship(
+        "User",
+        foreign_keys=[user_id],
+        backref=db.backref("activity_logs", lazy="dynamic", cascade="all, delete-orphan"),
+    )
     
     def __repr__(self):
         username = self.user.username if self.user else "Unknown"
@@ -523,6 +594,7 @@ class QuestionAttempt(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey("students.id"), nullable=False)
     question_id = db.Column(db.Integer, db.ForeignKey("questions.id"), nullable=False)
+    quiz_attempt_id = db.Column(db.Integer, db.ForeignKey("quiz_attempts.id"), nullable=True)  # Link to quiz attempt
     student_answer = db.Column(db.String(500), nullable=False)
     is_correct = db.Column(db.Boolean, nullable=False)
     score = db.Column(db.Float, nullable=False, default=0.0)
@@ -586,6 +658,72 @@ class QuizAttempt(db.Model):
     
     def __repr__(self):
         return f"<QuizAttempt student={self.student_id} quiz={self.quiz_id} score={self.score}>"
+
+
+class SystemConfig(db.Model):
+    __tablename__ = 'system_config'
+    id = db.Column(db.Integer, primary_key=True)
+    config_key = db.Column(db.String(100), unique=True, nullable=False)
+    config_value = db.Column(db.Text, nullable=False)  # Store as JSON
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @staticmethod
+    def get_config(key, default=None):
+        """Get configuration value from database"""
+        config_entry = SystemConfig.query.filter_by(config_key=key).first()
+        if config_entry:
+            try:
+                return json.loads(config_entry.config_value)
+            except json.JSONDecodeError:
+                return config_entry.config_value
+        return default
+
+    @staticmethod
+    def set_config(key, value):
+        """Set configuration value in database"""
+        config_entry = SystemConfig.query.filter_by(config_key=key).first()
+        if config_entry:
+            config_entry.config_value = json.dumps(value) if not isinstance(value, str) else value
+        else:
+            config_entry = SystemConfig(config_key=key, config_value=json.dumps(value) if not isinstance(value, str) else value)
+            db.session.add(config_entry)
+        db.session.commit()
+        return value
+
+    @staticmethod
+    def get_all_configs():
+        """Get all configuration as a dict"""
+        configs = {}
+        for config_entry in SystemConfig.query.all():
+            try:
+                configs[config_entry.config_key] = json.loads(config_entry.config_value)
+            except json.JSONDecodeError:
+                configs[config_entry.config_key] = config_entry.config_value
+        return configs
+
+
+# --------------------------------------------------------------------------- #
+#  Association table  (must appear BEFORE Parent model)
+# --------------------------------------------------------------------------- #
+
+parent_student = db.Table(
+    "parent_student",
+    db.Column("parent_id",  db.Integer, db.ForeignKey("parents.id"),  primary_key=True),
+    db.Column("student_id", db.Integer, db.ForeignKey("students.id"), primary_key=True),
+)
+
+
+# --------------------------------------------------------------------------- #
+#  Parent model
+# --------------------------------------------------------------------------- #
+
+class Parent(db.Model):
+    __tablename__ = "parents"
+
+    id      = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+
+    students = db.relationship("Student", secondary=parent_student, backref="parents")
 
 
 def init_db(app, bcrypt):

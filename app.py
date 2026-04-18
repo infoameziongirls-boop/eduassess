@@ -10,6 +10,7 @@ import csv
 import random
 import re
 import time
+import json
 from functools import wraps
 from werkzeug.utils import secure_filename
 from datetime import datetime
@@ -19,11 +20,45 @@ from flask_login import LoginManager, login_user, login_required, logout_user, c
 from flask_bcrypt import Bcrypt
 from flask_wtf import FlaskForm, CSRFProtect
 from flask_wtf.file import FileField, FileAllowed
-from flask_wtf.csrf import generate_csrf
+from flask_wtf.csrf import generate_csrf, CSRFError
 from flask_session import Session
 from flask_migrate import Migrate
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from sqlalchemy.exc import SQLAlchemyError
 from wtforms import StringField, PasswordField, FloatField, SelectField, SelectMultipleField, DateField, TextAreaField, BooleanField
-from wtforms.validators import InputRequired, Length, Optional, NumberRange
+from wtforms.validators import InputRequired, Length, Optional, NumberRange, ValidationError
+
+def validate_excel_file(form, field):
+    """Validate that uploaded file is actually an Excel file by checking MIME type and magic bytes"""
+    if not field.data:
+        return
+    
+    # Check MIME type
+    allowed_mimes = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+                     'application/vnd.ms-excel']
+    if hasattr(field.data, 'content_type') and field.data.content_type not in allowed_mimes:
+        raise ValidationError('Invalid file type. Only Excel files (.xlsx, .xls) are allowed.')
+    
+    # Check file extension
+    filename = field.data.filename.lower()
+    if not (filename.endswith('.xlsx') or filename.endswith('.xls')):
+        raise ValidationError('Invalid file extension. Only .xlsx and .xls files are allowed.')
+    
+    # Check magic bytes (first few bytes of file)
+    try:
+        field.data.seek(0)
+        magic_bytes = field.data.read(8)
+        field.data.seek(0)  # Reset file pointer
+        
+        # Excel file signatures
+        xlsx_signature = b'PK\x03\x04'  # ZIP file signature (XLSX is ZIP-based)
+        xls_signature = b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1'  # OLE2 signature (XLS)
+        
+        if not (magic_bytes.startswith(xlsx_signature) or magic_bytes.startswith(xls_signature)):
+            raise ValidationError('File content does not match Excel format. Please upload a valid Excel file.')
+    except Exception:
+        raise ValidationError('Unable to validate file content. Please try again.')
 
 from config import config
 
@@ -39,50 +74,76 @@ CATEGORY_LABELS = {
     'mid_term': 'Mid-Semester Exam',
     'end_term': 'End of Term Exam'
 }
-from models import User, Student, Assessment, Setting, ActivityLog, Question, QuestionAttempt, Quiz, QuizAttempt, init_db
+
+# Define category max scores
+CATEGORY_MAX_SCORES = {
+    'ica1': 50, 'ica2': 50,
+    'icp1': 50, 'icp2': 50,
+    'gp1': 50, 'gp2': 50,
+    'practical': 100, 'mid_term': 100, 'end_term': 100
+}
+
+# Assessment weights
+ASSESSMENT_WEIGHTS = {
+    'ica1':      0.05,
+    'ica2':      0.05,
+    'icp1':      0.05,
+    'icp2':      0.05,
+    'gp1':       0.05,
+    'gp2':       0.05,
+    'practical': 0.10,
+    'mid_term':  0.10,
+    'end_term':  0.50,
+}
+
+# Assessments per page
+ASSESSMENTS_PER_PAGE = 20
+from models import User, Student, Assessment, Setting, ActivityLog, Question, QuestionAttempt, Quiz, QuizAttempt, SystemConfig, Parent, init_db
 from excel_utils import ExcelTemplateHandler, ExcelBulkImporter, StudentBulkImporter, TeacherBulkImporter, QuestionBulkImporter, create_default_template, create_student_import_template, create_teacher_import_template, create_question_import_template
+from analytics import get_class_performance_summary, get_grade_distribution
+from api_v1 import api_bp
 
 def get_incomplete_assessments():
     """Get students with incomplete assessments"""
     required_categories = ['ica1', 'ica2', 'icp1', 'icp2', 'gp1', 'gp2', 'practical', 'mid_term', 'end_term']
-    
-    # Get all students with assessments
-    students_with_assessments = db.session.query(Student).join(Assessment)\
-        .filter(Assessment.archived == False)\
-        .distinct().all()
-    
+
+    assessment_rows = db.session.query(
+        Assessment.student_id,
+        Assessment.subject,
+        Assessment.category
+    ).filter(Assessment.archived == False).all()
+
+    student_subject_categories = {}
+    for student_id, subject, category in assessment_rows:
+        if not student_id or not subject or not category:
+            continue
+        key = (student_id, subject)
+        student_subject_categories.setdefault(key, set()).add(category)
+
+    if not student_subject_categories:
+        return []
+
+    student_ids = {student_id for student_id, _ in student_subject_categories.keys()}
+    students = Student.query.filter(Student.id.in_(student_ids)).all()
+    student_map = {student.id: student for student in students}
+
     incomplete_students = []
-    
-    for student in students_with_assessments:
-        # Get all subjects this student has assessments in
-        subjects = db.session.query(Assessment.subject)\
-            .filter(Assessment.student_id == student.id)\
-            .filter(Assessment.archived == False)\
-            .distinct().all()
-        
-        subjects = [s[0] for s in subjects]
-        
-        for subject in subjects:
-            # Get existing categories for this subject
-            existing_categories = db.session.query(Assessment.category)\
-                .filter(Assessment.student_id == student.id)\
-                .filter(Assessment.subject == subject)\
-                .filter(Assessment.archived == False)\
-                .distinct().all()
-            
-            existing_categories = [c[0] for c in existing_categories]
-            
-            # Find missing categories
-            missing_categories = [cat for cat in required_categories if cat not in existing_categories]
-            
-            if missing_categories:
-                incomplete_students.append({
-                    'student': student,
-                    'subject': subject,
-                    'missing_categories': missing_categories,
-                    'existing_categories': existing_categories
-                })
-    
+    for (student_id, subject), categories in student_subject_categories.items():
+        missing_categories = [cat for cat in required_categories if cat not in categories]
+        if not missing_categories:
+            continue
+
+        student = student_map.get(student_id)
+        if not student:
+            continue
+
+        incomplete_students.append({
+            'student': student,
+            'subject': subject,
+            'missing_categories': missing_categories,
+            'existing_categories': sorted(categories)
+        })
+
     return incomplete_students
 
 # Application Factory
@@ -92,6 +153,10 @@ app = Flask(__name__, static_folder='public')
 # Load configuration
 env = os.environ.get('FLASK_ENV', 'development')
 app.config.from_object(config[env])
+
+# Validate production settings if running in production
+if env == 'production':
+    config[env].validate_production_settings()
 
 # Get persistent directory from environment (default to local 'instance' for development)
 persistent_dir = os.environ.get('PERSISTENT_DIR', os.path.join(os.path.dirname(__file__), 'instance'))
@@ -116,6 +181,32 @@ login_manager.login_view = "login"
 
 # CSRF protection for all forms and POST endpoints
 csrf = CSRFProtect(app)
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    """
+    Catch expired or missing CSRF tokens and redirect the user back to
+    the originating form with an informative message instead of a raw 400.
+    """
+    app.logger.warning(f"CSRF error on {request.path}: {e.description}")
+    flash(
+        "Your session token has expired or is invalid. "
+        "The form has been refreshed — please try again.",
+        "warning"
+    )
+    # Redirect back to the page that submitted the form.
+    return redirect(request.referrer or url_for("login")), 302
+
+# Rate limiting
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri=os.environ.get('REDIS_URL', 'memory://')
+)
+
+# Configure session storage for multi-worker support
+Session(app)
 
 # ensure csrf_token is available in templates even if CSRFProtect fails to register
 @app.context_processor
@@ -201,14 +292,53 @@ def utility_processor():
 # Initialize database
 init_db(app, bcrypt)
 
+# Ensure database tables are created
+with app.app_context():
+    db.create_all()
+
+# Load persistent configuration from database
+def load_persistent_config():
+    """Load configuration from database, with fallbacks to config.py"""
+    with app.app_context():
+        # Load CLASS_LEVELS
+        db_class_levels = SystemConfig.get_config('CLASS_LEVELS')
+        if db_class_levels:
+            app.config['CLASS_LEVELS'] = db_class_levels
+        else:
+            # Initialize from config.py if not in DB
+            SystemConfig.set_config('CLASS_LEVELS', app.config['CLASS_LEVELS'])
+        
+        # Load STUDY_AREAS
+        db_study_areas = SystemConfig.get_config('STUDY_AREAS')
+        if db_study_areas:
+            app.config['STUDY_AREAS'] = db_study_areas
+        else:
+            SystemConfig.set_config('STUDY_AREAS', app.config['STUDY_AREAS'])
+        
+        # Load STUDY_AREA_SUBJECTS
+        db_study_area_subjects = SystemConfig.get_config('STUDY_AREA_SUBJECTS')
+        if db_study_area_subjects:
+            app.config['STUDY_AREA_SUBJECTS'] = db_study_area_subjects
+        else:
+            SystemConfig.set_config('STUDY_AREA_SUBJECTS', app.config['STUDY_AREA_SUBJECTS'])
+
+try:
+    load_persistent_config()
+    normalize_student_records()
+except Exception as e:
+    print(f"Warning: Could not load persistent config (database may not exist yet): {e}")
+    # Continue with default config from config.py
+
+# Add missing config keys to app.config
+app.config['CATEGORY_LABELS'] = CATEGORY_LABELS
+app.config['ASSESSMENTS_PER_PAGE'] = ASSESSMENTS_PER_PAGE
+app.config['CATEGORY_MAX_SCORES'] = CATEGORY_MAX_SCORES
+app.config['ASSESSMENT_WEIGHTS'] = ASSESSMENT_WEIGHTS
+app.register_blueprint(api_bp)
+
 # Initialize Flask-Migrate
 migrate = Migrate(app, db)
 
-# Configure session for multi-worker support
-app.config['SESSION_TYPE'] = 'filesystem'  # Can be changed to 'redis' for production
-app.config['SESSION_PERMANENT'] = False
-app.config['SESSION_USE_SIGNER'] = False
-Session(app)
 # Activity Logging
 # -------------------------
 def log_activity(user, action, details=None):
@@ -225,9 +355,9 @@ def log_activity(user, action, details=None):
         )
         db.session.add(log_entry)
         db.session.commit()
-    except Exception as e:
-        # Log to console if database logging fails
-        print(f"Failed to log activity: {e}")
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        app.logger.error(f"Failed to log activity: {e}")
 
 
 def calculate_short_answer_score(answer, question):
@@ -257,6 +387,46 @@ def calculate_short_answer_score(answer, question):
 
     return 0.0
 
+def calculate_gpa_and_grade(percent):
+    """Calculate GPA and grade based on percentage score."""
+    if percent is None:
+        return {'gpa': 'N/A', 'grade': 'N/A'}
+    
+    if percent >= 80:
+        return {'gpa': 4.0, 'grade': 'A1'}
+    elif percent >= 70:
+        return {'gpa': 3.5, 'grade': 'B2'}
+    elif percent >= 65:
+        return {'gpa': 3.0, 'grade': 'B3'}
+    elif percent >= 60:
+        return {'gpa': 2.5, 'grade': 'C4'}
+    elif percent >= 55:
+        return {'gpa': 2.0, 'grade': 'C5'}
+    elif percent >= 50:
+        return {'gpa': 1.5, 'grade': 'C6'}
+    elif percent >= 45:
+        return {'gpa': 1.0, 'grade': 'D7'}
+    elif percent >= 40:
+        return {'gpa': 0.5, 'grade': 'E8'}
+    else:
+        return {'gpa': 0.0, 'grade': 'F9'}
+
+def generate_unique_reference_number():
+    """Generate a unique reference number for students."""
+    max_attempts = 100  # Prevent infinite loops
+    attempts = 0
+    
+    while attempts < max_attempts:
+        reference_number = f"STU{random.randint(100000, 999999)}"
+        # Check if this reference number already exists
+        existing = Student.query.filter_by(reference_number=reference_number).first()
+        if not existing:
+            return reference_number
+        attempts += 1
+    
+    # If we can't generate a unique number after max attempts, use timestamp
+    return f"STU{int(time.time()) % 1000000:06d}"
+
 # -------------------------
 # Forms - FIXED: Remove duplicate definitions
 # -------------------------
@@ -264,8 +434,11 @@ def calculate_short_answer_score(answer, question):
 # -------------------------
 
 class StudentLoginForm(FlaskForm):
-    username = StringField("First Name", validators=[InputRequired(), Length(min=1, max=120)])
-    password = PasswordField("Student Number or Reference Number", validators=[InputRequired(), Length(min=1, max=50)])
+    identifier = StringField(
+        "Student Number or Reference Number",
+        validators=[InputRequired(), Length(min=1, max=50)],
+        render_kw={"placeholder": "Enter your Student Number or Reference Number"}
+    )
 
 class LoginForm(FlaskForm):
     username = StringField("Username", validators=[InputRequired(), Length(min=3, max=80)])
@@ -304,7 +477,13 @@ class AssessmentForm(FlaskForm):
     subject = SelectField("Subject", choices=[("", "-- Select Subject --")] + app.config['LEARNING_AREAS'], validators=[InputRequired()])
     class_name = SelectField("Class", choices=[("", "-- Select Class --")] + app.config['CLASS_LEVELS'], validators=[Optional()])
     score = FloatField("Score", validators=[InputRequired(), NumberRange(min=0)])
-    max_score = SelectField("Max Score", choices=[(50, '50'), (100, '100')], validators=[InputRequired()], default=100)
+    max_score = SelectField(
+        "Max Score",
+        choices=[(50, '50'), (100, '100')],
+        coerce=int,
+        validators=[InputRequired()],
+        default=100
+    )
     term = SelectField("Term", choices=app.config['TERMS'], validators=[InputRequired()])
     academic_year = StringField("Academic Year", validators=[Optional()])
     session = StringField("Session", validators=[Optional()])
@@ -323,25 +502,29 @@ class AssessmentFilterForm(FlaskForm):
 class BulkImportForm(FlaskForm):
     excel_file = FileField("Excel File", validators=[
         InputRequired(),
-        FileAllowed(['xlsx', 'xls'], 'Excel files only!')
+        FileAllowed(['xlsx', 'xls'], 'Excel files only!'),
+        validate_excel_file
     ])
 
 class StudentBulkImportForm(FlaskForm):
     excel_file = FileField("Excel File", validators=[
         InputRequired(),
-        FileAllowed(['xlsx', 'xls'], 'Excel files only!')
+        FileAllowed(['xlsx', 'xls'], 'Excel files only!'),
+        validate_excel_file
     ])
 
 class UserBulkImportForm(FlaskForm):
     excel_file = FileField("Excel File", validators=[
         InputRequired(),
-        FileAllowed(['xlsx', 'xls'], 'Excel files only!')
+        FileAllowed(['xlsx', 'xls'], 'Excel files only!'),
+        validate_excel_file
     ])
 
 class QuestionBulkImportForm(FlaskForm):
     excel_file = FileField("Excel File", validators=[
         InputRequired(),
-        FileAllowed(['xlsx', 'xls'], 'Excel files only!')
+        FileAllowed(['xlsx', 'xls'], 'Excel files only!'),
+        validate_excel_file
     ])
 
 class SettingsForm(FlaskForm):
@@ -388,7 +571,10 @@ class QuizForm(FlaskForm):
 # -------------------------
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    try:
+        return db.session.get(User, int(user_id))
+    except Exception:
+        return None
 
 # -------------------------
 # Decorators
@@ -419,6 +605,14 @@ def student_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def parent_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or current_user.role != 'parent':
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated_function
+
 # -------------------------
 # Authentication Routes
 # -------------------------
@@ -444,6 +638,7 @@ def live_data():
     })
 
 @app.route("/login", methods=["GET", "POST"])
+@limiter.limit("10 per minute")
 def login():
     if current_user.is_authenticated:
         return redirect(url_for("dashboard"))
@@ -468,45 +663,76 @@ def logout():
     return redirect(url_for("login"))
 
 @app.route("/student/login", methods=["GET", "POST"])
+@limiter.limit("20 per minute")
 def student_login():
-    """Student login using first name as username and student number or reference number as password"""
-    
+    """
+    Student login authenticated solely by student number or reference number.
+    This is robust against name-formatting variations introduced during bulk import.
+    """
+    if current_user.is_authenticated:
+        if hasattr(current_user, 'is_student') and current_user.is_student():
+            return redirect(url_for("student_dashboard"))
+        return redirect(url_for("dashboard"))
+
     form = StudentLoginForm()
     if form.validate_on_submit():
-        first_name = form.username.data.strip()
-        password_attempt = form.password.data.strip()
-        
-        # Find student by first name
-        student = Student.query.filter_by(first_name=first_name).first()
-        
-        if student:
-            # Check if password matches either student_number or reference_number
-            password_valid = (password_attempt == student.student_number or 
-                            password_attempt == student.reference_number)
-            
-            if password_valid:
-                # Check if there's a user account for this student
-                user = User.query.filter_by(username=student.student_number).first()
-                if not user:
-                    # Create a student user account if it doesn't exist
-                    pw_hash = bcrypt.generate_password_hash(password_attempt).decode("utf-8")
-                    user = User(
-                        username=student.student_number,
-                        password_hash=pw_hash,
-                        role="student"
-                    )
-                    db.session.add(user)
-                    db.session.commit()
-                
-                login_user(user)
-                log_activity(user, "student_login", f"Student {student.full_name()} ({student.student_number}) logged in")
-                flash("Student login successful", "success")
-                return redirect(url_for("student_dashboard"))
-            else:
-                flash("Invalid password (student number or reference number). Please try again.", "danger")
-        else:
-            flash("Student not found. Please check your first name.", "danger")
-    
+        identifier = (form.identifier.data or "").strip()
+
+        # Locate student by student number or reference number (case-insensitive, whitespace-tolerant)
+        student = Student.query.filter(
+            db.or_(
+                db.func.lower(db.func.trim(Student.student_number)) == identifier.lower(),
+                db.func.lower(db.func.trim(Student.reference_number)) == identifier.lower()
+            )
+        ).first()
+
+        if not student:
+            flash(
+                "No student record was found for that identifier. "
+                "Please enter your Student Number (e.g. 20240001) or "
+                "your Reference Number (e.g. STU123456) exactly as provided by your school.",
+                "danger"
+            )
+            return render_template("student_login.html", form=form)
+
+        student_number_clean = (student.student_number or "").strip()
+        if not student_number_clean:
+            flash("Your student record is incomplete. Please contact the administrator.", "danger")
+            return render_template("student_login.html", form=form)
+
+        try:
+            user = User.query.filter_by(username=student_number_clean).first()
+
+            if not user:
+                pw_hash = bcrypt.generate_password_hash(student_number_clean).decode("utf-8")
+                user = User(
+                    username=student_number_clean,
+                    password_hash=pw_hash,
+                    role="student"
+                )
+                db.session.add(user)
+                db.session.commit()
+            elif user.role != "student":
+                flash(
+                    "This identifier is registered to a non-student account. "
+                    "Please contact the administrator.",
+                    "danger"
+                )
+                return render_template("student_login.html", form=form)
+
+            login_user(user)
+            log_activity(
+                user, "student_login",
+                f"Student {student.full_name()} ({student.student_number}) logged in"
+            )
+            flash(f"Welcome, {student.first_name}.", "success")
+            return redirect(url_for("student_dashboard"))
+
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f"Student login error for identifier '{identifier}': {e}")
+            flash("A system error occurred. Please try again.", "danger")
+
     return render_template("student_login.html", form=form)
 
 @app.route("/student/logout")
@@ -554,7 +780,6 @@ def dashboard():
         return redirect(url_for("student_dashboard"))
     
     # Teacher/Admin dashboard
-    normalize_student_records()
     student_count = Student.query.count()
     assessment_count = Assessment.query.filter_by(archived=False).count()
     users_count = User.query.count()
@@ -599,36 +824,9 @@ def dashboard():
                                       if a.teacher_id == current_user.id and a.subject == current_user.subject and not a.archived])
                 
                 # Calculate GPA and grade
-                gpa = None
-                grade = None
-                if final_grade is not None:
-                    if final_grade >= 80:
-                        gpa = 4.0
-                        grade = 'A1'
-                    elif final_grade >= 70:
-                        gpa = 3.5
-                        grade = 'B2'
-                    elif final_grade >= 65:
-                        gpa = 3.0
-                        grade = 'B3'
-                    elif final_grade >= 60:
-                        gpa = 2.5
-                        grade = 'C4'
-                    elif final_grade >= 55:
-                        gpa = 2.0
-                        grade = 'C5'
-                    elif final_grade >= 50:
-                        gpa = 1.5
-                        grade = 'C6'
-                    elif final_grade >= 45:
-                        gpa = 1.0
-                        grade = 'D7'
-                    elif final_grade >= 40:
-                        gpa = 0.5
-                        grade = 'E8'
-                    else:
-                        gpa = 0.0
-                        grade = 'F9'
+                gpa_result = calculate_gpa_and_grade(final_grade)
+                gpa = gpa_result['gpa'] if final_grade is not None else None
+                grade = gpa_result['grade'] if final_grade is not None else None
                 
                 teacher_student_summaries.append({
                     'student': student,
@@ -673,10 +871,13 @@ def dashboard():
 def student_dashboard():
     """Student dashboard showing their assessments"""
     # Get student info using student number (which is the username)
-    student = Student.query.filter_by(student_number=current_user.username).first()
+    student = Student.query.filter(
+        db.func.trim(Student.student_number) == (current_user.username or "").strip()
+    ).first()
     if not student:
-        flash("Student record not found", "danger")
-        return redirect(url_for("student_logout"))
+        logout_user()
+        flash("Student record not found. Please contact the administrator.", "danger")
+        return redirect(url_for("student_login"))
     
     # Get filter parameters
     subject = request.args.get("subject", "")
@@ -747,36 +948,9 @@ def student_dashboard():
             final_percent = student.calculate_final_grade(subject=subject_name, teacher_id=teacher_id)
             
             # Calculate GPA and grade based on this final percentage
-            gpa = None
-            grade = None
-            if final_percent is not None:
-                if final_percent >= 80:
-                    gpa = 4.0
-                    grade = 'A1'
-                elif final_percent >= 70:
-                    gpa = 3.5
-                    grade = 'B2'
-                elif final_percent >= 65:
-                    gpa = 3.0
-                    grade = 'B3'
-                elif final_percent >= 60:
-                    gpa = 2.5
-                    grade = 'C4'
-                elif final_percent >= 55:
-                    gpa = 2.0
-                    grade = 'C5'
-                elif final_percent >= 50:
-                    gpa = 1.5
-                    grade = 'C6'
-                elif final_percent >= 45:
-                    gpa = 1.0
-                    grade = 'D7'
-                elif final_percent >= 40:
-                    gpa = 0.5
-                    grade = 'E8'
-                else:
-                    gpa = 0.0
-                    grade = 'F9'
+            gpa_grade_result = calculate_gpa_and_grade(final_percent)
+            gpa = gpa_grade_result['gpa']
+            grade = gpa_grade_result['grade']
             
             teacher_results[teacher_name][subject_name] = {
                 'final_percent': final_percent,
@@ -797,37 +971,9 @@ def student_dashboard():
         final_percent_filtered = student.calculate_final_grade(subject=subject, teacher_id=current_user.id if current_user.is_teacher() else None)
         average_score = final_percent_filtered if final_percent_filtered is not None else 0.0
         # GPA and grade based on this subject's final grade
-        if final_percent_filtered is not None:
-            if final_percent_filtered >= 80:
-                filtered_gpa = 4.0
-                filtered_grade = 'A1'
-            elif final_percent_filtered >= 70:
-                filtered_gpa = 3.5
-                filtered_grade = 'B2'
-            elif final_percent_filtered >= 65:
-                filtered_gpa = 3.0
-                filtered_grade = 'B3'
-            elif final_percent_filtered >= 60:
-                filtered_gpa = 2.5
-                filtered_grade = 'C4'
-            elif final_percent_filtered >= 55:
-                filtered_gpa = 2.0
-                filtered_grade = 'C5'
-            elif final_percent_filtered >= 50:
-                filtered_gpa = 1.5
-                filtered_grade = 'C6'
-            elif final_percent_filtered >= 45:
-                filtered_gpa = 1.0
-                filtered_grade = 'D7'
-            elif final_percent_filtered >= 40:
-                filtered_gpa = 0.5
-                filtered_grade = 'E8'
-            else:
-                filtered_gpa = 0.0
-                filtered_grade = 'F9'
-        else:
-            filtered_gpa = 0.0
-            filtered_grade = 'N/A'
+        filtered_result = calculate_gpa_and_grade(final_percent_filtered)
+        filtered_gpa = filtered_result['gpa']
+        filtered_grade = filtered_result['grade']
     else:
         # All subjects - calculate average score from all assessments
         if filtered_assessments:
@@ -836,33 +982,9 @@ def student_dashboard():
             average_score = (obtained_marks / total_marks * 100) if total_marks > 0 else 0.0
             
             # GPA and grade based on average score
-            if average_score >= 80:
-                filtered_gpa = 4.0
-                filtered_grade = 'A1'
-            elif average_score >= 70:
-                filtered_gpa = 3.5
-                filtered_grade = 'B2'
-            elif average_score >= 65:
-                filtered_gpa = 3.0
-                filtered_grade = 'B3'
-            elif average_score >= 60:
-                filtered_gpa = 2.5
-                filtered_grade = 'C4'
-            elif average_score >= 55:
-                filtered_gpa = 2.0
-                filtered_grade = 'C5'
-            elif average_score >= 50:
-                filtered_gpa = 1.5
-                filtered_grade = 'C6'
-            elif average_score >= 45:
-                filtered_gpa = 1.0
-                filtered_grade = 'D7'
-            elif average_score >= 40:
-                filtered_gpa = 0.5
-                filtered_grade = 'E8'
-            else:
-                filtered_gpa = 0.0
-                filtered_grade = 'F9'
+            filtered_result = calculate_gpa_and_grade(average_score)
+            filtered_gpa = filtered_result['gpa']
+            filtered_grade = filtered_result['grade']
         else:
             average_score = 0.0
             filtered_gpa = 0.0
@@ -908,50 +1030,59 @@ def student_dashboard():
         quiz_details=quiz_details
     )
 
+@app.route("/parent/dashboard")
+@login_required
+@parent_required
+def parent_dashboard():
+    parent = Parent.query.filter_by(user_id=current_user.id).first_or_404()
+    students_data = []
+    for student in parent.students:
+        final_grade = student.calculate_final_grade()
+        students_data.append({
+            'student': student,
+            'final_grade': final_grade,
+            'recent_assessments': Assessment.query.filter_by(
+                student_id=student.id, archived=False
+            ).order_by(Assessment.date_recorded.desc()).limit(5).all()
+        })
+    return render_template("parent_dashboard.html", students_data=students_data)
+
 @app.route("/dashboard")
 @login_required
 def dashboard_redirect():
-    """Alias for dashboard at root path"""
-    if hasattr(current_user, 'is_student') and current_user.is_student():
-        return redirect(url_for("student_dashboard"))
-    
-    # Teacher/Admin dashboard
-    student_count = Student.query.count()
-    assessment_count = Assessment.query.filter_by(archived=False).count()
-    users_count = User.query.count()
-    
-    # Get incomplete assessments data
-    incomplete_students = get_incomplete_assessments()
-    affected_students_count = len(incomplete_students)
-    
-    # For teachers, filter incomplete assessments to only their assigned study areas
-    if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
-        assigned_areas = current_user.get_assigned_study_areas(app.config)
-        if assigned_areas:
-            # Filter incomplete students to only those in assigned study areas
-            filtered_incomplete = []
-            for item in incomplete_students:
-                # Check if any student in this subject belongs to an assigned study area
-                students_in_subject = Student.query.filter_by(study_area=item['subject']).all()
-                for student in students_in_subject:
-                    if current_user.can_access_student(student, app.config):
-                        filtered_incomplete.append(item)
-                        break
-            incomplete_students = filtered_incomplete
-            affected_students_count = len(incomplete_students)
-    
-    # compute student groups for display (forms and learning areas)
-    students_by_class, students_by_area = get_student_groups(current_user, app.config)
+    """
+    Canonical alias — always delegates to the primary dashboard route
+    so template context is never duplicated or omitted.
+    """
+    return redirect(url_for("dashboard"))
 
+@app.route("/analytics")
+@login_required
+def analytics_dashboard():
+    if current_user.is_student():
+        abort(403)
+    
+    subject = request.args.get('subject')
+    class_name = request.args.get('class')
+    teacher_id = current_user.id if current_user.is_teacher() else None
+    
+    performance_summary = get_class_performance_summary(
+        class_name=class_name, 
+        subject=subject,
+        teacher_id=teacher_id
+    )
+    grade_distribution = get_grade_distribution(
+        subject=subject,
+        class_name=class_name,
+        teacher_id=teacher_id
+    )
+    
     return render_template(
-        "dashboard.html",
-        student_count=student_count,
-        assessment_count=assessment_count,
-        users_count=users_count,
-        incomplete_students=incomplete_students,
-        affected_students_count=affected_students_count,
-        students_by_class=students_by_class,
-        students_by_area=students_by_area,
+        "analytics.html",
+        performance_summary=performance_summary,
+        grade_distribution=grade_distribution,
+        selected_subject=subject,
+        selected_class=class_name
     )
 
 @app.route("/admin/login", methods=["GET", "POST"])
@@ -969,7 +1100,6 @@ def students():
     group_by = request.args.get("group_by", "none")
     sort_by = request.args.get("sort_by", "name")
     
-    normalize_student_records()
     query = Student.query
     
     # Filter students based on teacher permissions
@@ -1038,8 +1168,8 @@ def student_new():
         if exists:
             flash("Student number already exists", "warning")
         else:
-            # Generate reference number (STU + random 6 digits)
-            reference_number = f"STU{random.randint(100000, 999999)}"
+            # Generate unique reference number
+            reference_number = generate_unique_reference_number()
             
             student = Student(
                 student_number=form.student_number.data.strip(),
@@ -1131,6 +1261,16 @@ def student_view(student_id):
     # Get assessment summary and final grade - but only for current teacher's assessments
     summary = student.get_assessment_summary(subject, teacher_id=current_user.id if current_user.is_teacher() else None)
     final_percent = student.calculate_final_grade(subject=subject, teacher_id=current_user.id if current_user.is_teacher() else None)
+
+    # Convert category summary dict into a list so the template always iterates over objects
+    summary_list = [
+        {
+            'category': cat,
+            'count': data.get('count', 0),
+            'avg_percent': round(data.get('avg_percent', 0.0), 1),
+        }
+        for cat, data in summary.items()
+    ]
     
     # Get all subjects for this student - filtered by current teacher for teachers
     if current_user.is_teacher():
@@ -1139,30 +1279,9 @@ def student_view(student_id):
         all_subjects = sorted(set(a.subject for a in student.assessments))
     
     # Calculate letter grade and GPA
-    def get_letter_grade(percent):
-        if percent >= 80: return 'A1'
-        elif percent >= 70: return 'B2'
-        elif percent >= 65: return 'B3'
-        elif percent >= 60: return 'C4'
-        elif percent >= 55: return 'C5'
-        elif percent >= 50: return 'C6'
-        elif percent >= 45: return 'D7'
-        elif percent >= 40: return 'E8'
-        else: return 'F9'
-    
-    def get_gpa(percent):
-        if percent >= 80: return 4.0
-        elif percent >= 70: return 3.5
-        elif percent >= 65: return 3.0
-        elif percent >= 60: return 2.5
-        elif percent >= 55: return 2.0
-        elif percent >= 50: return 1.5
-        elif percent >= 45: return 1.0
-        elif percent >= 40: return 0.5
-        else: return 0.0
-    
-    letter_grade = get_letter_grade(final_percent) if final_percent is not None else None
-    gpa = get_gpa(final_percent) if final_percent is not None else None
+    gpa_result = calculate_gpa_and_grade(final_percent)
+    letter_grade = gpa_result['grade'] if final_percent is not None else None
+    gpa = gpa_result['gpa'] if final_percent is not None else None
     
     def get_comment(gpa):
         if gpa == 4.0: return "Excellent"
@@ -1206,12 +1325,12 @@ def student_view(student_id):
             for subject_name, assessments_list in subjects_data.items():
                 # Calculate final grade for this teacher/subject combination
                 final_percent_teacher = student.calculate_final_grade(subject=subject_name, teacher_id=teacher_id)
-                gpa_teacher = get_gpa(final_percent_teacher) if final_percent_teacher is not None else None
+                gpa_result_teacher = calculate_gpa_and_grade(final_percent_teacher)
                 
                 teacher_results[teacher_name][subject_name] = {
                     'final_percent': final_percent_teacher,
-                    'gpa': gpa_teacher,
-                    'grade': get_letter_grade(final_percent_teacher) if final_percent_teacher is not None else None,
+                    'gpa': gpa_result_teacher['gpa'],
+                    'grade': gpa_result_teacher['grade'],
                     'assessments': assessments_list
                 }
     
@@ -1221,6 +1340,7 @@ def student_view(student_id):
         assessments=assessments,
         teacher_results=teacher_results,
         summary=summary,
+        summary_list=summary_list,
         final_percent=final_percent,
         letter_grade=letter_grade,
         gpa=gpa,
@@ -1278,16 +1398,16 @@ def student_bulk_import():
                         error_count += 1
                         continue
                     
-                    # Generate reference number
-                    reference_number = f"STU{random.randint(100000, 999999)}"
+                    # Generate unique reference number
+                    reference_number = generate_unique_reference_number()
                     
                     student = Student(
-                        student_number=data['student_number'],
-                        first_name=data['first_name'],
-                        last_name=data['last_name'],
-                        middle_name=data.get('middle_name'),
-                        class_name=data.get('class_name'),
-                        study_area=data.get('study_area'),
+                        student_number=(data.get('student_number') or '').strip(),
+                        first_name=(data.get('first_name') or '').strip(),
+                        last_name=(data.get('last_name') or '').strip(),
+                        middle_name=(data.get('middle_name') or '').strip() or None,
+                        class_name=(data.get('class_name') or '').strip() or None,
+                        study_area=(data.get('study_area') or '').strip() or None,
                         reference_number=reference_number
                     )
                     db.session.add(student)
@@ -1337,13 +1457,11 @@ def user_bulk_import():
             errors = []
 
             for data in users_data:
-                username = data.get('username')
+                username = (data.get('username') or '').strip()
                 if not username:
                     errors.append("Missing username for a row")
                     error_count += 1
                     continue
-
-                username = username.strip()
                 if User.query.filter_by(username=username).first():
                     errors.append(f"Username {username} already exists")
                     error_count += 1
@@ -1537,41 +1655,16 @@ def assessments_list():
                     final_percent = (subj_data['total_score'] / subj_data['total_max']) * 100
                     
                     # Calculate GPA and grade
-                    if final_percent >= 80:
-                        gpa = 4.0
-                        grade = 'A1'
+                    gpa_result = calculate_gpa_and_grade(final_percent)
+                    gpa = gpa_result['gpa']
+                    grade = gpa_result['grade']
+                    
+                    # Determine grade color based on grade
+                    if grade in ['A1', 'B2']:
                         grade_color = 'success'
-                    elif final_percent >= 70:
-                        gpa = 3.5
-                        grade = 'B2'
-                        grade_color = 'success'
-                    elif final_percent >= 65:
-                        gpa = 3.0
-                        grade = 'B3'
+                    elif grade in ['B3', 'C4', 'C5', 'C6']:
                         grade_color = 'warning'
-                    elif final_percent >= 60:
-                        gpa = 2.5
-                        grade = 'C4'
-                        grade_color = 'warning'
-                    elif final_percent >= 55:
-                        gpa = 2.0
-                        grade = 'C5'
-                        grade_color = 'warning'
-                    elif final_percent >= 50:
-                        gpa = 1.5
-                        grade = 'C6'
-                        grade_color = 'warning'
-                    elif final_percent >= 45:
-                        gpa = 1.0
-                        grade = 'D7'
-                        grade_color = 'danger'
-                    elif final_percent >= 40:
-                        gpa = 0.5
-                        grade = 'E8'
-                        grade_color = 'danger'
                     else:
-                        gpa = 0.0
-                        grade = 'F9'
                         grade_color = 'danger'
                     
                     subj_data.update({
@@ -1587,7 +1680,17 @@ def assessments_list():
         student_performance_list.append(data)
     
     # Sort students by final_percent descending for top score
-    student_performance_list.sort(key=lambda x: x.get('final_percent', 0), reverse=True)
+    # Find the highest final_percent across all teacher/subject combinations for each student
+    def get_max_final_percent(student_data):
+        max_percent = 0
+        for teacher_data in student_data['teachers'].values():
+            for subj_data in teacher_data['subjects'].values():
+                final_percent = subj_data.get('final_percent', 0)
+                if final_percent > max_percent:
+                    max_percent = final_percent
+        return max_percent
+    
+    student_performance_list.sort(key=get_max_final_percent, reverse=True)
     
     pagination = query.order_by(Assessment.date_recorded.desc())\
         .paginate(page=page, per_page=per_page, error_out=False)
@@ -1795,7 +1898,6 @@ def assessment_edit(assessment_id):
 
 @app.route("/assessments/<int:assessment_id>/delete", methods=["POST"])
 @login_required
-@csrf.exempt
 def assessment_delete(assessment_id):
     assessment = Assessment.query.get_or_404(assessment_id)
     
@@ -1805,10 +1907,19 @@ def assessment_delete(assessment_id):
             (current_user.is_teacher() and assessment.teacher_id == current_user.id)):
         abort(403)
         
-    student_id = assessment.student_id
+    # Capture identity data before the object is expunged from the session.
+    student_id      = assessment.student_id
+    student_name    = assessment.student.full_name()
+    category_label  = assessment.category
+    subject_label   = assessment.subject
+    
     db.session.delete(assessment)
     db.session.commit()
-    log_activity(current_user, "delete_assessment", f"Deleted assessment for {assessment.student.full_name()} ({assessment.category} in {assessment.subject})")
+    
+    log_activity(
+        current_user, "delete_assessment",
+        f"Deleted assessment for {student_name} ({category_label} in {subject_label})"
+    )
     flash("Assessment deleted successfully", "info")
     return redirect(url_for("student_view", student_id=student_id))
 
@@ -1826,7 +1937,7 @@ def assessment_archive(assessment_id):
     assessment.archived = True
     db.session.commit()
     flash("Assessment archived successfully", "info")
-    return redirect(request.referrer or url_for("assessments"))
+    return redirect(request.referrer or url_for("assessments_list"))
 
 @app.route("/assessments/<int:assessment_id>/unarchive", methods=["POST"])
 @login_required
@@ -1842,7 +1953,7 @@ def assessment_unarchive(assessment_id):
     assessment.archived = False
     db.session.commit()
     flash("Assessment unarchived successfully", "info")
-    return redirect(request.referrer or url_for("assessments"))
+    return redirect(request.referrer or url_for("assessments_list"))
 
 @app.route("/assessments/archived")
 @login_required
@@ -1882,6 +1993,95 @@ def assessments_archived():
         form=form,
         archived=True
     )
+
+# -------------------------
+
+
+@app.route("/api/search")
+@login_required
+def global_search():
+    """Global search across students and assessments"""
+    query = request.args.get('q', '').strip()
+    if len(query) < 2:
+        return jsonify({'results': []})
+    
+    results = {'students': [], 'assessments': []}
+    
+    # Student search
+    student_query = Student.query.filter(
+        db.or_(
+            Student.student_number.ilike(f'%{query}%'),
+            Student.first_name.ilike(f'%{query}%'),
+            Student.last_name.ilike(f'%{query}%'),
+            Student.reference_number.ilike(f'%{query}%')
+        )
+    )
+    
+    # Restrict teachers to their study areas
+    if current_user.is_teacher():
+        assigned_areas = current_user.get_assigned_study_areas(app.config)
+        if assigned_areas:
+            student_query = student_query.filter(Student.study_area.in_(assigned_areas))
+    
+    students = student_query.limit(10).all()
+    results['students'] = [
+        {
+            'id': s.id,
+            'name': s.full_name(),
+            'student_number': s.student_number,
+            'class': s.get_class_display(),
+            'url': url_for('student_view', student_id=s.id)
+        }
+        for s in students
+    ]
+    
+    return jsonify(results)
+
+
+@app.route("/assessments/bulk-action", methods=["POST"])
+@login_required
+def assessment_bulk_action():
+    """Perform bulk actions on assessments: archive, delete"""
+    if not (current_user.is_teacher() or current_user.is_admin()):
+        abort(403)
+    
+    action = request.form.get('action')
+    assessment_ids = request.form.getlist('assessment_ids')
+    
+    if not assessment_ids:
+        flash("No assessments selected.", "warning")
+        return redirect(request.referrer or url_for('assessments_list'))
+    
+    valid_actions = ['archive', 'unarchive', 'delete']
+    if action not in valid_actions:
+        flash("Invalid action.", "danger")
+        return redirect(url_for('assessments_list'))
+    
+    # Build query — teachers can only operate on their own assessments
+    query = Assessment.query.filter(Assessment.id.in_(assessment_ids))
+    if current_user.is_teacher():
+        query = query.filter_by(teacher_id=current_user.id)
+    
+    assessments = query.all()
+    count = len(assessments)
+    
+    if action == 'archive':
+        for a in assessments:
+            a.archived = True
+    elif action == 'unarchive':
+        for a in assessments:
+            a.archived = False
+    elif action == 'delete':
+        if not current_user.is_admin():
+            abort(403)
+        for a in assessments:
+            db.session.delete(a)
+    
+    db.session.commit()
+    log_activity(current_user, f"bulk_{action}", f"{action}d {count} assessments")
+    flash(f"Successfully {action}d {count} assessments.", "success")
+    return redirect(request.referrer or url_for('assessments_list'))
+
 
 # -------------------------
 @app.route("/users")
@@ -1969,7 +2169,6 @@ def reset_password(user_id):
 @app.route("/users/<int:user_id>/delete", methods=["POST"])
 @login_required
 @admin_required
-@csrf.exempt
 def delete_user(user_id):
     if current_user.id == user_id:
         flash("You cannot delete your own account", "danger")
@@ -2071,6 +2270,7 @@ def class_management():
 @app.route("/admin/api/class-levels", methods=["POST"])
 @login_required
 @admin_required
+@csrf.exempt
 def manage_class_levels():
     """API endpoint for managing class levels (add/delete)"""
     data = request.get_json()
@@ -2083,13 +2283,18 @@ def manage_class_levels():
         if not level_key or not level_name:
             return jsonify({'success': False, 'message': 'Key and name are required'})
         
+        # Get current class levels from DB
+        class_levels = SystemConfig.get_config('CLASS_LEVELS', [])
+        
         # Check if key already exists
-        existing_keys = [level[0] for level in app.config['CLASS_LEVELS']]
+        existing_keys = [level[0] for level in class_levels]
         if level_key in existing_keys:
             return jsonify({'success': False, 'message': 'Class level key already exists'})
         
         # Add to config
-        app.config['CLASS_LEVELS'].append((level_key, level_name))
+        class_levels.append((level_key, level_name))
+        SystemConfig.set_config('CLASS_LEVELS', class_levels)
+        app.config['CLASS_LEVELS'] = class_levels  # Update runtime config
         
         log_activity(current_user, "add_class_level", f"Added class level: {level_name} ({level_key})")
         return jsonify({'success': True, 'message': f'Class level "{level_name}" added successfully'})
@@ -2100,11 +2305,18 @@ def manage_class_levels():
         if not level_key:
             return jsonify({'success': False, 'message': 'Class level key is required'})
         
-        # Find and remove the level
-        original_length = len(app.config['CLASS_LEVELS'])
-        app.config['CLASS_LEVELS'] = [level for level in app.config['CLASS_LEVELS'] if level[0] != level_key]
+        # Get current class levels from DB
+        class_levels = SystemConfig.get_config('CLASS_LEVELS', [])
         
-        if len(app.config['CLASS_LEVELS']) < original_length:
+        # Find and remove the level
+        original_length = len(class_levels)
+        class_levels = [level for level in class_levels if level[0] != level_key]
+        
+        if len(class_levels) < original_length:
+            # Save back to DB
+            SystemConfig.set_config('CLASS_LEVELS', class_levels)
+            app.config['CLASS_LEVELS'] = class_levels  # Update runtime config
+            
             level_name = data.get('name', level_key)
             log_activity(current_user, "delete_class_level", f"Deleted class level: {level_name} ({level_key})")
             return jsonify({'success': True, 'message': f'Class level "{level_name}" deleted successfully'})
@@ -2116,6 +2328,7 @@ def manage_class_levels():
 @app.route("/admin/api/study-areas", methods=["POST"])
 @login_required
 @admin_required
+@csrf.exempt
 def manage_study_areas():
     """API endpoint for managing study areas (add/edit/delete)"""
     data = request.get_json()
@@ -2128,18 +2341,24 @@ def manage_study_areas():
         if not area_key or not area_name:
             return jsonify({'success': False, 'message': 'Key and name are required'})
         
+        # Get current study areas from DB
+        study_areas = SystemConfig.get_config('STUDY_AREAS', [])
+        
         # Check if key already exists
-        existing_keys = [area[0] for area in app.config['STUDY_AREAS']]
+        existing_keys = [area[0] for area in study_areas]
         if area_key in existing_keys:
             return jsonify({'success': False, 'message': 'Study area key already exists'})
         
         # Add to config
-        app.config['STUDY_AREAS'].append((area_key, area_name))
+        study_areas.append((area_key, area_name))
+        SystemConfig.set_config('STUDY_AREAS', study_areas)
+        app.config['STUDY_AREAS'] = study_areas  # Update runtime config
         
         # Initialize empty subjects configuration
-        if 'STUDY_AREA_SUBJECTS' not in app.config:
-            app.config['STUDY_AREA_SUBJECTS'] = {}
-        app.config['STUDY_AREA_SUBJECTS'][area_key] = {'core': [], 'electives': []}
+        study_area_subjects = SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
+        study_area_subjects[area_key] = {'core': [], 'electives': []}
+        SystemConfig.set_config('STUDY_AREA_SUBJECTS', study_area_subjects)
+        app.config['STUDY_AREA_SUBJECTS'] = study_area_subjects  # Update runtime config
         
         log_activity(current_user, "add_study_area", f"Added study area: {area_name} ({area_key})")
         return jsonify({'success': True, 'message': f'Study area "{area_name}" added successfully'})
@@ -2152,15 +2371,23 @@ def manage_study_areas():
         if not original_key or not new_key or not new_name:
             return jsonify({'success': False, 'message': 'Original key, new key, and new name are required'})
         
+        # Get current study areas from DB
+        study_areas = SystemConfig.get_config('STUDY_AREAS', [])
+        study_area_subjects = SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
+        
         # Find and update the area
-        for i, (key, name) in enumerate(app.config['STUDY_AREAS']):
+        for i, (key, name) in enumerate(study_areas):
             if key == original_key:
-                app.config['STUDY_AREAS'][i] = (new_key, new_name)
+                study_areas[i] = (new_key, new_name)
                 
                 # Update subjects configuration if key changed
-                if new_key != original_key and 'STUDY_AREA_SUBJECTS' in app.config:
-                    if original_key in app.config['STUDY_AREA_SUBJECTS']:
-                        app.config['STUDY_AREA_SUBJECTS'][new_key] = app.config['STUDY_AREA_SUBJECTS'].pop(original_key)
+                if new_key != original_key and original_key in study_area_subjects:
+                    study_area_subjects[new_key] = study_area_subjects.pop(original_key)
+                
+                SystemConfig.set_config('STUDY_AREAS', study_areas)
+                SystemConfig.set_config('STUDY_AREA_SUBJECTS', study_area_subjects)
+                app.config['STUDY_AREAS'] = study_areas  # Update runtime config
+                app.config['STUDY_AREA_SUBJECTS'] = study_area_subjects  # Update runtime config
                 
                 log_activity(current_user, "edit_study_area", f"Edited study area: {original_key} -> {new_key} ({new_name})")
                 return jsonify({'success': True, 'message': f'Study area updated successfully'})
@@ -2173,14 +2400,23 @@ def manage_study_areas():
         if not area_key:
             return jsonify({'success': False, 'message': 'Study area key is required'})
         
-        # Find and remove the area
-        original_length = len(app.config['STUDY_AREAS'])
-        app.config['STUDY_AREAS'] = [area for area in app.config['STUDY_AREAS'] if area[0] != area_key]
+        # Get current configs from DB
+        study_areas = SystemConfig.get_config('STUDY_AREAS', [])
+        study_area_subjects = SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
         
-        if len(app.config['STUDY_AREAS']) < original_length:
+        # Find and remove the area
+        original_length = len(study_areas)
+        study_areas = [area for area in study_areas if area[0] != area_key]
+        
+        if len(study_areas) < original_length:
             # Remove from subjects configuration
-            if 'STUDY_AREA_SUBJECTS' in app.config and area_key in app.config['STUDY_AREA_SUBJECTS']:
-                del app.config['STUDY_AREA_SUBJECTS'][area_key]
+            if area_key in study_area_subjects:
+                del study_area_subjects[area_key]
+            
+            SystemConfig.set_config('STUDY_AREAS', study_areas)
+            SystemConfig.set_config('STUDY_AREA_SUBJECTS', study_area_subjects)
+            app.config['STUDY_AREAS'] = study_areas  # Update runtime config
+            app.config['STUDY_AREA_SUBJECTS'] = study_area_subjects  # Update runtime config
             
             area_name = data.get('name', area_key)
             log_activity(current_user, "delete_study_area", f"Deleted study area: {area_name} ({area_key})")
@@ -2193,16 +2429,17 @@ def manage_study_areas():
 @app.route("/admin/api/study-area-subjects/<area_key>", methods=["GET", "POST"])
 @login_required
 @admin_required
+@csrf.exempt
 def manage_study_area_subjects(area_key):
     """API endpoint for managing subjects within a study area"""
-    if 'STUDY_AREA_SUBJECTS' not in app.config:
-        app.config['STUDY_AREA_SUBJECTS'] = {}
+    study_area_subjects = SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
     
-    if area_key not in app.config['STUDY_AREA_SUBJECTS']:
-        app.config['STUDY_AREA_SUBJECTS'][area_key] = {'core': [], 'electives': []}
+    if area_key not in study_area_subjects:
+        study_area_subjects[area_key] = {'core': [], 'electives': []}
+        SystemConfig.set_config('STUDY_AREA_SUBJECTS', study_area_subjects)
     
     if request.method == 'GET':
-        return jsonify(app.config['STUDY_AREA_SUBJECTS'][area_key])
+        return jsonify(study_area_subjects[area_key])
     
     elif request.method == 'POST':
         data = request.get_json()
@@ -2212,7 +2449,7 @@ def manage_study_area_subjects(area_key):
         if not subject_key or not action:
             return jsonify({'success': False, 'message': 'Subject key and action are required'})
         
-        subjects_config = app.config['STUDY_AREA_SUBJECTS'][area_key]
+        subjects_config = study_area_subjects[area_key]
         
         if action == 'add_core':
             if subject_key not in subjects_config['core']:
@@ -2220,6 +2457,8 @@ def manage_study_area_subjects(area_key):
                 # Remove from electives if present
                 if subject_key in subjects_config['electives']:
                     subjects_config['electives'].remove(subject_key)
+                SystemConfig.set_config('STUDY_AREA_SUBJECTS', study_area_subjects)
+                app.config['STUDY_AREA_SUBJECTS'] = study_area_subjects  # Update runtime config
                 log_activity(current_user, "add_subject_to_study_area", f"Added {subject_key} as core subject to {area_key}")
                 return jsonify({'success': True, 'message': f'Subject added to core subjects'})
             else:
@@ -2231,6 +2470,8 @@ def manage_study_area_subjects(area_key):
                 # Remove from core if present
                 if subject_key in subjects_config['core']:
                     subjects_config['core'].remove(subject_key)
+                SystemConfig.set_config('STUDY_AREA_SUBJECTS', study_area_subjects)
+                app.config['STUDY_AREA_SUBJECTS'] = study_area_subjects  # Update runtime config
                 log_activity(current_user, "add_subject_to_study_area", f"Added {subject_key} as elective subject to {area_key}")
                 return jsonify({'success': True, 'message': f'Subject added to elective subjects'})
             else:
@@ -2246,6 +2487,8 @@ def manage_study_area_subjects(area_key):
                 removed = True
             
             if removed:
+                SystemConfig.set_config('STUDY_AREA_SUBJECTS', study_area_subjects)
+                app.config['STUDY_AREA_SUBJECTS'] = study_area_subjects  # Update runtime config
                 log_activity(current_user, "remove_subject_from_study_area", f"Removed {subject_key} from {area_key}")
                 return jsonify({'success': True, 'message': f'Subject removed from study area'})
             else:
@@ -2261,7 +2504,6 @@ def class_register():
     study_areas = app.config['STUDY_AREAS']
     study_area_subjects = app.config['STUDY_AREA_SUBJECTS']
     
-    normalize_student_records()
     # Get all students
     students = Student.query.all()
     
@@ -2291,20 +2533,14 @@ def class_register():
         student_form = None
         if student.class_name:
             canonical_form = canonical_class_key(student.class_name)
-            if canonical_form == 'form1':
-                student_form = 'Form 1'
-            elif canonical_form == 'form2':
-                student_form = 'Form 2'
-            elif canonical_form == 'form3':
-                student_form = 'Form 3'
-
-        # If form not determined from class_name, try to infer from study area
-        if not student_form and student.study_area:
-            # For now, put unassigned students in Form 1 as default
-            student_form = 'Form 1'
-        
-        # Default to Form 1 if still not determined
-        if not student_form:
+            # canonical_class_key returns the key exactly as stored in CLASS_LEVELS
+            # (e.g. 'Form 1', 'Form 2', 'Form 3') — compare against those exact strings
+            class_levels_keys = [level[0] for level in app.config['CLASS_LEVELS']]
+            if canonical_form and canonical_form in class_levels_keys:
+                student_form = canonical_form
+            else:
+                student_form = 'Form 1'  # safe default
+        else:
             student_form = 'Form 1'
         
         # Get study area
@@ -2540,7 +2776,6 @@ def edit_question(question_id):
 @app.route("/teacher/questions/<int:question_id>/delete", methods=["POST"])
 @login_required
 @teacher_required
-@csrf.exempt
 def delete_question(question_id):
     """Teacher can delete their pending questions"""
     question = Question.query.get_or_404(question_id)
@@ -2821,7 +3056,9 @@ def create_quiz():
 def student_quizzes():
     """Student can view available quizzes"""
     # Get student record
-    student = Student.query.filter_by(student_number=current_user.username).first()
+    student = Student.query.filter(
+        db.func.trim(Student.student_number) == (current_user.username or "").strip()
+    ).first()
     if not student:
         flash("Student record not found", "danger")
         return redirect(url_for("student_dashboard"))
@@ -2847,7 +3084,9 @@ def take_quiz(quiz_id):
         abort(404)
     
     # Get student record
-    student = Student.query.filter_by(student_number=current_user.username).first()
+    student = Student.query.filter(
+        db.func.trim(Student.student_number) == (current_user.username or "").strip()
+    ).first()
     if not student:
         flash("Student record not found", "danger")
         return redirect(url_for("student_dashboard"))
@@ -2868,7 +3107,8 @@ def take_quiz(quiz_id):
             score=0.0,
             total_questions=len(quiz.questions),
             correct_answers=0,
-            remaining_time=quiz.time_limit * 60 if quiz.time_limit else None
+            remaining_time=quiz.time_limit * 60 if quiz.time_limit else None,
+            started_at=datetime.utcnow()
         )
         db.session.add(attempt)
         db.session.commit()
@@ -2879,7 +3119,6 @@ def take_quiz(quiz_id):
     # Load saved answers if any
     saved_answers = {}
     if attempt.answers_json:
-        import json
         saved_answers = json.loads(attempt.answers_json)
     
     if request.method == 'POST':
@@ -2922,6 +3161,7 @@ def take_quiz(quiz_id):
                     question_attempt = QuestionAttempt(
                         student_id=student.id,
                         question_id=qid,
+                        quiz_attempt_id=attempt.id,
                         student_answer=answer,
                         is_correct=is_correct,
                         score=score
@@ -2932,7 +3172,10 @@ def take_quiz(quiz_id):
         attempt.score = total_score
         attempt.correct_answers = sum(1 for result in question_results.values() if result['score'] > 0)
         attempt.completed_at = datetime.utcnow()
-        attempt.time_taken = int((attempt.completed_at - attempt.started_at).total_seconds())
+        if attempt.started_at:
+            attempt.time_taken = int((attempt.completed_at - attempt.started_at).total_seconds())
+        else:
+            attempt.time_taken = 0
         attempt.status = "completed"
         attempt.answers_json = None  # Clear saved answers
         db.session.commit()
@@ -2963,7 +3206,9 @@ def take_quiz(quiz_id):
 @student_required
 def save_quiz_progress(quiz_id):
     """Auto-save quiz progress"""
-    student = Student.query.filter_by(student_number=current_user.username).first()
+    student = Student.query.filter(
+        db.func.trim(Student.student_number) == (current_user.username or "").strip()
+    ).first()
     if not student:
         return jsonify({"success": False, "message": "Student not found"}), 400
     
@@ -2999,7 +3244,6 @@ def quiz_results():
         return redirect(url_for("student_quizzes"))
     
     # Check if results are still valid (within 2 hours)
-    import time
     current_time = time.time()
     results_time = quiz_results.get('completed_at', 0)
     
@@ -3034,7 +3278,9 @@ def quiz_results():
 def quiz_attempt_review(attempt_id):
     """Review a specific quiz attempt with detailed question breakdown"""
     # Get student record
-    student = Student.query.filter_by(student_number=current_user.username).first()
+    student = Student.query.filter(
+        db.func.trim(Student.student_number) == (current_user.username or "").strip()
+    ).first()
     if not student:
         flash("Student record not found", "danger")
         return redirect(url_for("student_dashboard"))
@@ -3059,37 +3305,12 @@ def quiz_attempt_review(attempt_id):
             questions[q_id] = question
     
     # Get question attempts for this quiz attempt
-    # Match attempts by quiz questions and time proximity to completion
-    if attempt.completed_at:
-        # Get attempts within 10 minutes of completion for the quiz questions
-        from datetime import timedelta
-        time_window_start = attempt.completed_at.replace(second=0, microsecond=0)  # Round down to minute
-        time_window_end = time_window_start + timedelta(minutes=10)
-        
-        question_attempts = QuestionAttempt.query.filter(
-            QuestionAttempt.student_id == student.id,
-            QuestionAttempt.question_id.in_(quiz.questions),
-            QuestionAttempt.attempted_at >= time_window_start,
-            QuestionAttempt.attempted_at <= time_window_end
-        ).order_by(QuestionAttempt.attempted_at.desc()).all()
-        
-        # Group by question_id, taking the most recent attempt for each question
-        latest_attempts = {}
-        for qa in question_attempts:
-            if qa.question_id not in latest_attempts:
-                latest_attempts[qa.question_id] = qa
-    else:
-        # Fallback: get the most recent attempts for these questions
-        question_attempts = []
-        for q_id in quiz.questions:
-            latest_attempt = QuestionAttempt.query.filter_by(
-                student_id=student.id,
-                question_id=q_id
-            ).order_by(QuestionAttempt.attempted_at.desc()).first()
-            if latest_attempt:
-                question_attempts.append(latest_attempt)
-        
-        latest_attempts = {qa.question_id: qa for qa in question_attempts}
+    question_attempts = QuestionAttempt.query.filter_by(quiz_attempt_id=attempt_id).all()
+    
+    # Group by question_id (should be one per question, but just in case)
+    latest_attempts = {}
+    for qa in question_attempts:
+        latest_attempts[qa.question_id] = qa
     
     return render_template("quiz_attempt_review.html",
                          attempt=attempt,
@@ -3187,7 +3408,6 @@ def edit_quiz(quiz_id):
 
 @app.route("/teacher/quizzes/<int:quiz_id>/delete", methods=["POST"])
 @login_required
-@csrf.exempt
 def delete_quiz(quiz_id):
     """Delete a quiz"""
     if not (current_user.is_teacher() or current_user.is_admin()):
@@ -3433,8 +3653,15 @@ def teacher_assessments_api():
 @app.route("/export/csv")
 @login_required
 def export_csv():
-    assessments = Assessment.query.filter_by(archived=False)\
-        .order_by(Assessment.date_recorded.desc()).all()
+    # Only admin and teachers can export
+    if not (current_user.is_admin() or current_user.is_teacher()):
+        abort(403)
+    
+    query = Assessment.query.filter_by(archived=False)
+    if current_user.is_teacher():
+        query = query.filter_by(teacher_id=current_user.id)
+
+    assessments = query.order_by(Assessment.date_recorded.desc()).all()
     
     # Create CSV in memory
     si = io.StringIO()
@@ -3494,6 +3721,10 @@ def export_csv():
 @login_required
 def export_assessment_template(student_id):
     """Export student data to the assessment template Excel format"""
+    # Only admin and teachers can export
+    if not (current_user.is_admin() or current_user.is_teacher()):
+        abort(403)
+    
     student = Student.query.get_or_404(student_id)
     
     # Get all assessments for this student
@@ -3573,15 +3804,22 @@ def upload_template():
 @app.route("/export/student/<int:student_id>/csv")
 @login_required
 def export_student_csv(student_id):
+    if not (current_user.is_admin() or current_user.is_teacher()):
+        abort(403)
+
     student = Student.query.get_or_404(student_id)
-    
     subject = request.args.get('subject')
-    
-    # Filter assessments by subject if specified
-    assessments = student.assessments
+
+    assessments_query = Assessment.query.filter_by(student_id=student.id, archived=False)
+    if current_user.is_teacher():
+        assessments_query = assessments_query.filter_by(teacher_id=current_user.id)
+        if current_user.subject:
+            assessments_query = assessments_query.filter_by(subject=current_user.subject)
     if subject:
-        assessments = [a for a in assessments if a.subject == subject]
-    
+        assessments_query = assessments_query.filter_by(subject=subject)
+
+    assessments = assessments_query.all()
+
     # Create CSV in memory
     si = io.StringIO()
     writer = csv.writer(si)
@@ -3646,9 +3884,15 @@ def export_student_csv(student_id):
 @login_required
 def export_student_excel(student_id):
     """Export single student to Excel template"""
-    student = Student.query.get_or_404(student_id)
+    # Only admin and teachers can export
+    if not (current_user.is_admin() or current_user.is_teacher()):
+        abort(403)
     
+    student = Student.query.get_or_404(student_id)
     subject = request.args.get('subject')
+    # Validate subject is a known value from database
+    if subject and not Assessment.query.filter_by(subject=subject).first():
+        subject = None
     
     # Get or create template path
     template_path = os.path.join(app.config['TEMPLATE_FOLDER'], 'student_template.xlsx')
@@ -3713,6 +3957,9 @@ def export_student_excel(student_id):
 @login_required
 def export_all_students_excel():
     """Export all students to Excel template"""
+    if not (current_user.is_admin() or current_user.is_teacher()):
+        abort(403)
+
     subject = request.args.get('subject')
     class_name = request.args.get('class')
     
@@ -3786,74 +4033,94 @@ def export_all_students_excel():
 @login_required
 def export_assessments_excel():
     """Export filtered assessments to Excel"""
+    if not (current_user.is_admin() or current_user.is_teacher()):
+        abort(403)
+
     from openpyxl import Workbook
-    
-    subject = request.args.get('subject', '')
-    class_name = request.args.get('class', '')
-    category = request.args.get('category', '')
-    
-    # Build query based on filters
-    query = Assessment.query.filter_by(archived=False)
+
+    subject   = request.args.get('subject',  '').strip()
+    class_name = request.args.get('class',   '').strip()
+    category  = request.args.get('category', '').strip()
+
+    # --- FIX: initialise query before any conditional filtering ---
+    if current_user.is_teacher():
+        query = Assessment.query.filter_by(
+            teacher_id=current_user.id, archived=False
+        )
+    else:
+        query = Assessment.query.filter_by(archived=False)
+
+    # Validate filter values against the database to prevent injection via URL params
     if subject:
-        query = query.filter_by(subject=subject)
+        if not Assessment.query.filter_by(subject=subject).first():
+            subject = ''
+        else:
+            query = query.filter_by(subject=subject)
+
     if class_name:
-        query = query.filter_by(class_name=class_name)
+        if not Student.query.filter_by(class_name=class_name).first():
+            class_name = ''
+        else:
+            query = query.filter_by(class_name=class_name)
+
     if category:
-        query = query.filter_by(category=category)
-    
+        if not Assessment.query.filter_by(category=category).first():
+            category = ''
+        else:
+            query = query.filter_by(category=category)
+
     assessments = query.order_by(Assessment.date_recorded.desc()).all()
-    
-    # Create output file
-    filters = []
-    if subject: filters.append(subject)
-    if class_name: filters.append(class_name)
-    if category: filters.append(category)
+
+    filters = [f for f in [subject, class_name, category] if f]
     filter_str = "_".join(filters) if filters else "all"
-    output_filename = f"assessments_{filter_str}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    output_filename = (
+        f"assessments_{filter_str}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    )
     output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
-    
+
     try:
-        # Create workbook
         wb = Workbook()
         ws = wb.active
         ws.title = "Assessments"
-        
-        # Headers
+
         headers = [
-            "Student Number", "Student Name", "Subject", "Category", 
-            "Score", "Max Score", "Percentage", "Grade", "Class", 
+            "Student Number", "Student Name", "Subject", "Category",
+            "Score", "Max Score", "Percentage", "Grade", "Class",
             "Term", "Academic Year", "Session", "Assessor", "Date Recorded"
         ]
         for col, header in enumerate(headers, 1):
             ws.cell(row=1, column=col, value=header)
-        
-        # Data
+
         for row, assessment in enumerate(assessments, 2):
-            teacher_name = assessment.assigned_teacher.username if assessment.assigned_teacher else "N/A"
-            ws.cell(row=row, column=1, value=assessment.student.student_number)
-            ws.cell(row=row, column=2, value=assessment.student.full_name())
-            ws.cell(row=row, column=3, value=assessment.subject)
-            ws.cell(row=row, column=4, value=assessment.category)
-            ws.cell(row=row, column=5, value=assessment.score)
-            ws.cell(row=row, column=6, value=assessment.max_score)
-            ws.cell(row=row, column=7, value=round(assessment.get_percentage(), 2))
-            ws.cell(row=row, column=8, value=assessment.get_grade_letter())
-            ws.cell(row=row, column=9, value=assessment.class_name)
+            teacher_name = (
+                assessment.assigned_teacher.username
+                if assessment.assigned_teacher else "N/A"
+            )
+            ws.cell(row=row, column=1,  value=assessment.student.student_number)
+            ws.cell(row=row, column=2,  value=assessment.student.full_name())
+            ws.cell(row=row, column=3,  value=assessment.subject)
+            ws.cell(row=row, column=4,  value=assessment.category)
+            ws.cell(row=row, column=5,  value=assessment.score)
+            ws.cell(row=row, column=6,  value=assessment.max_score)
+            ws.cell(row=row, column=7,  value=round(assessment.get_percentage(), 2))
+            ws.cell(row=row, column=8,  value=assessment.get_grade_letter())
+            ws.cell(row=row, column=9,  value=assessment.class_name)
             ws.cell(row=row, column=10, value=assessment.term)
             ws.cell(row=row, column=11, value=assessment.academic_year)
             ws.cell(row=row, column=12, value=assessment.session)
             ws.cell(row=row, column=13, value=assessment.assessor)
-            ws.cell(row=row, column=14, value=assessment.date_recorded.strftime("%Y-%m-%d %H:%M:%S"))
-        
-        # Save
+            ws.cell(row=row, column=14,
+                    value=assessment.date_recorded.strftime("%Y-%m-%d %H:%M:%S"))
+
         wb.save(output_path)
-        
-        # Send file
         return send_file(
             output_path,
             as_attachment=True,
             download_name=output_filename,
-            mimetype="application/vnd/openxmlformats-officedocument.spreadsheetml.sheet"
+            mimetype=(
+                "application/vnd.openxmlformats-officedocument"
+                ".spreadsheetml.sheet"
+            )
         )
     except Exception as e:
         flash(f"Error exporting to Excel: {str(e)}", "danger")
@@ -4062,26 +4329,19 @@ def health_check():
 # -------------------------
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("EduAssess Module")
+    print("EduAssess Module - Development Server")
     print("="*60)
     print(f"Environment: {env}")
     print(f"Database: {app.config['SQLALCHEMY_DATABASE_URI']}")
     print(f"Access at: http://127.0.0.1:5000")
+    print("\nNote: For production, use Gunicorn with Celery for background tasks:")
+    print("  - Start Celery worker: celery -A celery_app.celery worker --loglevel=info")
+    print("  - Schedule periodic tasks as needed")
     print("="*60 + "\n")
     
-    # Start automatic backup scheduler
-    try:
-        from apscheduler.schedulers.background import BackgroundScheduler
-        from backup_scheduler import run_backup_job
-        
-        scheduler = BackgroundScheduler()
-        scheduler.add_job(run_backup_job, 'interval', hours=6, id='auto_backup', name='Automatic Backup Every 6 Hours')
-        scheduler.start()
-        print("[OK] Automatic backup scheduler started (backs up every 6 hours)")
-    except ImportError:
-        print("[INFO] APScheduler not installed. Automatic backup scheduler disabled.")
-    except Exception as e:
-        print(f"[INFO] Could not start backup scheduler: {e}")
+    # Initialize database tables
+    with app.app_context():
+        db.create_all()
     
     app.run(
         debug=app.config.get('DEBUG', True), 

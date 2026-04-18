@@ -37,6 +37,11 @@ def run_backup_job():
         print(f"[{datetime.now().isoformat()}] Backup job failed: {str(e)}")
         return False
 
+def run_backup_job_sync():
+    """Synchronous version of backup job for Celery."""
+    with app.app_context():
+        return run_backup_job()
+
 def run_health_check_job():
     """Execute a health check job."""
     try:

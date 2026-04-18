@@ -207,11 +207,11 @@
     </div>
     <div class="card-body">
         <div class="row">
-            {% for cat, data in summary.items() %}
+            {% for data in summary_list %}
             <div class="col-md-4 mb-3">
                 <div class="card">
                     <div class="card-body text-center">
-                        <h6>{{ CATEGORY_LABELS[cat] }}</h6>
+                        <h6>{{ CATEGORY_LABELS[data.category] }}</h6>
                         <h3 class="mb-0">{{ "%.1f"|format(data.avg_percent) }}%</h3>
                         <small class="text-muted">{{ data.count }} assessment(s)</small>
                         <div class="progress mt-2" style="height: 8px;">
