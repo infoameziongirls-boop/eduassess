@@ -8,10 +8,6 @@ import sys
 # Make sure Python can find your app files
 sys.path.insert(0, os.path.dirname(__file__))
 
-# Run startup tasks (DB init, create admin, create settings)
-from startup import main as run_startup
-run_startup()
-
 # Import the Flask app
 from app import app
 
@@ -19,4 +15,5 @@ from app import app
 application = app
 
 if __name__ == "__main__":
-    app.run()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
