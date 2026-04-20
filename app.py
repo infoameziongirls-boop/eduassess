@@ -89,22 +89,28 @@ def get_incomplete_assessments():
 # -------------------------
 app = Flask(__name__, static_folder='public')
 
-# Load configuration
-env = os.environ.get('FLASK_ENV', 'development')
-app.config.from_object(config[env])
-
-# Force SECRET_KEY directly from environment at runtime.
-# This MUST come after from_object() so it always overrides the class-level value.
-# Render injects env vars before the process starts, so this always works.
+# Set SECRET_KEY FIRST before anything else - must be before from_object()
 _secret_key = os.environ.get('SECRET_KEY', '').strip()
 if _secret_key:
     app.secret_key = _secret_key
     app.config['SECRET_KEY'] = _secret_key
 else:
+    if os.environ.get('FLASK_ENV') == 'production':
+        raise RuntimeError("SECRET_KEY environment variable is not set! Add it in Render dashboard.")
     _fallback = 'fallback-dev-secret-do-not-use-in-production-xyz123'
     app.secret_key = _fallback
     app.config['SECRET_KEY'] = _fallback
     print(f"[WARNING] SECRET_KEY env var not found! Using fallback. Set SECRET_KEY in Render dashboard.")
+
+# Load configuration (this may overwrite SECRET_KEY if config class has it)
+env = os.environ.get('FLASK_ENV', 'development')
+app.config.from_object(config[env])
+
+# Force SECRET_KEY again after from_object() to ensure it sticks
+if _secret_key:
+    app.secret_key = _secret_key
+    app.config['SECRET_KEY'] = _secret_key
+
 
 # Get persistent directory from environment (default to local 'instance' for development)
 persistent_dir = os.environ.get('PERSISTENT_DIR', os.path.join(os.path.dirname(__file__), 'instance'))
