@@ -211,8 +211,33 @@ def utility_processor():
             return None
     return dict(safe_url_for=safe_url_for)
 
+@app.route('/')
+def index():
+    if current_user.is_authenticated:
+        if getattr(current_user, 'is_admin', lambda: False)():
+            return redirect(url_for('admin_dashboard'))
+        return redirect(url_for('teacher_dashboard'))
+    return redirect(url_for('login'))
+
+@app.route('/health')
+def health():
+    return {'status': 'ok'}, 200
+
+
+def load_persistent_config():
+    with app.app_context():
+        try:
+            from models import SystemConfig
+            persistent_config = SystemConfig.get_all_configs()
+            if persistent_config:
+                app.config.update(persistent_config)
+                print("[OK] Persistent config loaded")
+        except Exception as e:
+            print(f"[WARNING] Could not load persistent config: {e}")
+
 # Initialize database
 init_db(app, bcrypt)
+load_persistent_config()
 
 # Initialize Flask-Migrate
 migrate = Migrate(app, db)
