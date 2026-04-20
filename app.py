@@ -121,6 +121,21 @@ app = Flask(__name__, static_folder='public')
 env = os.environ.get('FLASK_ENV', 'development')
 app.config.from_object(config[env])
 
+# Force SECRET_KEY from environment at runtime — must happen AFTER
+# from_object() so it always overrides the class-level value.
+# This is the most reliable way to set it on Render.
+_secret = os.environ.get('SECRET_KEY', '').strip()
+if _secret:
+    app.secret_key = _secret
+    app.config['SECRET_KEY'] = _secret
+else:
+    # Fallback for local development only
+    _fallback = 'dev-only-secret-change-in-production-abc123xyz'
+    app.secret_key = _fallback
+    app.config['SECRET_KEY'] = _fallback
+    if env == 'production':
+        print("[WARNING] SECRET_KEY not set in environment! Using fallback.")
+
 # Validate production settings if running in production
 if env == 'production':
     config[env].validate_production_settings()
