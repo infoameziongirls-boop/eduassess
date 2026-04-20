@@ -199,11 +199,11 @@
                     {{ form.hidden_tag() }}
                     
                     <div class="mb-4">
-                        {{ form.identifier.label(class="form-label") }}
-                        {{ form.identifier(class="form-control form-control-lg form-control-student", placeholder="Enter your Student Number or Reference Number", autofocus=True, autocomplete="username") }}
-                        {% if form.identifier.errors %}
+                        {{ form.student_number.label(class="form-label") }}
+                        {{ form.student_number(class="form-control form-control-lg form-control-student", placeholder="Enter your Student Number or Reference Number", autofocus=True, autocomplete="username") }}
+                        {% if form.student_number.errors %}
                             <div class="text-danger small mt-2">
-                                {% for error in form.identifier.errors %}{{ error }}{% endfor %}
+                                {% for error in form.student_number.errors %}{{ error }}{% endfor %}
                             </div>
                         {% endif %}
                     </div>

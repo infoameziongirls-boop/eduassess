@@ -8,6 +8,7 @@ from template_updater import AssessmentTemplateUpdater
 import io
 import csv
 import random
+import uuid
 import re
 import time
 import json
@@ -25,7 +26,7 @@ from flask_session import Session
 from flask_migrate import Migrate
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from wtforms import StringField, PasswordField, FloatField, SelectField, SelectMultipleField, DateField, TextAreaField, BooleanField
 from wtforms.validators import InputRequired, Length, Optional, NumberRange, ValidationError
 
@@ -62,42 +63,8 @@ def validate_excel_file(form, field):
 
 from config import config
 
-# Define category labels for easy access
-CATEGORY_LABELS = {
-    'ica1': 'Individual Assessment 1',
-    'ica2': 'Individual Assessment 2',
-    'icp1': 'Individual Class Project 1',
-    'icp2': 'Individual Class Project 2',
-    'gp1': 'Group Project/Research 1',
-    'gp2': 'Group Project/Research 2',
-    'practical': 'Practical Portfolio',
-    'mid_term': 'Mid-Semester Exam',
-    'end_term': 'End of Term Exam'
-}
-
-# Define category max scores
-CATEGORY_MAX_SCORES = {
-    'ica1': 50, 'ica2': 50,
-    'icp1': 50, 'icp2': 50,
-    'gp1': 50, 'gp2': 50,
-    'practical': 100, 'mid_term': 100, 'end_term': 100
-}
-
-# Assessment weights
-ASSESSMENT_WEIGHTS = {
-    'ica1':      0.05,
-    'ica2':      0.05,
-    'icp1':      0.05,
-    'icp2':      0.05,
-    'gp1':       0.05,
-    'gp2':       0.05,
-    'practical': 0.10,
-    'mid_term':  0.10,
-    'end_term':  0.50,
-}
-
-# Assessments per page
-ASSESSMENTS_PER_PAGE = 20
+# Import configuration constants from config.py
+from config import Config as _BaseConfig
 from models import User, Student, Assessment, Setting, ActivityLog, Question, QuestionAttempt, Quiz, QuizAttempt, SystemConfig, Parent, init_db
 from excel_utils import ExcelTemplateHandler, ExcelBulkImporter, StudentBulkImporter, TeacherBulkImporter, QuestionBulkImporter, create_default_template, create_student_import_template, create_teacher_import_template, create_question_import_template
 from analytics import get_class_performance_summary, get_grade_distribution
@@ -159,7 +126,8 @@ if env == 'production':
     config[env].validate_production_settings()
 
 # Get persistent directory from environment (default to local 'instance' for development)
-persistent_dir = os.environ.get('PERSISTENT_DIR', os.path.join(os.path.dirname(__file__), 'instance'))
+# Use os.path.abspath to ensure unambiguous path regardless of working directory
+persistent_dir = os.environ.get('PERSISTENT_DIR', os.path.abspath(os.path.join(os.path.dirname(__file__), 'instance')))
 
 # File upload configuration - use persistent disk in production
 app.config['UPLOAD_FOLDER'] = os.path.join(persistent_dir, 'uploads')
@@ -329,11 +297,11 @@ except Exception as e:
     print(f"Warning: Could not load persistent config (database may not exist yet): {e}")
     # Continue with default config from config.py
 
-# Add missing config keys to app.config
-app.config['CATEGORY_LABELS'] = CATEGORY_LABELS
-app.config['ASSESSMENTS_PER_PAGE'] = ASSESSMENTS_PER_PAGE
-app.config['CATEGORY_MAX_SCORES'] = CATEGORY_MAX_SCORES
-app.config['ASSESSMENT_WEIGHTS'] = ASSESSMENT_WEIGHTS
+# Add missing config keys to app.config from base Config
+app.config['CATEGORY_LABELS'] = _BaseConfig.CATEGORY_LABELS
+app.config['ASSESSMENTS_PER_PAGE'] = 20  # Default value
+app.config['CATEGORY_MAX_SCORES'] = _BaseConfig.CATEGORY_MAX_SCORES
+app.config['ASSESSMENT_WEIGHTS'] = _BaseConfig.ASSESSMENT_WEIGHTS
 app.register_blueprint(api_bp)
 
 # Initialize Flask-Migrate
@@ -426,6 +394,24 @@ def generate_unique_reference_number():
     
     # If we can't generate a unique number after max attempts, use timestamp
     return f"STU{int(time.time()) % 1000000:06d}"
+
+
+def _safe_upload_path(filename):
+    """
+    FIX: Prefix every uploaded filename with a UUID to prevent concurrent uploads
+    of identically-named files from overwriting each other.
+    """
+    safe_name = secure_filename(filename)
+    return os.path.join(app.config['UPLOAD_FOLDER'], f"{uuid.uuid4().hex}_{safe_name}")
+
+
+def _cleanup_file(filepath):
+    """Remove a file if it exists, suppressing all errors."""
+    try:
+        if filepath and os.path.exists(filepath):
+            os.remove(filepath)
+    except OSError as e:
+        app.logger.warning(f"Could not remove temporary file {filepath}: {e}")
 
 # -------------------------
 # Forms - FIXED: Remove duplicate definitions
@@ -711,7 +697,16 @@ def student_login():
                     role="student"
                 )
                 db.session.add(user)
-                db.session.commit()
+                try:
+                    db.session.commit()
+                except SQLAlchemyError as integrity_e:
+                    # Handle concurrent login race: another process created user between check and insert
+                    db.session.rollback()
+                    app.logger.info(f"Concurrent login for {student_number_clean}; re-fetching user")
+                    user = User.query.filter_by(username=student_number_clean).first()
+                    if not user or user.role != "student":
+                        flash("Student user creation conflict. Please try again.", "danger")
+                        return render_template("student_login.html", form=form)
             elif user.role != "student":
                 flash(
                     "This identifier is registered to a non-student account. "
@@ -1365,15 +1360,13 @@ def student_bulk_import():
         abort(403)
         
     form = StudentBulkImportForm()
-    
+    filepath = None
+
     if form.validate_on_submit():
-        file = form.excel_file.data
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        
-        # Save uploaded file
-        file.save(filepath)
-        
+        # FIX: UUID-prefixed filename prevents concurrent-upload collisions.
+        filepath = _safe_upload_path(form.excel_file.data.filename)
+        form.excel_file.data.save(filepath)
+
         try:
             # Import students
             importer = StudentBulkImporter(filepath)
@@ -1419,9 +1412,6 @@ def student_bulk_import():
             
             db.session.commit()
             
-            # Clean up uploaded file
-            os.remove(filepath)
-            
             flash(f"Bulk import completed. {success_count} students imported successfully. {error_count} errors.", "success")
             if errors:
                 flash("Errors: " + "; ".join(errors[:5]), "warning")  # Show first 5 errors
@@ -1429,8 +1419,11 @@ def student_bulk_import():
             return redirect(url_for("students"))
             
         except Exception as e:
+            db.session.rollback()
             flash(f"Error importing file: {str(e)}", "danger")
-            return redirect(url_for("student_bulk_import"))
+        finally:
+            # FIX: Always remove the temporary file regardless of success or failure.
+            _cleanup_file(filepath)
     
     return render_template("student_bulk_import.html", form=form)
 
@@ -1441,12 +1434,11 @@ def student_bulk_import():
 def user_bulk_import():
     """Bulk import teacher and admin users from Excel file"""
     form = UserBulkImportForm()
+    filepath = None
 
     if form.validate_on_submit():
-        file = form.excel_file.data
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
+        filepath = _safe_upload_path(form.excel_file.data.filename)
+        form.excel_file.data.save(filepath)
 
         try:
             importer = TeacherBulkImporter(filepath)
@@ -1498,7 +1490,6 @@ def user_bulk_import():
                 success_count += 1
 
             db.session.commit()
-            os.remove(filepath)
 
             flash(f"Bulk user import completed. {success_count} users imported successfully. {error_count} errors.", "success")
             if errors:
@@ -1507,10 +1498,9 @@ def user_bulk_import():
 
         except Exception as e:
             db.session.rollback()
-            if os.path.exists(filepath):
-                os.remove(filepath)
             flash(f"Error importing file: {str(e)}", "danger")
-            return redirect(url_for("user_bulk_import"))
+        finally:
+            _cleanup_file(filepath)
 
     return render_template("user_bulk_import.html", form=form)
 
@@ -1521,16 +1511,15 @@ def user_bulk_import():
 def bulk_import_questions():
     """Bulk import questions from Excel file"""
     form = QuestionBulkImportForm()
+    filepath = None
     
     if form.validate_on_submit():
-        file = form.excel_file.data
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        
-        # Save uploaded file
-        file.save(filepath)
-        time.sleep(0.1)  # Allow file handle to be released
-        
+        filepath = _safe_upload_path(form.excel_file.data.filename)
+        form.excel_file.data.save(filepath)
+
+        # FIX: Removed time.sleep(0.1) — this was a Windows-only workaround for
+        # file-handle release delays and is unnecessary (and wasteful) on Linux/PythonAnywhere.
+
         try:
             # Import questions
             importer = QuestionBulkImporter(filepath)
@@ -1563,9 +1552,6 @@ def bulk_import_questions():
             
             db.session.commit()
             
-            # Clean up uploaded file
-            os.remove(filepath)
-            
             flash(f"Bulk import completed. {success_count} questions imported successfully. {error_count} errors.", "success")
             if errors:
                 flash("Errors: " + "; ".join(errors[:5]), "warning")  # Show first 5 errors
@@ -1573,11 +1559,10 @@ def bulk_import_questions():
             return redirect(url_for("teacher_question_bank"))
             
         except Exception as e:
-            if "[WinError 32]" in str(e):
-                flash("uploaded successful", "success")
-            else:
-                flash(f"Error importing file: {str(e)}", "danger")
-            return redirect(url_for("bulk_import_questions"))
+            db.session.rollback()
+            flash(f"Error importing file: {str(e)}", "danger")
+        finally:
+            _cleanup_file(filepath)
     
     return render_template("question_bulk_import.html", form=form)
 
@@ -2263,14 +2248,17 @@ def class_management():
                          teacher_assignments=teacher_assignments,
                          unassigned_areas=unassigned_areas)
 
-# -------------------------------
+# -------------------------
 # Class & Subject Management API Routes
-# -------------------------------
+# FIX: @csrf.exempt removed from all admin API routes.
+# The frontend must include the CSRF token in the X-CSRFToken request header.
+# Example JS: headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() }
+# where getCsrfToken() reads from <meta name="csrf-token"> or document.cookie.
+# -------------------------
 
 @app.route("/admin/api/class-levels", methods=["POST"])
 @login_required
 @admin_required
-@csrf.exempt
 def manage_class_levels():
     """API endpoint for managing class levels (add/delete)"""
     data = request.get_json()
@@ -2328,7 +2316,6 @@ def manage_class_levels():
 @app.route("/admin/api/study-areas", methods=["POST"])
 @login_required
 @admin_required
-@csrf.exempt
 def manage_study_areas():
     """API endpoint for managing study areas (add/edit/delete)"""
     data = request.get_json()
@@ -2429,7 +2416,6 @@ def manage_study_areas():
 @app.route("/admin/api/study-area-subjects/<area_key>", methods=["GET", "POST"])
 @login_required
 @admin_required
-@csrf.exempt
 def manage_study_area_subjects(area_key):
     """API endpoint for managing subjects within a study area"""
     study_area_subjects = SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
@@ -3170,6 +3156,7 @@ def take_quiz(quiz_id):
         
         # Update quiz attempt
         attempt.score = total_score
+        attempt.total_marks = total_marks
         attempt.correct_answers = sum(1 for result in question_results.values() if result['score'] > 0)
         attempt.completed_at = datetime.utcnow()
         if attempt.started_at:
@@ -4131,14 +4118,11 @@ def export_assessments_excel():
 def import_excel():
     """Bulk import assessments from Excel file"""
     form = BulkImportForm()
+    filepath = None
     
     if form.validate_on_submit():
-        file = form.excel_file.data
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        
-        # Save uploaded file
-        file.save(filepath)
+        filepath = _safe_upload_path(form.excel_file.data.filename)
+        form.excel_file.data.save(filepath)
         
         try:
             # Import assessments
@@ -4201,9 +4185,6 @@ def import_excel():
             # Commit all changes
             db.session.commit()
             
-            # Clean up uploaded file
-            os.remove(filepath)
-            
             # Show results
             flash(f"Successfully imported {success_count} assessments", "success")
             if error_count > 0:
@@ -4213,9 +4194,9 @@ def import_excel():
             
         except Exception as e:
             db.session.rollback()
-            if os.path.exists(filepath):
-                os.remove(filepath)
             flash(f"Error importing file: {str(e)}", "danger")
+        finally:
+            _cleanup_file(filepath)
     
     return render_template("import_excel.html", form=form)
 
@@ -4302,7 +4283,7 @@ def internal_error(e):
 def inject_config():
     """Make config values available in templates"""
     return {
-        'CATEGORY_LABELS': CATEGORY_LABELS,
+        'CATEGORY_LABELS': app.config['CATEGORY_LABELS'],
         'ASSESSMENT_WEIGHTS': app.config['ASSESSMENT_WEIGHTS'],
         'LEARNING_AREAS': app.config['LEARNING_AREAS'],
         'CLASS_LEVELS': app.config['CLASS_LEVELS']

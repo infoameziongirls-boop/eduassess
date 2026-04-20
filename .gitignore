@@ -1,25 +1,96 @@
-# --- Python ---
+# Environment variables - NEVER commit secrets!
+.env
+.env.local
+.env.*.local
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+assessment.db
+assessment_test.db
+
+# Backup files
+backups/
+*.backup
+*.bak
+*_backup_*
+
+# Python artifacts
 __pycache__/
 *.py[cod]
 *$py.class
-.env
-venv/
-env/
-.pytest_cache/
-instance/
-
-# --- Web / Node.js ---
-node_modules/
-.DS_Store
-dist/
+*.so
+.Python
 build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# --- Archives & Large Files ---
-*.rar
-*.zip
-*.7z
-*.exe
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
 
-# --- Windows System ---
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Flask
+instance/
+.webassets-cache
+
+# Flask sessions
+flask_sessions/
+
+# Celery
+celerybeat-schedule
+celery_results/
+
+# Testing
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Uploads
+uploads/*
+!uploads/.gitkeep
+
+# Temp files
+tmp/
+temp/
+*.tmp
+
+# OS
+.DS_Store
 Thumbs.db
-desktop.ini
+
+# Render/Heroku
+.buildpacks
+Procfile.local

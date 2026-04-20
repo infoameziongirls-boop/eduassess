@@ -440,6 +440,13 @@ class Assessment(db.Model):
     date_recorded = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     archived = db.Column(db.Boolean, default=False, index=True)
     
+    # Composite indexes for common query patterns
+    __table_args__ = (
+        db.Index('ix_assessment_teacher_archived', 'teacher_id', 'archived'),
+        db.Index('ix_assessment_student_subject', 'student_id', 'subject'),
+        db.Index('ix_assessment_subject_archived', 'subject', 'archived'),
+    )
+    
     def get_percentage(self):
         """Return score as a percentage of max_score (0-100)."""
         if self.max_score and self.max_score > 0:
@@ -447,42 +454,48 @@ class Assessment(db.Model):
         return 0.0
     
     def get_grade_letter(self):
+        """Return letter grade using Ghana Education Service (GES) A1–F9 scale.
+        Aligned with calculate_gpa_and_grade() in app.py for consistency."""
         percentage = self.get_percentage()
-        if percentage >= 90:
-            return "A+"
-        elif percentage >= 80:
-            return "A"
-        elif percentage >= 75:
-            return "B+"
+        if percentage >= 80:
+            return "A1"
         elif percentage >= 70:
-            return "B"
+            return "B2"
         elif percentage >= 65:
-            return "C+"
+            return "B3"
         elif percentage >= 60:
-            return "C"
+            return "C4"
         elif percentage >= 55:
-            return "D+"
+            return "C5"
         elif percentage >= 50:
-            return "D"
+            return "C6"
+        elif percentage >= 45:
+            return "D7"
+        elif percentage >= 40:
+            return "E8"
         else:
-            return "F"
+            return "F9"
     
     def get_grade_point(self):
+        """Return GPA using Ghana Education Service scale (4.0 to 0.0).
+        Aligned with calculate_gpa_and_grade() in app.py for consistency."""
         percentage = self.get_percentage()
         if percentage >= 80:
             return 4.0
-        elif percentage >= 75:
-            return 3.5
         elif percentage >= 70:
-            return 3.0
+            return 3.5
         elif percentage >= 65:
-            return 2.5
+            return 3.0
         elif percentage >= 60:
-            return 2.0
+            return 2.5
         elif percentage >= 55:
-            return 1.5
+            return 2.0
         elif percentage >= 50:
+            return 1.5
+        elif percentage >= 45:
             return 1.0
+        elif percentage >= 40:
+            return 0.5
         else:
             return 0.0
     
@@ -639,6 +652,7 @@ class QuizAttempt(db.Model):
     student_id = db.Column(db.Integer, db.ForeignKey("students.id"), nullable=False)
     quiz_id = db.Column(db.Integer, db.ForeignKey("quizzes.id"), nullable=False)
     score = db.Column(db.Float, nullable=False)
+    total_marks = db.Column(db.Float, nullable=True)  # Total possible marks for this quiz
     total_questions = db.Column(db.Integer, nullable=False)
     correct_answers = db.Column(db.Integer, nullable=False)
     started_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -652,7 +666,13 @@ class QuizAttempt(db.Model):
     quiz = db.relationship("Quiz", backref="attempts")
     
     def get_percentage(self):
-        if self.total_questions > 0:
+        """Return score as a percentage of total marks.
+        Uses marks-based calculation when total_marks is available;
+        falls back to question-count method for legacy rows."""
+        if self.total_marks and self.total_marks > 0:
+            return (self.score / self.total_marks) * 100
+        elif self.total_questions > 0:
+            # Fallback for legacy attempts without total_marks
             return (self.correct_answers / self.total_questions) * 100
         return 0
     

@@ -1,48 +1,47 @@
 services:
+  # -----------------------------------------------
+  # Main Flask Web Application
+  # -----------------------------------------------
   - type: web
-    name: eduassess
-    env: python
-    region: oregon
-    plan: standard
-    buildCommand: bash build.sh
-    startCommand: gunicorn wsgi:app
+    name: eduassess-app
+    runtime: python
+    plan: free
+
+    # Build command - installs all dependencies
+    buildCommand: pip install -r requirements.txt
+
+    # Start command - uses gunicorn for production
+    startCommand: gunicorn wsgi:app --workers 2 --timeout 120 --bind 0.0.0.0:$PORT
+
+    # Health check endpoint (already in your app.py)
+    healthCheckPath: /health
+
+    # Auto-deploy when you push to GitHub
+    autoDeploy: true
+
+    # Environment variables
+    # NOTE: SECRET_KEY and DATABASE_URL must be set manually
+    # in the Render dashboard (never put real secrets in this file)
     envVars:
       - key: FLASK_ENV
         value: production
-      - key: DEFAULT_ADMIN_USERNAME
-        value: admin
-      - key: DEFAULT_ADMIN_PASSWORD
-        value: Admin@123
-      - key: PY_STDLIB_COLLECTIONS_ABC_COMPATIBLE
-        value: "1"
+
+      - key: SECRET_KEY
+        generateValue: true        # Render auto-generates a secure key
+
       - key: DATABASE_URL
-        fromDatabase:
-          name: eduassess-db
-          property: connectionString
+        # Paste your Neon connection string here OR set it in Render dashboard
+        # Format: postgresql://user:password@host/dbname?sslmode=require
+        sync: false                # Tells Render: "ask me for this value"
+
+      - key: DEFAULT_ADMIN_USERNAME
+        value: admin               # Change this after first login!
+
+      - key: DEFAULT_ADMIN_PASSWORD
+        sync: false                # Set a strong password in Render dashboard
+
       - key: PERSISTENT_DIR
-        value: /app/instance
-    autoDeploy: true
-    disk:
-      name: data
-      mountPath: /app/instance
-      sizeGB: 1
+        value: /opt/render/project/src/instance
 
-  - type: pserv
-    name: eduassess-db
-    ipAddress:
-      region: oregon
-    plan: standard
-    postgresVersion: 14
-
-  - type: background
-    name: eduassess-backup-scheduler
-    env: python
-    plan: standard
-    buildCommand: pip install -r requirements.txt
-    startCommand: python backup_scheduler.py
-    envVars:
-      - key: BACKUP_INTERVAL_HOURS
-        value: "6"
-      - key: HEALTH_CHECK_INTERVAL_HOURS
-        value: "12"
-    autoDeploy: true
+      - key: PYTHON_VERSION
+        value: 3.11.0

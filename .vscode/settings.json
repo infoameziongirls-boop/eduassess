@@ -12,5 +12,8 @@
         "templates"
     ],
     "window.autoDetectColorScheme": false,
-    "chat.agent.maxRequests": 100
+    "chat.agent.maxRequests": 100,
+    "code-runner.executorMap": {
+        "python": "cd $dir && python app.py"
+    }
 }
