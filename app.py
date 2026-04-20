@@ -142,6 +142,30 @@ csrf = CSRFProtect(app)
 def inject_csrf_token():
     return dict(csrf_token=generate_csrf)
 
+class LoginForm(FlaskForm):
+    username = StringField('Username', validators=[InputRequired(), Length(min=3, max=80)])
+    password = PasswordField('Password', validators=[InputRequired(), Length(min=6, max=128)])
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    form = LoginForm()
+    if form.validate_on_submit():
+        username = form.username.data.strip()
+        password = form.password.data
+        user = User.query.filter_by(username=username).first()
+        if user and user.check_password(password, bcrypt):
+            login_user(user)
+            next_page = request.args.get('next')
+            if next_page:
+                return redirect(next_page)
+            if user.is_admin():
+                return redirect(url_for('admin_dashboard'))
+            if user.is_teacher():
+                return redirect(url_for('teacher_dashboard'))
+            return redirect(url_for('index'))
+        flash('Invalid username or password.', 'danger')
+    return render_template('login.html', form=form)
+
 def normalize_label(value):
     if value is None:
         return None
