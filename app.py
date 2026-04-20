@@ -127,6 +127,13 @@ bcrypt = Bcrypt(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
+@login_manager.user_loader
+def load_user(user_id):
+    try:
+        return User.query.get(int(user_id))
+    except Exception:
+        return None
+
 # CSRF protection for all forms and POST endpoints
 csrf = CSRFProtect(app)
 
