@@ -304,6 +304,37 @@ class ProductionConfig(Config):
     DEBUG = False
     # DATABASE_URL is set as environment variable in Render dashboard
 
+    @classmethod
+    def validate_production_settings(cls):
+        """Validate required production environment variables at startup."""
+        errors = []
+
+        if not os.environ.get('DATABASE_URL'):
+            errors.append(
+                "DATABASE_URL is not set. Add your Neon PostgreSQL connection string in Render → Environment Variables."
+            )
+
+        if not os.environ.get('SECRET_KEY'):
+            errors.append(
+                "SECRET_KEY is not set. Add a strong secret key in Render → Environment Variables."
+            )
+
+        if errors:
+            print("\n" + "=" * 60)
+            print("PRODUCTION CONFIGURATION ERRORS")
+            print("=" * 60)
+            for error in errors:
+                print(f"  [MISSING] {error}")
+            print("=" * 60 + "\n")
+
+            if not os.environ.get('DATABASE_URL'):
+                raise RuntimeError(
+                    "DATABASE_URL must be set for production. "
+                    "Please add it in your Render dashboard under Environment Variables."
+                )
+        else:
+            print("[OK] Production configuration validated successfully.")
+
 
 config = {
     'development': DevelopmentConfig,
