@@ -173,6 +173,23 @@ limiter = Limiter(
     storage_uri=os.environ.get('REDIS_URL', 'memory://')
 )
 
+# Configure session
+# Use cookie-based sessions on Render (filesystem is ephemeral on free tier)
+# Use filesystem only for local development
+if os.environ.get('FLASK_ENV') == 'production':
+    # Production: use secure signed cookies (no filesystem needed)
+    app.config['SESSION_TYPE'] = 'null'       # disables Flask-Session, uses Flask built-in cookies
+    app.config['SESSION_PERMANENT'] = False
+    app.config['SESSION_USE_SIGNER'] = True   # signs cookies with SECRET_KEY
+    app.config['SESSION_COOKIE_SECURE'] = True      # HTTPS only
+    app.config['SESSION_COOKIE_HTTPONLY'] = True    # no JS access to cookie
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
+else:
+    # Development: use filesystem sessions as before
+    app.config['SESSION_TYPE'] = 'filesystem'
+    app.config['SESSION_PERMANENT'] = False
+    app.config['SESSION_USE_SIGNER'] = False
+
 # Configure session storage for multi-worker support
 Session(app)
 
