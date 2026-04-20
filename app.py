@@ -89,7 +89,11 @@ def get_incomplete_assessments():
 # -------------------------
 app = Flask(__name__, static_folder='public')
 
-# Set SECRET_KEY FIRST before anything else - must be before from_object()
+# Load configuration first
+env = os.environ.get('FLASK_ENV', 'development')
+app.config.from_object(config[env])
+
+# Set SECRET_KEY after config loading to ensure it takes precedence
 _secret_key = os.environ.get('SECRET_KEY', '').strip()
 if _secret_key:
     app.secret_key = _secret_key
@@ -101,15 +105,6 @@ else:
     app.secret_key = _fallback
     app.config['SECRET_KEY'] = _fallback
     print(f"[WARNING] SECRET_KEY env var not found! Using fallback. Set SECRET_KEY in Render dashboard.")
-
-# Load configuration (this may overwrite SECRET_KEY if config class has it)
-env = os.environ.get('FLASK_ENV', 'development')
-app.config.from_object(config[env])
-
-# Force SECRET_KEY again after from_object() to ensure it sticks
-if _secret_key:
-    app.secret_key = _secret_key
-    app.config['SECRET_KEY'] = _secret_key
 
 
 # Get persistent directory from environment (default to local 'instance' for development)

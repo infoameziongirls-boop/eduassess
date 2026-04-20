@@ -2,7 +2,7 @@
 
 class Config:
     """Base configuration"""
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
+    # SECRET_KEY is handled in app.py to avoid conflicts
 
     # -------------------------------------------------------
     # DATABASE CONFIGURATION
