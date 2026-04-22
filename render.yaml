@@ -1,47 +1,21 @@
 services:
-  # -----------------------------------------------
-  # Main Flask Web Application
-  # -----------------------------------------------
   - type: web
-    name: eduassess-app
-    runtime: python
-    plan: free
-
-    # Build command - installs all dependencies and initializes the database
-    buildCommand: pip install -r requirements.txt && python startup.py
-
-    # Start command - uses gunicorn for production
-    startCommand: gunicorn wsgi:app --workers 2 --timeout 120 --bind 0.0.0.0:$PORT
-
-    # Health check endpoint (already in your app.py)
-    healthCheckPath: /health
-
-    # Auto-deploy when you push to GitHub
-    autoDeploy: true
-
-    # Environment variables
-    # NOTE: SECRET_KEY and DATABASE_URL must be set manually
-    # in the Render dashboard (never put real secrets in this file)
+    name: eduassess
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 2 --bind 0.0.0.0:$PORT --timeout 120
     envVars:
       - key: FLASK_ENV
         value: production
-
       - key: SECRET_KEY
-        generateValue: true        # Render auto-generates a secure key
-
+        generateValue: true
       - key: DATABASE_URL
-        # Paste your Neon connection string here OR set it in Render dashboard
-        # Format: postgresql://user:password@host/dbname?sslmode=require
-        sync: false                # Tells Render: "ask me for this value"
-
-      - key: DEFAULT_ADMIN_USERNAME
-        value: admin               # Change this after first login!
-
-      - key: DEFAULT_ADMIN_PASSWORD
-        sync: false                # Set a strong password in Render dashboard
-
+        fromDatabase:
+          name: eduassess-db
+          property: connectionString
       - key: PERSISTENT_DIR
-        value: /opt/render/project/src/instance
+        value: /var/data
 
-      - key: PYTHON_VERSION
-        value: 3.11.0
+databases:
+  - name: eduassess-db
+    plan: free
