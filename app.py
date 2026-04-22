@@ -120,6 +120,23 @@ for d in [app.config['UPLOAD_FOLDER'],
           app.config['SESSION_FILE_DIR']]:
     os.makedirs(d, exist_ok=True)
 
+# ---------------------------------------------------------------------------
+# Extensions
+# ---------------------------------------------------------------------------
+bcrypt        = Bcrypt(app)
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'
+csrf          = CSRFProtect(app)
+
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=['200 per day', '50 per hour'],
+    storage_uri=os.environ.get('REDIS_URL', 'memory://'),
+)
+
+@app.errorhandler(CSRFError)
+
 
 @app.errorhandler(CSRFError)
 def handle_csrf_error(e):
