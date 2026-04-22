@@ -135,6 +135,12 @@ limiter = Limiter(
     storage_uri=os.environ.get('REDIS_URL', 'memory://'),
 )
 
+# Initialise DB
+init_db(app, bcrypt)
+with app.app_context():
+    db.create_all()
+
+# Session must come AFTER db is initialised
 app.config['SESSION_SQLALCHEMY'] = db
 Session(app)
 
