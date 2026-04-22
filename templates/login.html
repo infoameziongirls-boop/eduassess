@@ -116,10 +116,25 @@
         text-transform: uppercase;
         letter-spacing: 0.5px;
     }
+
+    @media (max-width: 576px) {
+        .login-container-admin {
+            padding: 15px;
+        }
+        .login-header-admin {
+            padding: 30px 20px;
+        }
+        .login-body-admin {
+            padding: 30px 20px;
+        }
+        .login-card-admin {
+            min-width: 100%;
+        }
+    }
 </style>
 
 <div class="login-container-admin">
-    <div class="col-lg-5 col-md-7 col-sm-10">
+    <div class="login-card-admin" style="width: 100%; max-width: 500px;">
         <div class="card login-card-admin">
             <div class="login-header-admin">
                 <div class="login-icon-admin">
@@ -178,8 +193,8 @@
                 </form>
                 
                 <div class="login-footer-admin">
-                    <p class="mb-2 text-muted">First time here?</p>
-                    <a href="{{ url_for('login') }}" class="switch-login-link">
+                    <p class="mb-2 text-muted">Are you a student?</p>
+                    <a href="{{ url_for('student_login') }}" class="switch-login-link">
                         <i class="bi bi-person-check"></i> Student Login
                     </a>
                     <p class="text-muted small mt-3 mb-0">Need password reset? Contact administrator</p>

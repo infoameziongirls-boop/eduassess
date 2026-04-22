@@ -1,156 +1,110 @@
 {% extends "base.html" %}
-
-{% block title %}Send Messages - EduAssess Pro{% endblock %}
-
-{% block page_title %}Send Messages{% endblock %}
+{% block title %}Broadcast Messages - EduAssess Pro{% endblock %}
+{% block page_title %}Broadcast Messages{% endblock %}
 
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
-<li class="breadcrumb-item active">Send Messages</li>
+<li class="breadcrumb-item active">Broadcast Messages</li>
 {% endblock %}
 
 {% block content %}
 <div class="row">
-    <div class="col-lg-8 mx-auto">
+    <div class="col-lg-10 mx-auto">
         <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0">
-                    <i class="bi bi-envelope me-2"></i>Send Message to Users
-                </h5>
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-2">
+                    <div style="width:36px;height:36px;background:#e8edff;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#2b5bff;font-size:18px;">
+                        <i class="bi bi-megaphone-fill"></i>
+                    </div>
+                    <h5 class="card-title mb-0">Messages Sent</h5>
+                </div>
+                <a href="{{ url_for('admin_send_message') }}" class="btn btn-primary btn-sm">
+                    <i class="bi bi-plus-lg"></i> New Message
+                </a>
             </div>
+
             <div class="card-body">
-                <form method="POST">
-                    {{ form.hidden_tag() }}
-                    
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label for="recipient_type" class="form-label">Send to</label>
-                            {{ form.recipient_type(class="form-select") }}
-                            {% if form.recipient_type.errors %}
-                                <div class="text-danger small">
-                                    {% for error in form.recipient_type.errors %}{{ error }}{% endfor %}
-                                </div>
-                            {% endif %}
-                        </div>
-                        <div class="col-md-6" id="specific_user_div" style="display: none;">
-                            <label for="recipient_id" class="form-label">Specific User</label>
-                            {{ form.recipient_id(class="form-select") }}
-                        </div>
-                    </div>
-                    
-                    <div class="row mb-3" id="subject_filter_div" style="display: none;">
-                        <div class="col-md-6">
-                            <label for="subject_filter" class="form-label">Subject</label>
-                            {{ form.subject_filter(class="form-select") }}
-                        </div>
-                        <div class="col-md-6" id="class_filter_div" style="display: none;">
-                            <label for="class_filter" class="form-label">Class</label>
-                            {{ form.class_filter(class="form-select") }}
-                        </div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="subject" class="form-label">Message Subject</label>
-                        {{ form.subject(class="form-control") }}
-                        {% if form.subject.errors %}
-                            <div class="text-danger small">
-                                {% for error in form.subject.errors %}{{ error }}{% endfor %}
-                            </div>
-                        {% endif %}
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="content" class="form-label">Message Content</label>
-                        {{ form.content(class="form-control", rows=6) }}
-                        {% if form.content.errors %}
-                            <div class="text-danger small">
-                                {% for error in form.content.errors %}{{ error }}{% endfor %}
-                            </div>
-                        {% endif %}
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="message_type" class="form-label">Message Type</label>
-                        {{ form.message_type(class="form-select") }}
-                        {% if form.message_type.errors %}
-                            <div class="text-danger small">
-                                {% for error in form.message_type.errors %}{{ error }}{% endfor %}
-                            </div>
-                        {% endif %}
-                    </div>
-                    
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-modern">
-                            <i class="bi bi-send me-2"></i>Send Message
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-        
-        <div class="card mt-4">
-            <div class="card-header">
-                <h6 class="card-title mb-0">Recent Messages Sent</h6>
-            </div>
-            <div class="card-body">
-                {% set recent_messages = current_user.sent_messages.order_by(Message.created_at.desc()).limit(5).all() %}
-                {% if recent_messages %}
+                {% if messages.items %}
                     <div class="list-group list-group-flush">
-                        {% for message in recent_messages %}
-                        <div class="list-group-item px-0">
+                        {% for message in messages.items %}
+                        <div class="list-group-item px-0 py-3 border-bottom">
                             <div class="d-flex justify-content-between align-items-start">
-                                <div>
-                                    <h6 class="mb-1">{{ message.subject }}</h6>
-                                    <p class="mb-1 text-muted small">{{ message.content[:100] }}{% if message.content|length > 100 %}...{% endif %}</p>
-                                    <small class="text-muted">
+                                <div class="flex-grow-1">
+                                    <div class="d-flex align-items-center mb-1">
+                                        <h6 class="mb-0 me-2">{{ message.subject }}</h6>
                                         {% if message.is_broadcast %}
-                                            Broadcast to {{ message.message_type }}
-                                        {% else %}
-                                            To: {{ message.recipient.username }}
+                                            <span class="badge bg-info">Broadcast</span>
                                         {% endif %}
-                                        • {{ message.created_at.strftime('%Y-%m-%d %H:%M') }}
-                                    </small>
+                                    </div>
+                                    <p class="mb-2 text-muted small">{{ message.content[:150] }}{% if message.content|length > 150 %}...{% endif %}</p>
+                                    <div class="d-flex align-items-center gap-3 text-muted small">
+                                        <span>
+                                            <i class="bi bi-person me-1"></i>
+                                            {% if message.is_broadcast %}
+                                                To: All Users
+                                            {% else %}
+                                                To: {{ message.recipient.username }}
+                                            {% endif %}
+                                        </span>
+                                        <span>
+                                            <i class="bi bi-clock me-1"></i>
+                                            {{ message.created_at.strftime('%Y-%m-%d %H:%M') }}
+                                        </span>
+                                        <span>
+                                            <span class="badge bg-{{ 'success' if message.message_type == 'notification' else 'warning' if message.message_type == 'update' else 'danger' }}">
+                                                {{ message.message_type.title() }}
+                                            </span>
+                                        </span>
+                                    </div>
                                 </div>
-                                <span class="badge bg-{{ 'success' if message.message_type == 'notification' else 'warning' if message.message_type == 'update' else 'danger' }}">
-                                    {{ message.message_type.title() }}
-                                </span>
                             </div>
                         </div>
                         {% endfor %}
                     </div>
+
+                    <!-- Pagination -->
+                    {% if messages.pages > 1 %}
+                    <nav class="mt-4" aria-label="Page navigation">
+                        <ul class="pagination justify-content-center">
+                            {% if messages.has_prev %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for('admin_messages', page=messages.prev_num) }}">Previous</a>
+                                </li>
+                            {% endif %}
+
+                            {% for page_num in messages.iter_pages() %}
+                                {% if page_num %}
+                                    {% if page_num == messages.page %}
+                                        <li class="page-item active">
+                                            <span class="page-link">{{ page_num }}</span>
+                                        </li>
+                                    {% else %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="{{ url_for('admin_messages', page=page_num) }}">{{ page_num }}</a>
+                                        </li>
+                                    {% endif %}
+                                {% endif %}
+                            {% endfor %}
+
+                            {% if messages.has_next %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for('admin_messages', page=messages.next_num) }}">Next</a>
+                                </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                    {% endif %}
                 {% else %}
-                    <p class="text-muted mb-0">No messages sent yet.</p>
+                    <div style="text-align:center;padding:48px 20px;color:#9398b8;">
+                        <i class="bi bi-envelope" style="font-size:40px;display:block;margin-bottom:12px;"></i>
+                        <p class="mb-0">No messages sent yet.</p>
+                        <a href="{{ url_for('admin_send_message') }}" class="btn btn-primary btn-sm mt-3">
+                            <i class="bi bi-plus-lg"></i> Send Your First Message
+                        </a>
+                    </div>
                 {% endif %}
             </div>
         </div>
     </div>
 </div>
-
-<script>
-// Show/hide form fields based on recipient type
-document.getElementById('recipient_type').addEventListener('change', function() {
-    const recipientType = this.value;
-    const specificUserDiv = document.getElementById('specific_user_div');
-    const subjectFilterDiv = document.getElementById('subject_filter_div');
-    const classFilterDiv = document.getElementById('class_filter_div');
-    
-    // Hide all first
-    specificUserDiv.style.display = 'none';
-    subjectFilterDiv.style.display = 'none';
-    classFilterDiv.style.display = 'none';
-    
-    if (recipientType === 'specific_user') {
-        specificUserDiv.style.display = 'block';
-    } else if (recipientType === 'subject_students') {
-        subjectFilterDiv.style.display = 'block';
-    } else if (recipientType === 'class_students') {
-        classFilterDiv.style.display = 'block';
-    }
-});
-
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', function() {
-    document.getElementById('recipient_type').dispatchEvent(new Event('change'));
-});
-</script>
 {% endblock %}

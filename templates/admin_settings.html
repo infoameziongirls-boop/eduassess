@@ -1,108 +1,107 @@
 {% extends "base.html" %}
+{% block title %}System Settings{% endblock %}
+{% block page_title %}System Settings{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-    <h2>Admin Settings</h2>
-    
-    <div class="row">
-        <div class="col-md-8">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">Global Assessment Settings</h5>
-                    
-                    <form method="POST">
-                        {{ form.hidden_tag() }}
-                        
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    {{ form.current_term.label(class="form-label") }}
-                                    {{ form.current_term(class="form-select") }}
-                                    {% for error in form.current_term.errors %}
-                                        <span class="text-danger">{{ error }}</span>
-                                    {% endfor %}
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    {{ form.current_academic_year.label(class="form-label") }}
-                                    {{ form.current_academic_year(class="form-control", placeholder="e.g., 2024-2025") }}
-                                    {% for error in form.current_academic_year.errors %}
-                                        <span class="text-danger">{{ error }}</span>
-                                    {% endfor %}
+<div class="page-header animate-in">
+    <div>
+        <h1 class="page-title">System Settings</h1>
+        <p class="page-subtitle">Configure global assessment parameters</p>
+    </div>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-outline"><i class="bi bi-arrow-left"></i> Dashboard</a>
+</div>
+
+<div class="row g-4 animate-in delay-1">
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-header">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div style="width:32px;height:32px;background:var(--brand-dim);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--brand);">
+                        <i class="bi bi-sliders"></i>
+                    </div>
+                    <span class="card-title">Global Assessment Settings</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    {{ form.hidden_tag() }}
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.current_term.label.text }}</label>
+                            {{ form.current_term(class="form-select") }}
+                            {% for e in form.current_term.errors %}<div style="color:var(--rose);font-size:.75rem;">{{ e }}</div>{% endfor %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.current_academic_year.label.text }}</label>
+                            {{ form.current_academic_year(class="form-control", placeholder="e.g., 2024-2025") }}
+                            {% for e in form.current_academic_year.errors %}<div style="color:var(--rose);font-size:.75rem;">{{ e }}</div>{% endfor %}
+                        </div>
+                    </div>
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.current_session.label.text }}</label>
+                            {{ form.current_session(class="form-control", placeholder="e.g., First Term") }}
+                        </div>
+                        <div class="col-md-6">
+                            <div style="margin-top:28px;">
+                                <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border:1.5px solid var(--border);border-radius:9px;">
+                                    {{ form.assessment_active(class="form-check-input",style="margin:0;cursor:pointer;") }}
+                                    <label style="font-size:.82rem;font-weight:600;color:var(--ink);cursor:pointer;" for="{{ form.assessment_active.id }}">
+                                        {{ form.assessment_active.label.text }}
+                                    </label>
                                 </div>
                             </div>
                         </div>
-                        
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    {{ form.current_session.label(class="form-label") }}
-                                    {{ form.current_session(class="form-control", placeholder="e.g., First Term") }}
-                                    {% for error in form.current_session.errors %}
-                                        <span class="text-danger">{{ error }}</span>
-                                    {% endfor %}
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <div class="form-check mt-4">
-                                        {{ form.assessment_active(class="form-check-input") }}
-                                        {{ form.assessment_active.label(class="form-check-label") }}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="mt-4">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="bi bi-save"></i> Save Settings
-                            </button>
-                            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
-                                <i class="bi bi-arrow-left"></i> Back to Dashboard
-                            </a>
-                        </div>
-                    </form>
+                    </div>
+                    <div style="display:flex;gap:10px;">
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Save Settings</button>
+                        <a href="{{ url_for('dashboard') }}" class="btn btn-outline">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <!-- Current Settings -->
+        <div class="card" style="margin-bottom:16px;">
+            <div class="card-header"><span class="card-title">Current Configuration</span></div>
+            <div class="card-body" style="padding:16px;">
+                {% set cfg = [
+                    ('Term', dict(config.TERMS).get(settings.current_term, settings.current_term)),
+                    ('Academic Year', settings.current_academic_year),
+                    ('Session', settings.current_session),
+                ] %}
+                {% for label, val in cfg %}
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);">
+                    <span style="font-size:.78rem;font-weight:600;color:var(--ink-4);text-transform:uppercase;letter-spacing:.4px;">{{ label }}</span>
+                    <span style="font-size:.82rem;font-weight:600;color:var(--ink);">{{ val }}</span>
+                </div>
+                {% endfor %}
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;">
+                    <span style="font-size:.78rem;font-weight:600;color:var(--ink-4);text-transform:uppercase;letter-spacing:.4px;">Assessments</span>
+                    {% if settings.assessment_active %}
+                    <span class="badge badge-green">Active</span>
+                    {% else %}
+                    <span class="badge badge-rose">Inactive</span>
+                    {% endif %}
                 </div>
             </div>
         </div>
-        
-        <div class="col-md-4">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">Current Settings</h5>
-                    <dl class="row">
-                        <dt class="col-sm-5">Term:</dt>
-                        <dd class="col-sm-7">{{ dict(config.TERMS).get(settings.current_term, settings.current_term) }}</dd>
-                        
-                        <dt class="col-sm-5">Academic Year:</dt>
-                        <dd class="col-sm-7">{{ settings.current_academic_year }}</dd>
-                        
-                        <dt class="col-sm-5">Session:</dt>
-                        <dd class="col-sm-7">{{ settings.current_session }}</dd>
-                        
-                        <dt class="col-sm-5">Assessments:</dt>
-                        <dd class="col-sm-7">
-                            {% if settings.assessment_active %}
-                                <span class="badge bg-success">Active</span>
-                            {% else %}
-                                <span class="badge bg-danger">Inactive</span>
-                            {% endif %}
-                        </dd>
-                    </dl>
-                </div>
-            </div>
-            
-            <div class="card mt-3">
-                <div class="card-body">
-                    <h6 class="card-title">Subject Assignments</h6>
-                    <p class="small text-muted">Manage teacher subject assignments in the Users section.</p>
-                    <a href="{{ url_for('users') }}" class="btn btn-sm btn-outline-primary">Manage Users</a>
-                    
-                    <h6 class="card-title mt-3">Archive Management</h6>
-                    <p class="small text-muted">Archive assessments from previous terms.</p>
-                    <form method="POST" action="{{ url_for('archive_term') }}" onsubmit="return confirm('Archive all assessments from previous terms?');">
-                        <button type="submit" class="btn btn-sm btn-warning">Archive Previous Terms</button>
+
+        <!-- Quick Links -->
+        <div class="card">
+            <div class="card-header"><span class="card-title">Administration</span></div>
+            <div class="card-body" style="padding:12px;">
+                <a href="{{ url_for('users') }}" style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:9px;text-decoration:none;transition:background .15s;margin-bottom:4px;" onmouseover="this.style.background='var(--brand-dim)'" onmouseout="this.style.background=''">
+                    <div style="width:30px;height:30px;background:var(--brand-dim);border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--brand);font-size:13px;"><i class="bi bi-person-gear"></i></div>
+                    <span style="font-size:.82rem;font-weight:600;color:var(--ink);">Manage Users</span>
+                    <i class="bi bi-chevron-right" style="margin-left:auto;font-size:11px;color:var(--ink-4);"></i>
+                </a>
+                <div style="padding:10px;border-radius:9px;margin-bottom:4px;">
+                    <div style="font-size:.75rem;font-weight:600;color:var(--ink-4);margin-bottom:8px;">Archive Previous Terms</div>
+                    <form method="POST" action="{{ url_for('archive_term') }}" onsubmit="return confirm('Archive all assessments from previous terms?')">
+                        <button type="submit" class="btn btn-warning btn-sm"><i class="bi bi-archive"></i> Archive Now</button>
                     </form>
                 </div>
             </div>

@@ -1,89 +1,108 @@
 {% extends "base.html" %}
+{% block title %}{% if student %}Edit Student{% else %}New Student{% endif %}{% endblock %}
+{% block page_title %}{% if student %}Edit Student{% else %}New Student{% endif %}{% endblock %}
+{% block breadcrumbs %}
+<span class="sep">/</span>
+<a href="{{ url_for('students') }}">Students</a>
+<span class="sep">/</span>
+<span class="current">{% if student %}Edit{% else %}Register{% endif %}</span>
+{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-    <h2>{% if student %}Edit Student{% else %}New Student{% endif %}</h2>
-    
-    <form method="POST">
-        {{ form.hidden_tag() }}
-        
-        <div class="row">
-            <div class="col-md-6">
-                <div class="mb-3">
-                    {{ form.student_number.label(class="form-label") }}
-                    {{ form.student_number(class="form-control", autocomplete="off") }}
-                    {% for error in form.student_number.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="mb-3">
-                    {{ form.class_name.label(class="form-label") }}
-                    {{ form.class_name(class="form-control") }}
-                    {% for error in form.class_name.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
+<div class="page-header animate-in">
+    <div>
+        <h1 class="page-title">{% if student %}Edit Student{% else %}Register New Student{% endif %}</h1>
+        <p class="page-subtitle">{% if student %}Update student information{% else %}Add a new student to the system{% endif %}</p>
+    </div>
+    <a href="{{ url_for('students') }}" class="btn btn-outline"><i class="bi bi-arrow-left"></i> Back</a>
+</div>
 
-        {% if student and student.reference_number %}
-        <div class="mb-3">
-            <label class="form-label">Reference Number</label>
-            <input type="text" class="form-control" value="{{ student.reference_number }}" readonly>
-            <div class="form-text">Automatically generated when the student is created.</div>
+<div class="row g-4 animate-in delay-1">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title"><i class="bi bi-person-fill me-2" style="color:var(--brand);"></i>Student Information</span>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    {{ form.hidden_tag() }}
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.student_number.label.text }}</label>
+                            {{ form.student_number(class="form-control", autocomplete="off") }}
+                            {% for e in form.student_number.errors %}<div style="color:var(--rose);font-size:.75rem;mt-1">{{ e }}</div>{% endfor %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.class_name.label.text }}</label>
+                            {{ form.class_name(class="form-control") }}
+                            {% for e in form.class_name.errors %}<div style="color:var(--rose);font-size:.75rem;mt-1">{{ e }}</div>{% endfor %}
+                        </div>
+                    </div>
+
+                    {% if student and student.reference_number %}
+                    <div class="mb-3">
+                        <label class="form-label">Reference Number</label>
+                        <div style="padding:10px 14px;background:var(--surface);border:1.5px solid var(--border);border-radius:9px;font-family:monospace;font-size:.85rem;color:var(--ink-3);">{{ student.reference_number }}</div>
+                        <div style="font-size:.7rem;color:var(--ink-4);margin-top:4px;">Auto-generated — read only</div>
+                    </div>
+                    {% endif %}
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">{{ form.first_name.label.text }}</label>
+                            {{ form.first_name(class="form-control", autocomplete="given-name") }}
+                            {% for e in form.first_name.errors %}<div style="color:var(--rose);font-size:.75rem;">{{ e }}</div>{% endfor %}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">{{ form.last_name.label.text }}</label>
+                            {{ form.last_name(class="form-control", autocomplete="family-name") }}
+                            {% for e in form.last_name.errors %}<div style="color:var(--rose);font-size:.75rem;">{{ e }}</div>{% endfor %}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">{{ form.middle_name.label.text }}</label>
+                            {{ form.middle_name(class="form-control", autocomplete="additional-name") }}
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.study_area.label.text }}</label>
+                            {{ form.study_area(class="form-select") }}
+                            {% for e in form.study_area.errors %}<div style="color:var(--rose);font-size:.75rem;">{{ e }}</div>{% endfor %}
+                        </div>
+                    </div>
+
+                    <div style="display:flex;gap:10px;">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i>
+                            {% if student %}Update{% else %}Create{% endif %} Student
+                        </button>
+                        <a href="{{ url_for('students') }}" class="btn btn-outline">Cancel</a>
+                    </div>
+                </form>
+            </div>
         </div>
-        {% endif %}
-        
-        <div class="row">
-            <div class="col-md-4">
-                <div class="mb-3">
-                    {{ form.first_name.label(class="form-label") }}
-                    {{ form.first_name(class="form-control", autocomplete="given-name") }}
-                    {% for error in form.first_name.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card" style="position:sticky;top:calc(var(--topbar-h) + 16px);">
+            <div class="card-header"><span class="card-title">Tips</span></div>
+            <div class="card-body" style="font-size:.8rem;color:var(--ink-3);">
+                <div style="display:flex;gap:10px;margin-bottom:12px;align-items:flex-start;">
+                    <div style="width:28px;height:28px;background:var(--brand-dim);border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--brand);flex-shrink:0;font-size:12px;"><i class="bi bi-info-circle-fill"></i></div>
+                    <div>Student numbers must be unique. Use the school's official numbering system.</div>
+                </div>
+                <div style="display:flex;gap:10px;margin-bottom:12px;align-items:flex-start;">
+                    <div style="width:28px;height:28px;background:var(--teal-dim);border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--teal);flex-shrink:0;font-size:12px;"><i class="bi bi-book"></i></div>
+                    <div>Select the correct Learning Area (study programme) for accurate assessment filtering.</div>
+                </div>
+                <div style="display:flex;gap:10px;align-items:flex-start;">
+                    <div style="width:28px;height:28px;background:var(--amber-dim);border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--amber);flex-shrink:0;font-size:12px;"><i class="bi bi-people"></i></div>
+                    <div>For bulk registration, use the <a href="{{ url_for('student_bulk_import') }}" style="color:var(--brand);">Bulk Import</a> feature.</div>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="mb-3">
-                    {{ form.last_name.label(class="form-label") }}
-                    {{ form.last_name(class="form-control", autocomplete="family-name") }}
-                    {% for error in form.last_name.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="mb-3">
-                    {{ form.middle_name.label(class="form-label") }}
-                    {{ form.middle_name(class="form-control", autocomplete="additional-name") }}
-                    {% for error in form.middle_name.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
-                </div>
-            </div>
         </div>
-        
-        <div class="row">
-            <div class="col-md-6">
-                <div class="mb-3">
-                    {{ form.study_area.label(class="form-label") }}
-                    {{ form.study_area(class="form-control") }}
-                    {% for error in form.study_area.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-        
-        <div class="mt-4">
-            <button type="submit" class="btn btn-primary">
-                {% if student %}Update{% else %}Create{% endif %} Student
-            </button>
-            <a href="{{ url_for('students') }}" class="btn btn-secondary">Cancel</a>
-        </div>
-    </form>
+    </div>
 </div>
 {% endblock %}

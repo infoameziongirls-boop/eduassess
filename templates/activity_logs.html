@@ -1,104 +1,80 @@
 {% extends "base.html" %}
-
 {% block title %}Activity Logs{% endblock %}
+{% block page_title %}Activity Logs{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <div class="row">
-        <div class="col-md-12">
-            <div class="card">
-                <div class="card-header">
-                    <h4 class="card-title">Activity Logs</h4>
-                    <p class="card-category">Monitor user activities and logins</p>
-                </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-striped">
-                            <thead>
-                                <tr>
-                                    <th>Timestamp</th>
-                                    <th>User</th>
-                                    <th>Action</th>
-                                    <th>Details</th>
-                                    <th>IP Address</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for log in logs.items %}
-                                <tr>
-                                    <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                                    <td>{{ log.user.username }} ({{ log.user.role }})</td>
-                                    <td>
-                                        <span class="badge 
-                                            {% if 'login' in log.action %}badge-success
-                                            {% elif 'create' in log.action %}badge-primary
-                                            {% elif 'edit' in log.action %}badge-warning
-                                            {% elif 'delete' in log.action %}badge-danger
-                                            {% else %}badge-secondary{% endif %}">
-                                            {{ log.action.replace('_', ' ').title() }}
-                                        </span>
-                                    </td>
-                                    <td>{{ log.details or '-' }}</td>
-                                    <td>{{ log.ip_address or '-' }}</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <!-- Pagination -->
-                    {% if logs.has_prev or logs.has_next %}
-                    <nav aria-label="Activity logs pagination">
-                        <ul class="pagination justify-content-center">
-                            {% if logs.has_prev %}
-                            <li class="page-item">
-                                <a class="page-link" href="{{ url_for('admin_activity_logs', page=logs.prev_num) }}">Previous</a>
-                            </li>
-                            {% else %}
-                            <li class="page-item disabled">
-                                <span class="page-link">Previous</span>
-                            </li>
-                            {% endif %}
-                            
-                            {% for page_num in logs.iter_pages() %}
-                                {% if page_num %}
-                                    {% if page_num == logs.page %}
-                                    <li class="page-item active">
-                                        <span class="page-link">{{ page_num }}</span>
-                                    </li>
-                                    {% else %}
-                                    <li class="page-item">
-                                        <a class="page-link" href="{{ url_for('admin_activity_logs', page=page_num) }}">{{ page_num }}</a>
-                                    </li>
-                                    {% endif %}
-                                {% else %}
-                                    <li class="page-item disabled">
-                                        <span class="page-link">...</span>
-                                    </li>
-                                {% endif %}
-                            {% endfor %}
-                            
-                            {% if logs.has_next %}
-                            <li class="page-item">
-                                <a class="page-link" href="{{ url_for('admin_activity_logs', page=logs.next_num) }}">Next</a>
-                            </li>
-                            {% else %}
-                            <li class="page-item disabled">
-                                <span class="page-link">Next</span>
-                            </li>
-                            {% endif %}
-                        </ul>
-                    </nav>
-                    {% endif %}
-                    
-                    {% if not logs.items %}
-                    <div class="text-center mt-4">
-                        <p class="text-muted">No activity logs found.</p>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
+<div class="page-header animate-in">
+    <div>
+        <h1 class="page-title">Activity Logs</h1>
+        <p class="page-subtitle">Monitor user actions, logins, and system events</p>
     </div>
+</div>
+
+<div class="card animate-in delay-1">
+    <div class="table-wrap" style="border-radius:var(--radius-lg);border:none;">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>User</th>
+                    <th>Action</th>
+                    <th>Details</th>
+                    <th>IP Address</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs.items %}
+                <tr>
+                    <td style="font-size:.75rem;color:var(--ink-4);white-space:nowrap;">{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    <td>
+                        <div style="font-weight:600;font-size:.82rem;">{{ log.user.username }}</div>
+                        <div style="font-size:.68rem;color:var(--ink-4);">{{ log.user.role }}</div>
+                    </td>
+                    <td>
+                        <span class="badge
+                            {% if 'login' in log.action %}badge-green
+                            {% elif 'create' in log.action %}badge-brand
+                            {% elif 'edit' in log.action %}badge-amber
+                            {% elif 'delete' in log.action %}badge-rose
+                            {% else %}badge-ink{% endif %}">
+                            {{ log.action.replace('_', ' ').title() }}
+                        </span>
+                    </td>
+                    <td style="font-size:.78rem;color:var(--ink-3);">{{ log.details or '—' }}</td>
+                    <td><code style="font-size:.72rem;color:var(--ink-4);">{{ log.ip_address or '—' }}</code></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if logs.has_prev or logs.has_next %}
+    <div class="card-footer" style="display:flex;justify-content:center;">
+        <ul class="pagination">
+            <li class="page-item {% if not logs.has_prev %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('admin_activity_logs', page=logs.prev_num) }}">← Prev</a>
+            </li>
+            {% for page_num in logs.iter_pages() %}
+                {% if page_num %}
+                <li class="page-item {% if page_num == logs.page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin_activity_logs', page=page_num) }}">{{ page_num }}</a>
+                </li>
+                {% else %}
+                <li class="page-item disabled"><span class="page-link">…</span></li>
+                {% endif %}
+            {% endfor %}
+            <li class="page-item {% if not logs.has_next %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('admin_activity_logs', page=logs.next_num) }}">Next →</a>
+            </li>
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if not logs.items %}
+    <div class="card-body" style="text-align:center;padding:40px;color:var(--ink-4);">
+        <i class="bi bi-journal-text" style="font-size:32px;display:block;margin-bottom:10px;"></i>
+        No activity logs found.
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

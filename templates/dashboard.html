@@ -1,416 +1,307 @@
 {% extends "base.html" %}
-{% block title %}Dashboard - EduAssess Module{% endblock %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-5">
+<!-- Page Header -->
+<div class="page-header animate-in">
     <div>
-        <h1 class="mb-2"><i class="bi bi-speedometer2 text-primary"></i> Welcome back, {{ current_user.username }}!</h1>
-        {% if current_user.is_teacher() and current_user.subject %}
-        <p class="text-muted mb-0">Managing {{ current_user.get_subject_display() }} assessments</p>
+        <h1 class="page-title">
+            Good {% if current_user.last_login %}day{% else %}morning{% endif %}, {{ current_user.username }}!
+        </h1>
+        <p class="page-subtitle">
+            {% if current_user.is_teacher() and current_user.subject %}
+                Managing <strong>{{ current_user.get_subject_display() }}</strong> assessments
+            {% elif current_user.is_admin() %}
+                System Overview — EduAssess Pro
+            {% else %}
+                Welcome back to your dashboard
+            {% endif %}
+        </p>
+    </div>
+    <div class="page-actions">
+        {% if current_user.is_admin() or current_user.is_teacher() %}
+        <a href="{{ url_for('new_assessment') }}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> New Assessment
+        </a>
+        <a href="{{ url_for('students') }}" class="btn btn-outline">
+            <i class="bi bi-people"></i> Students
+        </a>
         {% endif %}
     </div>
-    <div class="d-none d-md-block">
-        <div class="text-end">
-            <div class="text-muted small">Last login</div>
-            <div class="fw-semibold">{{ current_user.last_login.strftime('%B %d, %Y') if current_user.last_login else 'First time' }}</div>
+</div>
+
+<!-- ===== KPI STRIP ===== -->
+<div class="row g-3 section-gap animate-in delay-1">
+    <div class="col-lg-3 col-sm-6">
+        <div class="kpi-card kpi-teal">
+            <div class="kpi-icon"><i class="bi bi-people-fill"></i></div>
+            <div class="kpi-body">
+                <div class="kpi-label">Total Students</div>
+                <div class="kpi-value">{{ student_count }}</div>
+                <div class="kpi-trend up"><i class="bi bi-arrow-up-right"></i> Active learners</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-sm-6">
+        <div class="kpi-card kpi-brand">
+            <div class="kpi-icon"><i class="bi bi-clipboard-data-fill"></i></div>
+            <div class="kpi-body">
+                <div class="kpi-label">Assessments</div>
+                <div class="kpi-value">{{ assessment_count }}</div>
+                <div class="kpi-trend"><i class="bi bi-check2-circle"></i> Completed</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-sm-6">
+        <div class="kpi-card kpi-rose">
+            <div class="kpi-icon"><i class="bi bi-exclamation-triangle-fill"></i></div>
+            <div class="kpi-body">
+                <div class="kpi-label">Needs Attention</div>
+                <div class="kpi-value">{{ affected_students_count }}</div>
+                <div class="kpi-trend down"><i class="bi bi-exclamation-circle"></i> Incomplete</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-sm-6">
+        <div class="kpi-card kpi-violet">
+            <div class="kpi-icon"><i class="bi bi-person-gear"></i></div>
+            <div class="kpi-body">
+                <div class="kpi-label">System Users</div>
+                <div class="kpi-value">{{ users_count }}</div>
+                <div class="kpi-trend"><i class="bi bi-shield-check"></i> Active accounts</div>
+            </div>
         </div>
     </div>
 </div>
 
-<div class="row mb-5">
-    <div class="col-lg-4 col-md-6 mb-4">
-        <div class="card stat-card success h-100">
-            <div class="card-body d-flex align-items-center">
-                <div class="flex-grow-1">
-                    <div class="d-flex align-items-center mb-2">
-                        <i class="bi bi-people-fill fs-4 me-3 text-success"></i>
-                        <h6 class="text-muted mb-0">Total Students</h6>
-                    </div>
-                    <h2 class="mb-0 fw-bold">{{ student_count }}</h2>
-                    <small class="text-success">
-                        <i class="bi bi-arrow-up"></i> Active learners
-                    </small>
+<!-- ===== STUDENTS BY FORM (Collapsible Trays) ===== -->
+<div class="section-gap animate-in delay-2">
+    <div class="card">
+        <div class="card-header">
+            <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;background:var(--brand-dim);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--brand);">
+                    <i class="bi bi-house-door-fill"></i>
+                </div>
+                <div>
+                    <div class="card-title">Students by Form</div>
+                    <div style="font-size:.7rem;color:var(--ink-4);">Click any form to expand</div>
                 </div>
             </div>
-        </div>
-    </div>
-    <div class="col-lg-4 col-md-6 mb-4">
-        <div class="card stat-card h-100">
-            <div class="card-body d-flex align-items-center">
-                <div class="flex-grow-1">
-                    <div class="d-flex align-items-center mb-2">
-                        <i class="bi bi-clipboard-data-fill fs-4 me-3 text-primary"></i>
-                        <h6 class="text-muted mb-0">Total Assessments</h6>
-                    </div>
-                    <h2 class="mb-0 fw-bold">{{ assessment_count }}</h2>
-                    <small class="text-primary">
-                        <i class="bi bi-clipboard-check"></i> Completed evaluations
-                    </small>
-                </div>
+            <div style="display:flex;gap:8px;">
+                <button class="btn btn-outline btn-sm" onclick="toggleAllForms(true)"><i class="bi bi-chevron-expand"></i> Expand All</button>
+                <button class="btn btn-outline btn-sm" onclick="toggleAllForms(false)"><i class="bi bi-chevron-contract"></i> Collapse</button>
             </div>
         </div>
-    </div>
-    <div class="col-lg-4 col-md-6 mb-4">
-        <div class="card stat-card danger h-100">
-            <div class="card-body d-flex align-items-center">
-                <div class="flex-grow-1">
-                    <div class="d-flex align-items-center mb-2">
-                        <i class="bi bi-exclamation-triangle-fill fs-4 me-3 text-danger"></i>
-                        <h6 class="text-muted mb-0">Affected Students</h6>
-                    </div>
-                    <h2 class="mb-0 fw-bold">{{ affected_students_count }}</h2>
-                    <small class="text-danger">
-                        <i class="bi bi-exclamation-circle"></i> Incomplete assessments
-                    </small>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-4 col-md-6 mb-4">
-        <div class="card stat-card h-100">
-            <div class="card-body d-flex align-items-center">
-                <div class="flex-grow-1">
-                    <div class="d-flex align-items-center mb-2">
-                        <i class="bi bi-person-gear fs-4 me-3 text-info"></i>
-                        <h6 class="text-muted mb-0">System Users</h6>
-                    </div>
-                    <h2 class="mb-0 fw-bold">{{ users_count }}</h2>
-                    <small class="text-info">
-                        <i class="bi bi-shield-check"></i> Active accounts
-                    </small>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-    </div>
-</div>
-
-<!-- Students by Form Containers -->
-<div class="row mb-5">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header"><strong>Students by Form</strong></div>
-            <div class="card-body">
-                <div class="row">
-                    {% for cls, students in students_by_class.items() %}
-                    {% if students is defined and students %}
-                    <div class="col-md-4 mb-3">
-                        <div class="card h-100">
-                            <div class="card-header bg-primary text-white">
-                                <button class="btn btn-link text-white p-0 text-decoration-none w-100 text-start" type="button" data-bs-toggle="collapse" data-bs-target="#form{{ loop.index }}" aria-expanded="false" aria-controls="form{{ loop.index }}">
-                                    <strong>{{ cls|replace('_',' ')|title }}</strong>
-                                    <span class="badge bg-light text-dark ms-2">
-                                        {% if students is iterable and students is not string and students is not mapping and students is not number %}
-                                            {{ students|length }}
-                                        {% else %}
-                                            0
-                                        {% endif %}
-                                    </span>
-                                    <i class="bi bi-chevron-down float-end"></i>
-                                </button>
-                            </div>
-                            <div id="form{{ loop.index }}" class="collapse">
-                                <div class="card-body p-2">
-                                    <ul class="list-group list-group-flush">
-                                        {% if students is iterable and students is not string and students is not mapping and students is not number %}
-                                        {% for student in students %}
-                                        <li class="list-group-item py-2 px-3">
-                                            <div class="d-flex justify-content-between align-items-center">
-                                                <div>
-                                                    <strong>{{ student.last_name }}, {{ student.first_name }}</strong>
-                                                    {% if student.middle_name %}
-                                                    <span class="text-muted"> {{ student.middle_name }}</span>
-                                                    {% endif %}
-                                                    <br>
-                                                    <small class="text-muted">{{ student.student_number }}</small>
-                                                </div>
-                                                <a href="{{ url_for('student_view', student_id=student.id) }}" class="btn btn-sm btn-outline-primary">
-                                                    <i class="bi bi-eye"></i>
-                                                </a>
-                                            </div>
-                                        </li>
-                                        {% endfor %}
-                                        {% else %}
-                                        <li class="list-group-item text-muted text-center py-3">No students available</li>
-                                        {% endif %}
-                                    </ul>
+        <div class="card-body" style="padding:16px;">
+            <div class="row g-3">
+                {% for cls, students in students_by_class.items() %}
+                {% if students is defined and students %}
+                <div class="col-md-4 col-xl-3">
+                    <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;">
+                        <button class="s-tray-toggle" type="button"
+                            style="width:100%;background:var(--surface);color:var(--ink);border-bottom:1px solid var(--border);border-radius:0;padding:11px 14px;font-size:.82rem;font-weight:700;"
+                            data-bs-toggle="collapse" data-bs-target="#formBlock{{ loop.index }}" aria-expanded="false">
+                            <i class="bi bi-building tray-main" style="color:var(--brand);"></i>
+                            <span>{{ cls|replace('_',' ')|title }}</span>
+                            <span class="badge-ink badge ms-auto me-2">
+                                {% if students is iterable and students is not string %}{{ students|length }}{% else %}0{% endif %}
+                            </span>
+                            <i class="bi bi-chevron-right tray-arrow"></i>
+                        </button>
+                        <div id="formBlock{{ loop.index }}" class="collapse">
+                            <div style="max-height:280px;overflow-y:auto;">
+                                {% if students is iterable and students is not string %}
+                                {% for student in students %}
+                                <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid var(--border);font-size:.78rem;">
+                                    <div>
+                                        <div style="font-weight:600;color:var(--ink);">{{ student.last_name }}, {{ student.first_name }}</div>
+                                        <div style="color:var(--ink-4);font-size:.7rem;">{{ student.student_number }}</div>
+                                    </div>
+                                    <a href="{{ url_for('student_view', student_id=student.id) }}" class="btn btn-icon btn-sm btn-outline" title="View">
+                                        <i class="bi bi-eye" style="font-size:12px;"></i>
+                                    </a>
                                 </div>
+                                {% endfor %}
+                                {% endif %}
                             </div>
                         </div>
                     </div>
-                    {% endif %}
-                    {% endfor %}
                 </div>
-            </div>
-        </div>
-    </div>
-</div>
-    <div class="col-md-6 mb-4">
-        <div class="card">
-            <div class="card-header"><strong>Students by Learning Area</strong></div>
-            <div class="card-body p-2">
-                <ul class="list-group list-group-flush">
-                    {% for area, cnt in students_by_area.items() %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                        {{ area|replace('_',' ')|title }}
-                        <span class="badge bg-primary rounded-pill">{{ cnt }}</span>
-                    </li>
-                    {% else %}
-                    <li class="list-group-item text-muted">No data</li>
-                    {% endfor %}
-                </ul>
+                {% endif %}
+                {% endfor %}
             </div>
         </div>
     </div>
 </div>
 
-{% if teacher_student_summaries %}
-<div class="card mb-5">
-    <div class="card-header" style="background: var(--gradient-secondary); color: white; border-radius: 16px 16px 0 0 !important;">
-        <h5 class="mb-0"><i class="bi bi-bar-chart-line-fill"></i> My Students' Performance in {{ current_user.get_subject_display() }}</h5>
+<!-- ===== TWO COLUMN: Learning Areas + Quick Actions ===== -->
+<div class="row g-3 section-gap animate-in delay-3">
+    <!-- Learning Areas -->
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div style="width:32px;height:32px;background:var(--teal-dim);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--teal);">
+                        <i class="bi bi-book-fill"></i>
+                    </div>
+                    <span class="card-title">Students by Learning Area</span>
+                </div>
+            </div>
+            <div class="card-body" style="padding:12px;">
+                {% for area, cnt in students_by_area.items() %}
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:9px;margin-bottom:4px;transition:background .15s;" onmouseover="this.style.background='var(--brand-dim)'" onmouseout="this.style.background=''">
+                    <span style="font-size:.82rem;font-weight:500;color:var(--ink-2);">{{ area|replace('_',' ')|title }}</span>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <div style="width:80px;height:5px;background:var(--border);border-radius:99px;overflow:hidden;">
+                            <div style="height:100%;background:var(--brand);border-radius:99px;width:{{ [(cnt / (student_count or 1) * 100), 100]|min }}%;"></div>
+                        </div>
+                        <span class="badge badge-brand">{{ cnt }}</span>
+                    </div>
+                </div>
+                {% else %}
+                <p style="color:var(--ink-4);font-size:.82rem;text-align:center;padding:20px 0;">No data available</p>
+                {% endfor %}
+            </div>
+        </div>
     </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
+
+    <!-- Quick Actions + System Info -->
+    <div class="col-lg-7">
+        <div class="row g-3 h-100">
+            <!-- Quick Actions -->
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Quick Actions</span>
+                    </div>
+                    <div class="card-body" style="padding:16px;">
+                        <div class="row g-2">
+                            {% if current_user.is_admin() or current_user.is_teacher() %}
+                            <div class="col-6 col-md-4">
+                                <a href="{{ url_for('new_assessment') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border);border-radius:var(--radius);text-decoration:none;transition:all .2s;background:var(--surface-2);" onmouseover="this.style.borderColor='var(--brand)';this.style.background='var(--brand-dim)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
+                                    <div style="width:36px;height:36px;background:var(--brand-dim);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--brand);font-size:16px;">
+                                        <i class="bi bi-plus-circle-fill"></i>
+                                    </div>
+                                    <span style="font-size:.72rem;font-weight:600;color:var(--ink-2);text-align:center;">Add Assessment</span>
+                                </a>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <a href="{{ url_for('student_new') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border);border-radius:var(--radius);text-decoration:none;transition:all .2s;background:var(--surface-2);" onmouseover="this.style.borderColor='var(--teal)';this.style.background='var(--teal-dim)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
+                                    <div style="width:36px;height:36px;background:var(--teal-dim);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:16px;">
+                                        <i class="bi bi-person-plus-fill"></i>
+                                    </div>
+                                    <span style="font-size:.72rem;font-weight:600;color:var(--ink-2);text-align:center;">New Student</span>
+                                </a>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <a href="{{ url_for('assessments_list') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border);border-radius:var(--radius);text-decoration:none;transition:all .2s;background:var(--surface-2);" onmouseover="this.style.borderColor='var(--amber)';this.style.background='var(--amber-dim)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
+                                    <div style="width:36px;height:36px;background:var(--amber-dim);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--amber);font-size:16px;">
+                                        <i class="bi bi-list-check"></i>
+                                    </div>
+                                    <span style="font-size:.72rem;font-weight:600;color:var(--ink-2);text-align:center;">All Assessments</span>
+                                </a>
+                            </div>
+                            {% if current_user.is_admin() %}
+                            <div class="col-6 col-md-4">
+                                <a href="{{ url_for('analytics_dashboard') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border);border-radius:var(--radius);text-decoration:none;transition:all .2s;background:var(--surface-2);" onmouseover="this.style.borderColor='var(--violet)';this.style.background='var(--violet-dim)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
+                                    <div style="width:36px;height:36px;background:var(--violet-dim);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--violet);font-size:16px;">
+                                        <i class="bi bi-bar-chart-line-fill"></i>
+                                    </div>
+                                    <span style="font-size:.72rem;font-weight:600;color:var(--ink-2);text-align:center;">Analytics</span>
+                                </a>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <a href="{{ url_for('export_all_students_excel') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border);border-radius:var(--radius);text-decoration:none;transition:all .2s;background:var(--surface-2);" onmouseover="this.style.borderColor='var(--green)';this.style.background='var(--green-dim)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
+                                    <div style="width:36px;height:36px;background:var(--green-dim);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--green);font-size:16px;">
+                                        <i class="bi bi-file-earmark-excel-fill"></i>
+                                    </div>
+                                    <span style="font-size:.72rem;font-weight:600;color:var(--ink-2);text-align:center;">Export Excel</span>
+                                </a>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <a href="{{ url_for('admin_messages') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border);border-radius:var(--radius);text-decoration:none;transition:all .2s;background:var(--surface-2);" onmouseover="this.style.borderColor='var(--rose)';this.style.background='var(--rose-dim)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
+                                    <div style="width:36px;height:36px;background:var(--rose-dim);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--rose);font-size:16px;">
+                                        <i class="bi bi-megaphone-fill"></i>
+                                    </div>
+                                    <span style="font-size:.72rem;font-weight:600;color:var(--ink-2);text-align:center;">Broadcast</span>
+                                </a>
+                            </div>
+                            {% endif %}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== STUDENT PERFORMANCE TABLE ===== -->
+{% if student_summaries is defined and student_summaries %}
+<div class="section-gap animate-in delay-4">
+    <div class="card">
+        <div class="card-header">
+            <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;background:var(--brand-dim);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--brand);">
+                    <i class="bi bi-trophy-fill"></i>
+                </div>
+                <div>
+                    <div class="card-title">Student Performance Overview</div>
+                    <div style="font-size:.7rem;color:var(--ink-4);">
+                        {% if current_user.is_teacher() %}{{ current_user.get_subject_display() }} — {% endif %}
+                        {{ student_summaries|length }} students
+                    </div>
+                </div>
+            </div>
+            <a href="{{ url_for('students') }}" class="btn btn-outline btn-sm">View All <i class="bi bi-arrow-right"></i></a>
+        </div>
+        <div class="table-wrap" style="border-radius:0;border:none;border-top:1px solid var(--border);">
+            <table class="table">
                 <thead>
                     <tr>
                         <th>Student</th>
                         <th>Class</th>
-                        <th>Final Grade</th>
-                        <th>GPA</th>
+                        <th>Avg Score</th>
                         <th>Grade</th>
                         <th>Assessments</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% if grouped_students %}
-                        {% for cls, areas in grouped_students.items() %}
-                        <tr class="table-secondary">
-                            <td colspan="7"><strong>{{ cls }}</strong></td>
-                        </tr>
-                        {% for area, summaries in areas.items() %}
-                        <tr class="table-light">
-                            <td colspan="7" class="ps-5"><em>{{ area|replace('_',' ')|title }}</em></td>
-                        </tr>
-                        {% for summary in summaries %}
-                        <tr>
-                            <td><a href="{{ url_for('student_view', student_id=summary.student.id) }}" class="text-decoration-none fw-semibold">{{ summary.student.full_name() }}</a></td>
-                            <td>{{ summary.student.get_class_display() or '-' }}</td>
-                            <td>
-                                {% if summary.final_grade %}
-                                    {% if summary.final_grade >= 70 %}
-                                        <span class="badge bg-success">{{ "%.1f"|format(summary.final_grade) }}%</span>
-                                    {% elif summary.final_grade >= 45 %}
-                                        <span class="badge bg-warning">{{ "%.1f"|format(summary.final_grade) }}%</span>
-                                    {% else %}
-                                        <span class="badge bg-danger">{{ "%.1f"|format(summary.final_grade) }}%</span>
-                                    {% endif %}
-                                {% else %}
-                                    <span class="text-muted">-</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if summary.gpa is not none %}
-                                    <strong>{{ "%.1f"|format(summary.gpa) }}</strong>
-                                {% else %}
-                                    <span class="text-muted">-</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if summary.grade %}
-                                    {% if summary.grade == 'A1' %}
-                                        <span class="badge" style="background-color: #28a745; color: white;">{{ summary.grade }}</span>
-                                    {% elif summary.grade == 'B2' %}
-                                        <span class="badge" style="background-color: #28a745; color: white;">{{ summary.grade }}</span>
-                                    {% elif summary.grade == 'B3' %}
-                                        <span class="badge" style="background-color: #f0e68c; color: black;">{{ summary.grade }}</span>
-                                    {% elif summary.grade == 'C4' %}
-                                        <span class="badge" style="background-color: #ffd700; color: black;">{{ summary.grade }}</span>
-                                    {% elif summary.grade == 'C5' %}
-                                        <span class="badge" style="background-color: #ffff00; color: black;">{{ summary.grade }}</span>
-                                    {% elif summary.grade == 'C6' %}
-                                        <span class="badge" style="background-color: #ffa500; color: white;">{{ summary.grade }}</span>
-                                    {% elif summary.grade == 'D7' %}
-                                        <span class="badge" style="background-color: #ff8c00; color: white;">{{ summary.grade }}</span>
-                                    {% elif summary.grade == 'E8' %}
-                                        <span class="badge" style="background-color: #dc3545; color: white;">{{ summary.grade }}</span>
-                                    {% else %}
-                                        <span class="badge bg-danger">{{ summary.grade }}</span>
-                                    {% endif %}
-                                {% else %}
-                                    <span class="text-muted">-</span>
-                                {% endif %}
-                            </td>
-                            <td>{{ summary.assessment_count }}</td>
-                            <td>
-                                <a href="{{ url_for('student_view', student_id=summary.student.id) }}" class="btn btn-sm btn-outline-primary me-1">
-                                    <i class="bi bi-eye"></i> View
-                                </a>
-                                <a href="{{ url_for('student_view', student_id=summary.student.id) }}?metrics=1" class="btn btn-sm btn-outline-info me-1">
-                                    <i class="bi bi-bar-chart"></i> Metrics
-                                </a>
-                                <a href="{{ url_for('new_assessment', student_id=summary.student.id) }}" class="btn btn-sm btn-outline-success">
-                                    <i class="bi bi-plus-circle"></i> Add
-                                </a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                        {% endfor %}
-                        {% endfor %}
-                    {% else %}
-                        {% for summary in teacher_student_summaries %}
-                        <tr>
-                            <td><a href="{{ url_for('student_view', student_id=summary.student.id) }}" class="text-decoration-none fw-semibold">{{ summary.student.full_name() }}</a></td>
-                            <td>{{ summary.student.get_class_display() or '-' }}</td>
-                            <td>
-                                {% if summary.final_grade %}
-                                    {% if summary.final_grade >= 70 %}
-                                        <span class="badge bg-success">{{ "%.1f"|format(summary.final_grade) }}%</span>
-                                    {% elif summary.final_grade >= 45 %}
-                                        <span class="badge bg-warning">{{ "%.1f"|format(summary.final_grade) }}%</span>
-                                    {% else %}
-                                        <span class="badge bg-danger">{{ "%.1f"|format(summary.final_grade) }}%</span>
-                                    {% endif %}
-                                {% else %}
-                                    <span class="text-muted">-</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if summary.gpa is not none %}
-                                    <strong>{{ "%.1f"|format(summary.gpa) }}</strong>
-                                {% else %}
-                                    <span class="text-muted">-</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if summary.grade %}
-                                    {% if summary.grade == 'A1' %}
-                                        <span class="badge" style="background-color: #28a745; color: white;">{{ summary.grade }}</span>
-                                    {% elif summary.grade == 'B2' %}
-                                        <span class="badge" style="background-color: #28a745; color: white;">{{ summary.grade }}</span>
-                                    {% elif summary.grade == 'B3' %}
-                                        <span class="badge" style="background-color: #f0e68c; color: black;">{{ summary.grade }}</span>
-                                    {% elif summary.grade == 'C4' %}
-                                        <span class="badge" style="background-color: #ffd700; color: black;">{{ summary.grade }}</span>
-                                    {% elif summary.grade == 'C5' %}
-                                        <span class="badge" style="background-color: #ffff00; color: black;">{{ summary.grade }}</span>
-                                    {% elif summary.grade == 'C6' %}
-                                        <span class="badge" style="background-color: #ffa500; color: white;">{{ summary.grade }}</span>
-                                    {% elif summary.grade == 'D7' %}
-                                        <span class="badge" style="background-color: #ff8c00; color: white;">{{ summary.grade }}</span>
-                                    {% elif summary.grade == 'E8' %}
-                                        <span class="badge" style="background-color: #dc3545; color: white;">{{ summary.grade }}</span>
-                                    {% else %}
-                                        <span class="badge bg-danger">{{ summary.grade }}</span>
-                                    {% endif %}
-                                {% else %}
-                                    <span class="text-muted">-</span>
-                                {% endif %}
-                            </td>
-                            <td>{{ summary.assessment_count }}</td>
-                            <td>
-                                <a href="{{ url_for('student_view', student_id=summary.student.id) }}" class="btn btn-sm btn-outline-primary me-1">
-                                    <i class="bi bi-eye"></i> View
-                                </a>
-                                <a href="{{ url_for('student_view', student_id=summary.student.id) }}?metrics=1" class="btn btn-sm btn-outline-info me-1">
-                                    <i class="bi bi-bar-chart"></i> Metrics
-                                </a>
-                                <a href="{{ url_for('new_assessment', student_id=summary.student.id) }}" class="btn btn-sm btn-outline-success">
-                                    <i class="bi bi-plus-circle"></i> Add
-                                </a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    {% endif %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-{% endif %}
-
-{% if incomplete_students %}
-<div class="card mb-5 shadow-sm">
-    <div class="card-header" style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%); color: white; border-radius: 16px 16px 0 0 !important;">
-        <div class="d-flex justify-content-between align-items-center">
-            <div>
-                <h5 class="mb-1"><i class="bi bi-exclamation-triangle-fill"></i> Students Needing Attention</h5>
-                <small>{{ current_user.get_subject_display() if current_user.is_teacher() and current_user.subject else 'All Subjects' }}</small>
-            </div>
-            <div class="text-end">
-                <div class="badge bg-light text-danger fs-6 px-3 py-2">{{ incomplete_students|length }} students</div>
-            </div>
-        </div>
-    </div>
-    <div class="card-body p-0">
-        <div class="row g-0">
-            {% for item in incomplete_students %}
-            <div class="col-lg-6 col-xl-4">
-                <div class="p-3 border-end border-bottom">
-                    <div class="d-flex align-items-start">
-                        <div class="avatar-circle bg-danger text-white me-3 flex-shrink-0">
-                            <i class="bi bi-person-fill"></i>
-                        </div>
-                        <div class="flex-grow-1">
-                            <h6 class="mb-1">
-                                <a href="{{ url_for('student_view', student_id=item.student.id) }}" class="text-decoration-none text-dark fw-semibold">
-                                    {{ item.student.full_name() }}
-                                </a>
-                            </h6>
-                            <p class="text-muted small mb-2">{{ item.student.student_number }}</p>
-                            <div class="mb-2">
-                                <small class="text-muted">Missing:</small>
-                                <div class="d-flex flex-wrap gap-1 mt-1">
-                                    {% for cat in item.missing_categories %}
-                                    <span class="badge bg-danger-subtle text-danger border border-danger">{{ CATEGORY_LABELS.get(cat, cat) }}</span>
-                                    {% endfor %}
+                    {% for summary in student_summaries[:15] %}
+                    <tr>
+                        <td>
+                            <div style="font-weight:600;color:var(--ink);">{{ summary.student.full_name() }}</div>
+                            <div style="font-size:.7rem;color:var(--ink-4);">{{ summary.student.student_number }}</div>
+                        </td>
+                        <td><span class="badge badge-ink">{{ summary.student.class_name or 'N/A' }}</span></td>
+                        <td>
+                            {% if summary.avg_percentage is defined and summary.avg_percentage %}
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <div style="width:60px;height:5px;background:var(--border);border-radius:99px;overflow:hidden;">
+                                    <div style="height:100%;background:{% if summary.avg_percentage >= 70 %}var(--green){% elif summary.avg_percentage >= 50 %}var(--amber){% else %}var(--rose){% endif %};border-radius:99px;width:{{ summary.avg_percentage|round|int }}%;"></div>
                                 </div>
+                                <span style="font-weight:700;font-size:.82rem;">{{ "%.1f"|format(summary.avg_percentage) }}%</span>
                             </div>
-                            <a href="{{ url_for('new_assessment', student_id=item.student.id) }}" class="btn btn-sm btn-outline-danger">
-                                <i class="bi bi-plus-circle"></i> Complete Assessment
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-</div>
-{% endif %}
-
-<div class="card" id="recent-assessments-card" style="display: none;">
-    <div class="card-header d-flex justify-content-between align-items-center" style="background: var(--gradient-primary); color: white; border-radius: 16px 16px 0 0 !important;">
-        <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Assessments</h5>
-        <button class="btn btn-light btn-sm" onclick="hideRecentAssessments()">
-            <i class="bi bi-x"></i> Hide
-        </button>
-    </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead>
-                    <tr>
-                        <th>Student</th>
-                        <th>Category</th>
-                        <th>Subject</th>
-                        <th>Score</th>
-                        <th>Date</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for a in recent %}
-                    <tr>
-                        <td><a href="{{ url_for('student_view', student_id=a.student.id) }}">{{ a.student.full_name() }}</a></td>
-                        <td><span class="badge bg-primary">{{ CATEGORY_LABELS[a.category] }}</span></td>
-                        <td>{{ a.subject or '-' }}</td>
-                        <td>{{ "%.1f"|format(a.score) }}/{{ "%.0f"|format(a.max_score) }} <small class="text-muted">({{ "%.1f"|format(a.get_percentage()) }}%)</small></td>
-                        <td><small>{{ a.date_recorded.strftime('%Y-%m-%d %H:%M') }}</small></td>
-                    </tr>
-                    {% else %}
-                    <tr>
-                        <td colspan="5" class="text-center text-muted py-4">No assessments yet</td>
+                            {% else %}<span style="color:var(--ink-4);">—</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if summary.grade %}
+                            <span class="grade-orb grade-{{ summary.grade[0]|lower }}">{{ summary.grade }}</span>
+                            {% else %}<span style="color:var(--ink-4);">—</span>{% endif %}
+                        </td>
+                        <td><span class="badge badge-brand">{{ summary.assessment_count }}</span></td>
+                        <td>
+                            <div style="display:flex;gap:4px;">
+                                <a href="{{ url_for('student_view', student_id=summary.student.id) }}" class="btn btn-icon btn-sm btn-outline" title="View">
+                                    <i class="bi bi-eye" style="font-size:12px;"></i>
+                                </a>
+                                <a href="{{ url_for('new_assessment', student_id=summary.student.id) }}" class="btn btn-icon btn-sm btn-primary" title="Add Assessment">
+                                    <i class="bi bi-plus" style="font-size:12px;"></i>
+                                </a>
+                            </div>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -418,45 +309,122 @@
         </div>
     </div>
 </div>
+{% endif %}
 
-<div class="text-center mt-4" id="refresh-button-container">
-    <button class="btn btn-primary btn-lg" onclick="showRecentAssessments()">
-        <i class="bi bi-arrow-clockwise"></i> Load Recent Assessments
-    </button>
+<!-- ===== STUDENTS NEEDING ATTENTION ===== -->
+{% if incomplete_students %}
+<div class="section-gap animate-in delay-5">
+    <div class="card" style="border-color:var(--rose);border-width:1.5px;">
+        <div class="card-header" style="background:var(--rose-dim);">
+            <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;background:var(--rose);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                </div>
+                <div>
+                    <div class="card-title" style="color:var(--rose);">Students Needing Attention</div>
+                    <div style="font-size:.7rem;color:var(--rose);opacity:.7;">Missing assessment categories</div>
+                </div>
+            </div>
+            <span class="badge badge-rose">{{ incomplete_students|length }} students</span>
+        </div>
+        <div class="card-body" style="padding:16px;">
+            <div class="row g-3">
+                {% for item in incomplete_students %}
+                <div class="col-md-6 col-xl-4">
+                    <div style="border:1px solid var(--rose-dim);border-radius:var(--radius);padding:14px;background:var(--surface-2);">
+                        <div style="display:flex;align-items:flex-start;gap:10px;">
+                            <div style="width:34px;height:34px;border-radius:9px;background:var(--rose-dim);display:flex;align-items:center;justify-content:center;color:var(--rose);flex-shrink:0;">
+                                <i class="bi bi-person-fill"></i>
+                            </div>
+                            <div style="flex:1;min-width:0;">
+                                <div style="font-weight:700;font-size:.82rem;margin-bottom:2px;">
+                                    <a href="{{ url_for('student_view', student_id=item.student.id) }}" style="color:var(--ink);text-decoration:none;">{{ item.student.full_name() }}</a>
+                                </div>
+                                <div style="font-size:.7rem;color:var(--ink-4);margin-bottom:8px;">{{ item.student.student_number }}</div>
+                                <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;">
+                                    {% for cat in item.missing_categories %}
+                                    <span class="badge badge-rose" style="font-size:.62rem;">{{ CATEGORY_LABELS.get(cat, cat) }}</span>
+                                    {% endfor %}
+                                </div>
+                                <a href="{{ url_for('new_assessment', student_id=item.student.id) }}" class="btn btn-danger btn-sm" style="font-size:.72rem;padding:5px 10px;">
+                                    <i class="bi bi-plus-circle"></i> Complete
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- ===== RECENT ASSESSMENTS (Toggle Panel) ===== -->
+<div class="section-gap animate-in delay-5">
+    <div id="recentPanel" style="display:none;">
+        <div class="card">
+            <div class="card-header">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div style="width:32px;height:32px;background:var(--amber-dim);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--amber);">
+                        <i class="bi bi-clock-history"></i>
+                    </div>
+                    <span class="card-title">Recent Assessments</span>
+                </div>
+                <button class="btn btn-outline btn-sm" onclick="toggleRecent()"><i class="bi bi-x"></i> Hide</button>
+            </div>
+            <div class="table-wrap" style="border-radius:0;border:none;border-top:1px solid var(--border);">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Student</th>
+                            <th>Category</th>
+                            <th>Subject</th>
+                            <th>Score</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for a in recent %}
+                        <tr>
+                            <td><a href="{{ url_for('student_view', student_id=a.student.id) }}" style="color:var(--brand);font-weight:600;text-decoration:none;">{{ a.student.full_name() }}</a></td>
+                            <td><span class="badge badge-brand">{{ CATEGORY_LABELS[a.category] }}</span></td>
+                            <td>{{ a.subject or '—' }}</td>
+                            <td>
+                                <span style="font-weight:700;">{{ "%.1f"|format(a.score) }}/{{ "%.0f"|format(a.max_score) }}</span>
+                                <span style="font-size:.72rem;color:var(--ink-4);">({{ "%.1f"|format(a.get_percentage()) }}%)</span>
+                            </td>
+                            <td><span style="font-size:.75rem;color:var(--ink-4);">{{ a.date_recorded.strftime('%Y-%m-%d %H:%M') }}</span></td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" style="text-align:center;padding:28px;color:var(--ink-4);">No assessments yet</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="recentTrigger" style="text-align:center;">
+        <button class="btn btn-outline" onclick="toggleRecent()">
+            <i class="bi bi-clock-history"></i> Load Recent Assessments
+        </button>
+    </div>
 </div>
 
 <script>
-function showRecentAssessments() {
-    document.getElementById('recent-assessments-card').style.display = 'block';
-    document.getElementById('refresh-button-container').style.display = 'none';
+function toggleAllForms(expand) {
+    document.querySelectorAll('[id^="formBlock"]').forEach(el => {
+        const inst = bootstrap.Collapse.getOrCreateInstance(el);
+        expand ? inst.show() : inst.hide();
+    });
 }
-
-function hideRecentAssessments() {
-    document.getElementById('recent-assessments-card').style.display = 'none';
-    document.getElementById('refresh-button-container').style.display = 'block';
+function toggleRecent() {
+    const panel = document.getElementById('recentPanel');
+    const trigger = document.getElementById('recentTrigger');
+    const showing = panel.style.display !== 'none';
+    panel.style.display = showing ? 'none' : 'block';
+    trigger.style.display = showing ? 'block' : 'none';
 }
-
-// Live updates - Disabled to prevent potential hangs
-// Uncomment if needed and ensure /api/live-data responds quickly
-/*
-function updateLiveData() {
-    fetch('/api/live-data', { signal: AbortSignal.timeout(5000) })
-        .then(response => response.json())
-        .then(data => {
-            // Update counters
-            document.querySelector('.stat-card.success h2').textContent = data.student_count;
-            document.querySelector('.stat-card h2').textContent = data.assessment_count;
-            document.querySelector('.stat-card.danger h2').textContent = data.affected_students_count;
-            document.querySelectorAll('.stat-card h2')[3].textContent = data.users_count;
-        })
-        .catch(error => console.log('Live update failed:', error));
-}
-
-setInterval(updateLiveData, 30000);
-
-document.addEventListener('DOMContentLoaded', function() {
-    updateLiveData();
-});
-*/
 </script>
 {% endblock %}

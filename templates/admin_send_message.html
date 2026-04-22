@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Send Broadcast Message - EduAssess Pro{% endblock %}
+
+{% block page_title %}Send Broadcast Message{% endblock %}
+
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+<li class="breadcrumb-item active">Send Message</li>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex align-items-center gap-2">
+                    <div style="width:32px;height:32px;background:#e8edff;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#2b5bff;">
+                        <i class="bi bi-megaphone-fill"></i>
+                    </div>
+                    <h5 class="card-title mb-0">Compose Broadcast Message</h5>
+                </div>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-4">
+                        <label class="form-label fw-600">Send To</label>
+                        <select name="recipient_type" class="form-select" required>
+                            <option value="">-- Select Recipients --</option>
+                            <option value="all">All Users (Teachers & Students)</option>
+                            <option value="teachers">Teachers Only</option>
+                            <option value="students">Students Only</option>
+                        </select>
+                        <small class="text-muted d-block mt-2">
+                            <i class="bi bi-info-circle"></i>
+                            Messages will be sent to all selected users
+                        </small>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-600">Message Subject</label>
+                        <input type="text" name="subject" class="form-control form-control-lg" placeholder="Enter message subject" required maxlength="200">
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-600">Message Content</label>
+                        <textarea name="content" class="form-control" rows="8" placeholder="Enter your message here..." required></textarea>
+                        <small class="text-muted d-block mt-2">
+                            <i class="bi bi-pencil-square"></i>
+                            You can use multiple lines. Messages support basic text formatting.
+                        </small>
+                    </div>
+
+                    <div class="d-grid gap-2 d-sm-flex">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-send-fill"></i> Send Message
+                        </button>
+                        <a href="{{ url_for('admin_messages') }}" class="btn btn-outline-secondary btn-lg">
+                            <i class="bi bi-x"></i> Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .form-label {
+        color: #0d0f1a;
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+    
+    .form-control, .form-select {
+        border: 2px solid #e3e5f0;
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 0.95rem;
+        transition: all 0.3s ease;
+    }
+    
+    .form-control:focus, .form-select:focus {
+        border-color: #2b5bff;
+        box-shadow: 0 0 0 3px rgba(43, 91, 255, 0.1);
+        background-color: white;
+    }
+</style>
+{% endblock %}
