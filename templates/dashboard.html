@@ -385,7 +385,8 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% for a in recent %}
+                        {% set valid_assessments = recent | selectattr('student') | list %}
+                        {% for a in valid_assessments %}
                         <tr>
                             <td><a href="{{ url_for('student_view', student_id=a.student.id) }}" style="color:var(--brand);font-weight:600;text-decoration:none;">{{ a.student.full_name() }}</a></td>
                             <td><span class="badge badge-brand">{{ CATEGORY_LABELS[a.category] }}</span></td>
