@@ -1,4 +1,3 @@
-# from template_updater import calculate_scores_from_template, scores_from_assessments, CATEGORY_MAX
 from datetime import datetime
 import os
 import time
@@ -8,128 +7,104 @@ from flask_login import UserMixin
 from sqlalchemy.exc import OperationalError
 import json
 
+
 class SubjectArea:
-    """Helper class to categorize subjects"""
     CORE_SUBJECTS = ['Mathematics', 'English Language', 'General Science', 'Social Studies']
     SCIENCES = ['Biology', 'Chemistry', 'Physics', 'Additional Mathematics']
     ARTS_HUMANITIES = ['History', 'Geography', 'Economics', 'Government', 'Lit in English']
     BUSINESS = ['Business Management', 'Accounting', 'Computing in Business']
-    TECHNICAL_VOCATIONAL = [
-        'ICT', 'Design and Communication Technology', 
-        'Food and Nutrition', 'Clothing and Textile', 'Management in Living'
-    ]
-    CREATIVE_ARTS = [
-        'Arts and Design Foundation', 'Arts and Design Studio', 
-        'Music', 'Arts and Design'
-    ]
-    LANGUAGES = ['French', 'Ghanaian Language']
-    RELIGIOUS_STUDIES = ['Christian Religious Studies', 'Religious and Moral Education']
-    PHYSICAL_EDUCATION = ['Physical Education and Health']
 
 
 class User(UserMixin, db.Model):
     __tablename__ = "users"
-    
+
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(200), nullable=False)
     role = db.Column(db.String(20), default="teacher")
     subject = db.Column(db.String(100), nullable=True)
     class_name = db.Column(db.String(50), nullable=True)
-    classes = db.Column(db.Text, nullable=True)  # JSON string of multiple classes for teachers
+    classes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    # Relationships
+    last_login = db.Column(db.DateTime, nullable=True)
+
     assessments = db.relationship(
         "Assessment",
         backref="assigned_teacher",
         foreign_keys="Assessment.teacher_id",
         lazy=True
     )
-    
+
     def get_classes_list(self):
-        """Get list of classes assigned to this teacher"""
         if self.classes:
             try:
                 return json.loads(self.classes)
             except json.JSONDecodeError:
                 return []
-        # Fallback to old single class_name field for backward compatibility
         elif self.class_name:
             return [self.class_name]
         return []
-    
+
     def set_classes_list(self, classes_list):
-        """Set list of classes for this teacher"""
         if classes_list and isinstance(classes_list, list):
             self.classes = json.dumps(classes_list)
         else:
             self.classes = None
-    
+
     def check_password(self, password, bcrypt):
         return bcrypt.check_password_hash(self.password_hash, password)
-    
+
     def is_admin(self):
         return self.role == "admin"
-    
+
     def is_teacher(self):
         return self.role == "teacher"
-    
+
     def is_student(self):
         return self.role == "student"
-    
+
+    def is_parent(self):
+        return self.role == "parent"
+
     def get_subject_display(self):
-        """Return formatted subject name"""
         if not self.subject:
             return None
         return self.subject.replace('_', ' ').title()
-    
+
     def get_assigned_study_areas(self, config):
-        """Get study areas that offer this teacher's subject"""
         if not self.subject or not self.is_teacher():
             return []
-        
         study_area_subjects = config.get('STUDY_AREA_SUBJECTS') if isinstance(config, dict) else config.get('STUDY_AREA_SUBJECTS')
         if not study_area_subjects:
             return []
-        
         assigned_areas = []
         for area_key, subjects in study_area_subjects.items():
             if self.subject in subjects.get('core', []) or self.subject in subjects.get('electives', []):
                 assigned_areas.append(area_key)
-        
         return assigned_areas
-    
+
     def can_access_student(self, student, config):
-        """Check if teacher can access a specific student based on subject and study area"""
         if not self.is_teacher() or not self.subject:
             return False
-        
-        # Teacher can access student if:
-        # 1. Student is in a study area that offers the teacher's subject
-        # 2. Student has assessments in the teacher's subject
         if student.study_area:
             assigned_areas = self.get_assigned_study_areas(config)
             if student.study_area in assigned_areas:
                 return True
-        
-        # Also check if teacher has already assessed this student in their subject
         from models import Assessment
         existing_assessment = Assessment.query.filter_by(
             student_id=student.id,
             teacher_id=self.id,
             subject=self.subject
         ).first()
-        
         return existing_assessment is not None
-    
+
     def __repr__(self):
         return f"<User id={self.id}>"
 
 
 class Student(UserMixin, db.Model):
     __tablename__ = "students"
-    
+
     id = db.Column(db.Integer, primary_key=True)
     student_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
     first_name = db.Column(db.String(120), nullable=False)
@@ -140,41 +115,35 @@ class Student(UserMixin, db.Model):
     date_of_birth = db.Column(db.Date, nullable=True)
     study_area = db.Column(db.String(50), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    def get_assessments_for_template(self, subject=None):
-        """Get assessments formatted for template export"""
-        query = Assessment.query.filter_by(student_id=self.id)
-        
-        if subject:
-            query = query.filter_by(subject=subject)
-        
-        assessments = query.all()
-        
-        # Initialize template data with zeros
-        template_data = {
-            'ica1': 0,
-            'ica2': 0,
-            'icp1': 0,
-            'icp2': 0,
-            'gp1': 0,
-            'gp2': 0,
-            'practical': 0,
-            'mid_term': 0,
-            'end_term': 0
-        }
-        
-        # Map assessments to template columns
-        for assessment in assessments:
-            category = assessment.category
-            if category in template_data:
-                # For template, we take the latest assessment score for each category
-                # In a real implementation, you might want to aggregate or select specific ones
-                template_data[category] = assessment.score
-        
-        return template_data
-    
+
+    assessments = db.relationship(
+        "Assessment",
+        backref="student",
+        cascade="all, delete-orphan",
+        lazy=True,
+        order_by="Assessment.date_recorded.desc()"
+    )
+
+    question_attempts = db.relationship(
+        "QuestionAttempt",
+        backref="student",
+        cascade="all, delete-orphan",
+        lazy=True
+    )
+
+    quiz_attempts = db.relationship(
+        "QuizAttempt",
+        backref="student",
+        cascade="all, delete-orphan",
+        lazy=True
+    )
+
+    def full_name(self):
+        if self.middle_name:
+            return f"{self.first_name} {self.middle_name} {self.last_name}"
+        return f"{self.first_name} {self.last_name}"
+
     def get_class_display(self):
-        """Get formatted class name for display"""
         if not self.class_name:
             return None
         class_mapping = {
@@ -183,162 +152,92 @@ class Student(UserMixin, db.Model):
             'form3': 'Form 3'
         }
         return class_mapping.get(self.class_name.lower(), self.class_name.replace('_', ' ').title())
-    
+
     def get_study_area_display(self):
-        """Get formatted study area name for display"""
         if not self.study_area:
             return None
-        # This will be overridden by config in templates, but for model use
         return self.study_area.replace('_', ' ').title()
-    
-    # Relationships
-    assessments = db.relationship(
-        "Assessment",
-        backref="student",
-        cascade="all, delete-orphan",
-        lazy=True,
-        order_by="Assessment.date_recorded.desc()"
-    )
-    
-    question_attempts = db.relationship(
-        "QuestionAttempt",
-        backref="student",
-        cascade="all, delete-orphan",
-        lazy=True
-    )
-    
-    quiz_attempts = db.relationship(
-        "QuizAttempt", 
-        backref="student",
-        cascade="all, delete-orphan",
-        lazy=True
-    )
-    
-    def full_name(self):
-        """Return full name of student"""
-        if self.middle_name:
-            return f"{self.first_name} {self.middle_name} {self.last_name}"
-        return f"{self.first_name} {self.last_name}"
-    
+
+    def get_assessments_for_template(self, subject=None):
+        query = Assessment.query.filter_by(student_id=self.id)
+        if subject:
+            query = query.filter_by(subject=subject)
+        assessments = query.all()
+        template_data = {
+            'ica1': 0, 'ica2': 0, 'icp1': 0, 'icp2': 0,
+            'gp1': 0, 'gp2': 0, 'practical': 0,
+            'mid_term': 0, 'end_term': 0
+        }
+        for assessment in assessments:
+            category = assessment.category
+            if category in template_data:
+                template_data[category] = assessment.score
+        return template_data
+
     def get_assessment_summary(self, subject=None, teacher_id=None):
         assessments = self.assessments
         if subject:
             assessments = [a for a in assessments if a.subject == subject]
         if teacher_id:
             assessments = [a for a in assessments if a.teacher_id == teacher_id]
-        
         summary = {}
         for assessment in assessments:
             cat = assessment.category
             if cat not in summary:
-                summary[cat] = {
-                    "count": 0,
-                    "total_score": 0.0,
-                    "total_max": 0.0,
-                    "avg_percent": 0.0
-                }
+                summary[cat] = {"count": 0, "total_score": 0.0, "total_max": 0.0, "avg_percent": 0.0}
             summary[cat]["count"] += 1
             summary[cat]["total_score"] += assessment.score
             summary[cat]["total_max"] += assessment.max_score
-        
         for cat, data in summary.items():
             if data["count"] > 0:
-                # Calculate average percentage: sum(score/max_score * 100) / count
                 total_percentage = 0.0
                 for assessment in assessments:
                     if assessment.category == cat:
                         if assessment.max_score > 0:
                             total_percentage += (assessment.score / assessment.max_score) * 100
-                        else:
-                            total_percentage += 0.0
                 data["avg_percent"] = total_percentage / data["count"]
-        
         return summary
-    
+
     def get_subject_summary(self, teacher_id=None):
-        """Get summary by subject"""
         assessments = self.assessments
         if teacher_id:
             assessments = [a for a in assessments if a.teacher_id == teacher_id]
-            
         summary = {}
         for assessment in assessments:
             subject = assessment.subject
             if subject not in summary:
-                summary[subject] = {
-                    "count": 0,
-                    "total_score": 0.0,
-                    "total_max": 0.0,
-                    "avg_percent": 0.0,
-                    "assessments": []
-                }
+                summary[subject] = {"count": 0, "total_score": 0.0, "total_max": 0.0, "avg_percent": 0.0, "assessments": []}
             summary[subject]["count"] += 1
             summary[subject]["total_score"] += assessment.score
             summary[subject]["total_max"] += assessment.max_score
             summary[subject]["assessments"].append(assessment)
-        
         for subject, data in summary.items():
             if data["count"] > 0:
-                data["avg_percent"] = data["total_score"] / data["count"]  # Average raw score
-        
+                data["avg_percent"] = data["total_score"] / data["count"]
         return summary
-    
+
     def calculate_final_grade(self, subject=None, teacher_id=None):
-        """
-        Returns the final score (0-100) using the Excel template formula chain:
-            U = MIN(100, avg_class_score + avg_exam_score)
-        where:
-            avg_class_score = MIN(50, ROUNDUP( (total_class / 500 * 100) / 2, 0 ))
-            avg_exam_score  = MIN(50, ROUNDUP( end_term / 2, 0 ))
-
-        Only assessments matching subject/teacher_id are considered.
-        Returns None if no assessments exist.
-        """
         from template_updater import calculate_scores_from_template, scores_from_assessments
-
         query = [a for a in self.assessments if not a.archived]
         if subject:
             query = [a for a in query if a.subject == subject]
         if teacher_id:
             query = [a for a in query if a.teacher_id == teacher_id]
-
         if not query:
             return None
-
         raw_scores = scores_from_assessments(query)
         if not raw_scores:
             return None
-
         result = calculate_scores_from_template(raw_scores)
         return result['final_score']
 
     def get_gpa_and_grade(self, subject=None, teacher_id=None):
-        """
-        Returns {'gpa': float|'N/A', 'grade': str} derived from the Excel
-        formula chain (same thresholds as template cells W and X).
-        """
         summary = self.get_overall_summary(subject=subject, teacher_id=teacher_id)
         return {'gpa': summary['gpa'], 'grade': summary['grade']}
 
-
     def get_overall_summary(self, subject=None, teacher_id=None):
-        """
-        Returns a dict with all intermediate scores (mirrors every formula cell
-        in the template) plus the final score, gpa and grade.
-
-        Keys returned:
-            ica1, ica2, ica_total,
-            icp1, icp2, icp_total,
-            gp1,  gp2,  gp_total,
-            practical, mid_term,
-            total_class_score, pct_100, avg_class_score,
-            end_term, avg_exam_score,
-            final_score, percentage, gpa, grade,
-            has_data (bool)
-        """
         from template_updater import (calculate_scores_from_template,
                                        scores_from_assessments, CATEGORY_MAX)
-
         query = [a for a in self.assessments if not a.archived]
         if subject:
             query = [a for a in query if a.subject == subject]
@@ -356,16 +255,12 @@ class Student(UserMixin, db.Model):
             'gpa': 'N/A', 'grade': 'N/A',
             'has_data': False,
         }
-
         if not query:
             return empty
-
         raw_scores = scores_from_assessments(query)
         if not raw_scores:
             return empty
-
         result = calculate_scores_from_template(raw_scores)
-
         return {
             'ica1':              raw_scores.get('ica1', 0),
             'ica2':              raw_scores.get('ica2', 0),
@@ -390,21 +285,12 @@ class Student(UserMixin, db.Model):
             'has_data':          True,
         }
 
-
     def to_template_dict(self, subject=None):
-        """
-        Build the dict expected by AssessmentTemplateUpdater._write_student_row.
-        Pulls each category score from the student's assessments (most recent
-        per category if duplicates exist).
-        """
         from template_updater import scores_from_assessments, CATEGORY_MAX
-
         query = [a for a in self.assessments if not a.archived]
         if subject:
             query = [a for a in query if a.subject == subject]
-
         raw = scores_from_assessments(query)
-
         return {
             'name':       self.full_name(),
             'ref_id':     self.reference_number or '',
@@ -419,11 +305,11 @@ class Student(UserMixin, db.Model):
             'mid_term':   raw.get('mid_term',  0),
             'end_term':   raw.get('end_term',  0),
         }
- 
+
 
 class Assessment(db.Model):
     __tablename__ = "assessments"
-    
+
     id = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey("students.id"), nullable=False, index=True)
     category = db.Column(db.String(20), nullable=False, index=True)
@@ -439,104 +325,71 @@ class Assessment(db.Model):
     comments = db.Column(db.Text, nullable=True)
     date_recorded = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     archived = db.Column(db.Boolean, default=False, index=True)
-    
-    # Composite indexes for common query patterns
-    __table_args__ = (
-        db.Index('ix_assessment_teacher_archived', 'teacher_id', 'archived'),
-        db.Index('ix_assessment_student_subject', 'student_id', 'subject'),
-        db.Index('ix_assessment_subject_archived', 'subject', 'archived'),
-    )
-    
+
     def get_percentage(self):
-        """Return score as a percentage of max_score (0-100)."""
         if self.max_score and self.max_score > 0:
             return round((self.score / self.max_score) * 100, 2)
         return 0.0
-    
+
     def get_grade_letter(self):
-        """Return letter grade using Ghana Education Service (GES) A1–F9 scale.
-        Aligned with calculate_gpa_and_grade() in app.py for consistency."""
         percentage = self.get_percentage()
-        if percentage >= 80:
-            return "A1"
-        elif percentage >= 70:
-            return "B2"
-        elif percentage >= 65:
-            return "B3"
-        elif percentage >= 60:
-            return "C4"
-        elif percentage >= 55:
-            return "C5"
-        elif percentage >= 50:
-            return "C6"
-        elif percentage >= 45:
-            return "D7"
-        elif percentage >= 40:
-            return "E8"
-        else:
-            return "F9"
-    
+        if percentage >= 90:   return "A+"
+        elif percentage >= 80: return "A"
+        elif percentage >= 75: return "B+"
+        elif percentage >= 70: return "B"
+        elif percentage >= 65: return "C+"
+        elif percentage >= 60: return "C"
+        elif percentage >= 55: return "D+"
+        elif percentage >= 50: return "D"
+        else:                  return "F"
+
     def get_grade_point(self):
-        """Return GPA using Ghana Education Service scale (4.0 to 0.0).
-        Aligned with calculate_gpa_and_grade() in app.py for consistency."""
         percentage = self.get_percentage()
-        if percentage >= 80:
-            return 4.0
-        elif percentage >= 70:
-            return 3.5
-        elif percentage >= 65:
-            return 3.0
-        elif percentage >= 60:
-            return 2.5
-        elif percentage >= 55:
-            return 2.0
-        elif percentage >= 50:
-            return 1.5
-        elif percentage >= 45:
-            return 1.0
-        elif percentage >= 40:
-            return 0.5
-        else:
-            return 0.0
-    
+        if percentage >= 80:   return 4.0
+        elif percentage >= 75: return 3.5
+        elif percentage >= 70: return 3.0
+        elif percentage >= 65: return 2.5
+        elif percentage >= 60: return 2.0
+        elif percentage >= 55: return 1.5
+        elif percentage >= 50: return 1.0
+        else:                  return 0.0
+
     def get_subject_display(self):
-        """Return formatted subject name"""
         return self.subject.replace('_', ' ').title()
-    
+
     def __repr__(self):
         return f"<Assessment {self.category} - {self.subject}: {self.score}/{self.max_score}>"
 
 
 class Setting(db.Model):
     __tablename__ = "settings"
-    
+
     id = db.Column(db.Integer, primary_key=True)
     current_term = db.Column(db.String(32), nullable=False, default='term1')
     current_academic_year = db.Column(db.String(32), nullable=False, default='2024-2025')
     current_session = db.Column(db.String(32), nullable=False, default='First Term')
     assessment_active = db.Column(db.Boolean, default=True)
-    
+
     def __repr__(self):
         return f"<Setting term={self.current_term}, year={self.current_academic_year}>"
 
 
 class ActivityLog(db.Model):
     __tablename__ = "activity_logs"
-    
+
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)  # Made nullable to handle deleted users
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
     action = db.Column(db.String(100), nullable=False, index=True)
     details = db.Column(db.Text, nullable=True)
-    ip_address = db.Column(db.String(45), nullable=True)  # IPv6 addresses can be up to 45 chars
+    ip_address = db.Column(db.String(45), nullable=True)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-    
-    # Relationship with cascade delete - when user is deleted, activity logs are also deleted
+
     user = db.relationship(
         "User",
         foreign_keys=[user_id],
         backref=db.backref("activity_logs", lazy="dynamic", cascade="all, delete-orphan"),
     )
-    
+
     def __repr__(self):
         username = self.user.username if self.user else "Unknown"
         return f"<ActivityLog {username} - {self.action} at {self.timestamp}>"
@@ -544,138 +397,121 @@ class ActivityLog(db.Model):
 
 class Question(db.Model):
     __tablename__ = "questions"
-    
+
     id = db.Column(db.Integer, primary_key=True)
     subject = db.Column(db.String(120), nullable=False, index=True)
     question_text = db.Column(db.Text, nullable=False)
-    question_type = db.Column(db.String(20), nullable=False, default="mcq")  # mcq, true_false, short_answer
-    options = db.Column(db.JSON, nullable=True)  # For MCQ: ["A", "B", "C", "D"]
-    correct_answer = db.Column(db.String(500), nullable=False)  # For MCQ: "A", for true_false: "True"/"False", for short_answer: the answer
-    marks = db.Column(db.Float, nullable=False, default=1.0)  # Marks for the question
-    keywords = db.Column(db.JSON, nullable=True)  # For short_answer: list of keywords for flexible marking
-    difficulty = db.Column(db.String(20), nullable=False, default="medium")  # easy, medium, hard
-    explanation = db.Column(db.Text, nullable=True)  # Optional explanation for the answer
+    question_type = db.Column(db.String(20), nullable=False, default="mcq")
+    options = db.Column(db.JSON, nullable=True)
+    correct_answer = db.Column(db.String(500), nullable=False)
+    marks = db.Column(db.Float, nullable=False, default=1.0)
+    keywords = db.Column(db.JSON, nullable=True)
+    difficulty = db.Column(db.String(20), nullable=False, default="medium")
+    explanation = db.Column(db.Text, nullable=True)
     created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     approved_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
-    status = db.Column(db.String(20), nullable=False, default="pending")  # pending, approved, rejected
+    status = db.Column(db.String(20), nullable=False, default="pending")
     rejection_reason = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Relationships
+
     creator = db.relationship("User", foreign_keys=[created_by], backref="created_questions")
     approver = db.relationship("User", foreign_keys=[approved_by], backref="approved_questions")
-    
+
     def is_approved(self):
         return self.status == "approved"
-    
+
     def can_edit(self, user):
-        """Check if user can edit this question"""
         if user.is_admin():
             return True
         if user.is_teacher() and user.id == self.created_by and self.status == "pending":
             return True
         return False
-    
+
     def can_approve(self, user):
-        """Check if user can approve/reject this question"""
         return user.is_admin() or (user.is_teacher() and user.subject == self.subject)
-    
+
     def get_subject_display(self):
-        """Return formatted subject name"""
         return self.subject.replace('_', ' ').title()
-    
+
     @property
     def normalized_options(self):
-        """Return options as a list, handling legacy string format"""
         if not self.options:
             return []
         if isinstance(self.options, list):
             return self.options
         if isinstance(self.options, str):
-            # Split by newlines and filter empty lines
             return [line.strip() for line in self.options.split('\n') if line.strip()]
         return []
-    
+
     def __repr__(self):
         return f"<Question {self.id} - {self.subject}: {self.question_text[:50]}...>"
 
 
 class QuestionAttempt(db.Model):
     __tablename__ = "question_attempts"
-    
+
     id = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey("students.id"), nullable=False)
     question_id = db.Column(db.Integer, db.ForeignKey("questions.id"), nullable=False)
-    quiz_attempt_id = db.Column(db.Integer, db.ForeignKey("quiz_attempts.id"), nullable=True)  # Link to quiz attempt
+    quiz_attempt_id = db.Column(db.Integer, db.ForeignKey("quiz_attempts.id"), nullable=True)
     student_answer = db.Column(db.String(500), nullable=False)
     is_correct = db.Column(db.Boolean, nullable=False)
     score = db.Column(db.Float, nullable=False, default=0.0)
     attempted_at = db.Column(db.DateTime, default=datetime.utcnow)
-    time_taken = db.Column(db.Integer, nullable=True)  # Time in seconds
-    
-    # Relationships
+    time_taken = db.Column(db.Integer, nullable=True)
+
     question = db.relationship("Question", backref="attempts")
-    
+
     def __repr__(self):
         return f"<QuestionAttempt student={self.student_id} question={self.question_id} correct={self.is_correct}>"
 
 
 class Quiz(db.Model):
     __tablename__ = "quizzes"
-    
+
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
     subject = db.Column(db.String(120), nullable=False, index=True)
     description = db.Column(db.Text, nullable=True)
-    questions = db.Column(db.JSON, nullable=False)  # List of question IDs
-    time_limit = db.Column(db.Integer, nullable=True)  # Time limit in minutes
+    questions = db.Column(db.JSON, nullable=False)
+    time_limit = db.Column(db.Integer, nullable=True)
     created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    # Relationships
+
     creator = db.relationship("User", foreign_keys=[created_by], backref="created_quizzes")
-    
+
     def get_subject_display(self):
-        """Return formatted subject name"""
         return self.subject.replace('_', ' ').title()
-    
+
     def __repr__(self):
         return f"<Quiz {self.title} - {self.subject}>"
 
 
 class QuizAttempt(db.Model):
     __tablename__ = "quiz_attempts"
-    
+
     id = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey("students.id"), nullable=False)
     quiz_id = db.Column(db.Integer, db.ForeignKey("quizzes.id"), nullable=False)
     score = db.Column(db.Float, nullable=False)
-    total_marks = db.Column(db.Float, nullable=True)  # Total possible marks for this quiz
     total_questions = db.Column(db.Integer, nullable=False)
     correct_answers = db.Column(db.Integer, nullable=False)
     started_at = db.Column(db.DateTime, default=datetime.utcnow)
     completed_at = db.Column(db.DateTime, nullable=True)
-    time_taken = db.Column(db.Integer, nullable=True)  # Time in seconds
-    status = db.Column(db.String(20), default="in_progress")  # in_progress, completed
-    answers_json = db.Column(db.Text, nullable=True)  # Store partial answers as JSON
-    remaining_time = db.Column(db.Integer, nullable=True)  # Remaining time in seconds
-    
-    # Relationships
+    time_taken = db.Column(db.Integer, nullable=True)
+    status = db.Column(db.String(20), default="in_progress")
+    answers_json = db.Column(db.Text, nullable=True)
+    remaining_time = db.Column(db.Integer, nullable=True)
+
     quiz = db.relationship("Quiz", backref="attempts")
-    
+
     def get_percentage(self):
-        """Return score as a percentage of total marks.
-        Uses marks-based calculation when total_marks is available;
-        falls back to question-count method for legacy rows."""
-        if self.total_marks and self.total_marks > 0:
-            return (self.score / self.total_marks) * 100
-        elif self.total_questions > 0:
-            # Fallback for legacy attempts without total_marks
+        if self.total_questions > 0:
             return (self.correct_answers / self.total_questions) * 100
         return 0
-    
+
     def __repr__(self):
         return f"<QuizAttempt student={self.student_id} quiz={self.quiz_id} score={self.score}>"
 
@@ -684,12 +520,11 @@ class SystemConfig(db.Model):
     __tablename__ = 'system_config'
     id = db.Column(db.Integer, primary_key=True)
     config_key = db.Column(db.String(100), unique=True, nullable=False)
-    config_value = db.Column(db.Text, nullable=False)  # Store as JSON
+    config_value = db.Column(db.Text, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     @staticmethod
     def get_config(key, default=None):
-        """Get configuration value from database"""
         config_entry = SystemConfig.query.filter_by(config_key=key).first()
         if config_entry:
             try:
@@ -700,19 +535,20 @@ class SystemConfig(db.Model):
 
     @staticmethod
     def set_config(key, value):
-        """Set configuration value in database"""
         config_entry = SystemConfig.query.filter_by(config_key=key).first()
         if config_entry:
             config_entry.config_value = json.dumps(value) if not isinstance(value, str) else value
         else:
-            config_entry = SystemConfig(config_key=key, config_value=json.dumps(value) if not isinstance(value, str) else value)
+            config_entry = SystemConfig(
+                config_key=key,
+                config_value=json.dumps(value) if not isinstance(value, str) else value
+            )
             db.session.add(config_entry)
         db.session.commit()
         return value
 
     @staticmethod
     def get_all_configs():
-        """Get all configuration as a dict"""
         configs = {}
         for config_entry in SystemConfig.query.all():
             try:
@@ -733,10 +569,6 @@ parent_student = db.Table(
 )
 
 
-# --------------------------------------------------------------------------- #
-#  Parent model
-# --------------------------------------------------------------------------- #
-
 class Parent(db.Model):
     __tablename__ = "parents"
 
@@ -746,13 +578,33 @@ class Parent(db.Model):
     students = db.relationship("Student", secondary=parent_student, backref="parents")
 
 
+class Message(db.Model):
+    __tablename__ = "messages"
+
+    id = db.Column(db.Integer, primary_key=True)
+    sender_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    recipient_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    subject = db.Column(db.String(200), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    message_type = db.Column(db.String(20), default="notification")  # notification, update, alert
+    is_read = db.Column(db.Boolean, default=False)
+    is_broadcast = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    sender = db.relationship("User", foreign_keys=[sender_id], backref="sent_messages")
+    recipient = db.relationship("User", foreign_keys=[recipient_id], backref="received_messages")
+
+    def __repr__(self):
+        return f"<Message id={self.id} subject='{self.subject}'>"
+
+
 def init_db(app, bcrypt):
     db.init_app(app)
 
     with app.app_context():
         print(f"Initializing database at: {app.config['SQLALCHEMY_DATABASE_URI']}")
-        
-        # Wait for database to be ready (max 30 seconds)
+
         max_retries = 5
         for attempt in range(max_retries):
             try:
@@ -761,12 +613,11 @@ def init_db(app, bcrypt):
                 break
             except OperationalError as e:
                 if attempt == max_retries - 1:
-                    print(f"✗ Failed to connect to database after {max_retries} attempts")
+                    print(f"Failed to connect to database after {max_retries} attempts")
                     raise
-                print(f"⚠ Database not ready, retrying in 2 seconds... ({attempt+1}/{max_retries})")
+                print(f"Database not ready, retrying in 2 seconds... ({attempt+1}/{max_retries})")
                 time.sleep(2)
-        
-        # Create default settings if not exist
+
         if not Setting.query.first():
             default_settings = Setting(
                 current_term='term1',
@@ -776,11 +627,11 @@ def init_db(app, bcrypt):
             db.session.add(default_settings)
             db.session.commit()
             print("Default settings created")
-        
+
         if User.query.count() == 0:
             default_username = app.config.get("DEFAULT_ADMIN_USERNAME", "admin")
             default_password = app.config.get("DEFAULT_ADMIN_PASSWORD", "Admin@123")
-            
+
             hashed = bcrypt.generate_password_hash(default_password).decode("utf-8")
             admin = User(
                 username=default_username,
@@ -789,7 +640,7 @@ def init_db(app, bcrypt):
             )
             db.session.add(admin)
             db.session.commit()
-            
+
             print(f"\n{'='*60}")
             print(f"Created default admin account:")
             print(f"  Username: {default_username}")
