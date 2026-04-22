@@ -247,13 +247,22 @@ def utility_processor():
 # ---------------------------------------------------------------------------
 # Import models and helpers AFTER app is created
 # ---------------------------------------------------------------------------
-# 1. Extensions (bcrypt, login_manager, csrf, limiter)
-bcrypt = Bcrypt(app)
+# Extensions
+bcrypt        = Bcrypt(app)
 login_manager = LoginManager(app)
-csrf = CSRFProtect(app)
-limiter = Limiter(...)
+login_manager.login_view = 'login'
+csrf          = CSRFProtect(app)
 
-# 2. Import models BEFORE calling init_db
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=['200 per day', '50 per hour'],
+    storage_uri=os.environ.get('REDIS_URL', 'memory://'),
+)
+
+# ---------------------------------------------------------------------------
+# Import models and helpers AFTER app is created
+# ---------------------------------------------------------------------------
 from models import (User, Student, Assessment, Setting, ActivityLog, Question,
                     QuestionAttempt, Quiz, QuizAttempt, SystemConfig, Parent,
                     Message, init_db)
@@ -267,12 +276,12 @@ from analytics import get_class_performance_summary, get_grade_distribution
 from api_v1 import api_bp
 from template_updater import AssessmentTemplateUpdater
 
-# 3. Now initialise DB
+# Initialise DB
 init_db(app, bcrypt)
 with app.app_context():
     db.create_all()
 
-# 4. Session AFTER db is ready
+# Session AFTER db is ready
 app.config['SESSION_SQLALCHEMY'] = db
 Session(app)
 
