@@ -5,25 +5,25 @@ Provides score-calculation helpers used by the Student model and the
 Excel-export routes.
 
 Formula chain (mirrors the school's Excel template):
-  ICA total  = ica1 + ica2              (max 100 raw → normalised to 50)
-  ICP total  = icp1 + icp2              (max 100 raw → normalised to 50)
-  GP  total  = gp1  + gp2               (max 100 raw → normalised to 50)
+  ICA total  = ica1 + ica2              (max 100 raw -> normalised to 50)
+  ICP total  = icp1 + icp2              (max 100 raw -> normalised to 50)
+  GP  total  = gp1  + gp2               (max 100 raw -> normalised to 50)
   Total class score = ICA_t + ICP_t + GP_t + practical + mid_term
                     (contributions are scaled so the sum is /500)
-  avg_class_score  = ROUNDUP(total_class / 500 * 100 / 2, 0)   → max 50
-  avg_exam_score   = ROUNDUP(end_term / 2, 0)                   → max 50
+  avg_class_score  = ROUNDUP(total_class / 500 * 100 / 2, 0)   -> max 50
+  avg_exam_score   = ROUNDUP(end_term / 2, 0)                   -> max 50
   final_score      = MIN(100, avg_class_score + avg_exam_score)
 
 GPA / Grade thresholds (WAEC SHS Ghana):
-  ≥80 → A1 / 4.0
-  ≥70 → B2 / 3.5
-  ≥65 → B3 / 3.0
-  ≥60 → C4 / 2.5
-  ≥55 → C5 / 2.0
-  ≥50 → C6 / 1.5
-  ≥45 → D7 / 1.0
-  ≥40 → E8 / 0.5
-    <40 → F9 / 0.0
+  >=80 -> A1 / 4.0
+  >=70 -> B2 / 3.5
+  >=65 -> B3 / 3.0
+  >=60 -> C4 / 2.5
+  >=55 -> C5 / 2.0
+  >=50 -> C6 / 1.5
+  >=45 -> D7 / 1.0
+  >=40 -> E8 / 0.5
+    <40 -> F9 / 0.0
 """
 
 import math
@@ -45,7 +45,6 @@ CATEGORY_MAX = {
 }
 
 
-# ---------------------------------------------------------------------------
 def _roundup(value, decimals=0):
     """ROUNDUP equivalent (always rounds away from zero)."""
     factor = 10 ** decimals
@@ -55,14 +54,13 @@ def _roundup(value, decimals=0):
 def scores_from_assessments(assessments):
     """
     Collapse a list of Assessment objects into a single dict of raw scores.
-    If the same category appears more than once (same teacher/subject), the
-    most recently recorded score wins.
+    If the same category appears more than once, the most recently recorded
+    score wins.
     """
     raw: dict = {}
     for a in sorted(assessments, key=lambda x: x.date_recorded):
         cat = a.category
         if cat in CATEGORY_MAX:
-            # Clamp to the defined maximum for that category
             raw[cat] = min(float(a.score), float(CATEGORY_MAX[cat]))
     return raw
 
@@ -71,11 +69,8 @@ def calculate_scores_from_template(raw_scores: dict) -> dict:
     """
     Apply the Excel formula chain and return a dict containing every
     intermediate and final value.
-
-    raw_scores keys: ica1, ica2, icp1, icp2, gp1, gp2,
-                     practical, mid_term, end_term
     """
-    g = raw_scores.get  # shorthand
+    g = raw_scores.get
 
     ica1      = min(float(g("ica1",      0)), 50)
     ica2      = min(float(g("ica2",      0)), 50)
@@ -91,21 +86,15 @@ def calculate_scores_from_template(raw_scores: dict) -> dict:
     icp_total  = icp1  + icp2
     gp_total   = gp1   + gp2
 
-    # Total class score (out of 500 notional points)
     total_class_score = ica_total + icp_total + gp_total + practical + mid_term
 
-    # Convert to percentage of 500 then halve → out of 50
     pct_100         = (total_class_score / 500.0) * 100.0
     avg_class_score = min(50.0, _roundup(pct_100 / 2.0, 0))
+    avg_exam_score  = min(50.0, _roundup(end_term / 2.0, 0))
 
-    # Exam component: end_term / 2 → out of 50
-    avg_exam_score = min(50.0, _roundup(end_term / 2.0, 0))
-
-    # Final score
     final_score = min(100.0, avg_class_score + avg_exam_score)
-    percentage  = final_score   # already 0-100
+    percentage  = final_score
 
-    # GPA / Grade
     gpa, grade = _grade(final_score)
 
     return {
@@ -136,14 +125,9 @@ def _grade(score: float):
     return 0.0, "F9"
 
 
-# ---------------------------------------------------------------------------
-#  Template writer
-# ---------------------------------------------------------------------------
-
 class AssessmentTemplateUpdater:
     """Fills in an openpyxl workbook from student assessment data."""
 
-    # Column positions (1-based) in the template
     COL_NAME      = 2
     COL_REF       = 3
     COL_AREA      = 4
@@ -171,16 +155,14 @@ class AssessmentTemplateUpdater:
     def update_school_info(self, subject="", term_year="", form=""):
         if not self.ws:
             raise RuntimeError("Call load_template() first.")
-        # Update common header cells – adjust row/col as needed for actual template
         try:
             self.ws["B2"] = subject
             self.ws["B3"] = form
             self.ws["B4"] = term_year
         except Exception:
-            pass  # Template may not have these cells; silently ignore
+            pass
 
     def add_student(self, start_row: int, student_data: dict):
-        """Write a single student row at start_row."""
         if not self.ws:
             raise RuntimeError("Call load_template() first.")
         self._write_student_row(start_row, student_data)
@@ -210,4 +192,3 @@ class AssessmentTemplateUpdater:
         if not self.wb:
             raise RuntimeError("No workbook loaded.")
         self.wb.save(output_path)
-
