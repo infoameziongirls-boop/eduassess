@@ -247,24 +247,29 @@ def utility_processor():
 # ---------------------------------------------------------------------------
 # Import models and helpers AFTER app is created
 # ---------------------------------------------------------------------------
+# 1. Extensions (bcrypt, login_manager, csrf, limiter)
+bcrypt = Bcrypt(app)
+login_manager = LoginManager(app)
+csrf = CSRFProtect(app)
+limiter = Limiter(...)
+
+# 2. Import models BEFORE calling init_db
 from models import (User, Student, Assessment, Setting, ActivityLog, Question,
                     QuestionAttempt, Quiz, QuizAttempt, SystemConfig, Parent,
                     Message, init_db)
-from excel_utils import (ExcelTemplateHandler, ExcelBulkImporter,
-                         StudentBulkImporter, TeacherBulkImporter,
-                         QuestionBulkImporter, create_default_template,
-                         create_student_import_template,
-                         create_teacher_import_template,
-                         create_question_import_template)
+from excel_utils import (...)
 from analytics import get_class_performance_summary, get_grade_distribution
 from api_v1 import api_bp
 from template_updater import AssessmentTemplateUpdater
 
-# Initialise DB
+# 3. Now initialise DB
 init_db(app, bcrypt)
 with app.app_context():
     db.create_all()
 
+# 4. Session AFTER db is ready
+app.config['SESSION_SQLALCHEMY'] = db
+Session(app)
 
 def load_persistent_config():
     with app.app_context():
