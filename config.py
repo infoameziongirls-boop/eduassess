@@ -248,12 +248,12 @@ class ProductionConfig(Config):
 
     _redis_url = os.environ.get("REDIS_URL", "")
     if _redis_available and _redis_url and _redis_url != "memory://":
-    SESSION_TYPE  = "redis"
-    SESSION_REDIS = redis_lib.from_url(_redis_url)
+        SESSION_TYPE  = "redis"
+        SESSION_REDIS = redis_lib.from_url(_redis_url)
     else:
-    SESSION_TYPE       = "sqlalchemy"
-    SESSION_SQLALCHEMY = None
-    SESSION_REDIS      = None
+        SESSION_TYPE       = "sqlalchemy"
+        SESSION_SQLALCHEMY = None
+        SESSION_REDIS      = None
 
     SESSION_PERMANENT = False
     SESSION_USE_SIGNER = True
