@@ -135,6 +135,7 @@ limiter = Limiter(
     storage_uri=os.environ.get('REDIS_URL', 'memory://'),
 )
 
+app.config['SESSION_SQLALCHEMY'] = db
 Session(app)
 
 
