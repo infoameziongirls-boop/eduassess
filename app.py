@@ -257,7 +257,12 @@ limiter = Limiter(...)
 from models import (User, Student, Assessment, Setting, ActivityLog, Question,
                     QuestionAttempt, Quiz, QuizAttempt, SystemConfig, Parent,
                     Message, init_db)
-from excel_utils import (...)
+from excel_utils import (ExcelTemplateHandler, ExcelBulkImporter,
+                         StudentBulkImporter, TeacherBulkImporter,
+                         QuestionBulkImporter, create_default_template,
+                         create_student_import_template,
+                         create_teacher_import_template,
+                         create_question_import_template)
 from analytics import get_class_performance_summary, get_grade_distribution
 from api_v1 import api_bp
 from template_updater import AssessmentTemplateUpdater
