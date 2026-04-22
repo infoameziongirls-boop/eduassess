@@ -180,10 +180,25 @@
         font-weight: 600;
         margin-bottom: 8px;
     }
+
+    @media (max-width: 576px) {
+        .login-container-student {
+            padding: 15px;
+        }
+        .login-header-student {
+            padding: 30px 20px 20px;
+        }
+        .login-body-student {
+            padding: 30px 20px;
+        }
+        .login-card-student {
+            min-width: 100%;
+        }
+    }
 </style>
 
 <div class="login-container-student">
-    <div class="login-content-student col-lg-5 col-md-7 col-sm-10">
+    <div class="login-card-student" style="width: 100%; max-width: 500px;">
         <div class="card login-card-student">
             <div class="login-header-student">
                 <div class="login-icon-student">
@@ -199,11 +214,11 @@
                     {{ form.hidden_tag() }}
                     
                     <div class="mb-4">
-                        {{ form.student_number.label(class="form-label") }}
-                        {{ form.student_number(class="form-control form-control-lg form-control-student", placeholder="Enter your Student Number or Reference Number", autofocus=True, autocomplete="username") }}
-                        {% if form.student_number.errors %}
-                            <div class="text-danger small mt-2">
-                                {% for error in form.student_number.errors %}{{ error }}{% endfor %}
+                        {{ form.identifier.label(class='form-label') }}
+                        {{ form.identifier(class='form-control form-control-lg form-control-student', placeholder='Enter your Student Number or Reference Number', autofocus=True, autocomplete='username') }}
+                        {% if form.identifier.errors %}
+                            <div class='text-danger small mt-2'>
+                                {% for error in form.identifier.errors %}{{ error }}{% endfor %}
                             </div>
                         {% endif %}
                     </div>
