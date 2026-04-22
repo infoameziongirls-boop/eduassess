@@ -120,30 +120,6 @@ for d in [app.config['UPLOAD_FOLDER'],
           app.config['SESSION_FILE_DIR']]:
     os.makedirs(d, exist_ok=True)
 
-# ---------------------------------------------------------------------------
-# Extensions
-# ---------------------------------------------------------------------------
-bcrypt       = Bcrypt(app)
-login_manager = LoginManager(app)
-login_manager.login_view = 'login'
-csrf         = CSRFProtect(app)
-
-limiter = Limiter(
-    app=app,
-    key_func=get_remote_address,
-    default_limits=['200 per day', '50 per hour'],
-    storage_uri=os.environ.get('REDIS_URL', 'memory://'),
-)
-
-# Initialise DB
-init_db(app, bcrypt)
-with app.app_context():
-    db.create_all()
-
-# Session must come AFTER db is initialised
-app.config['SESSION_SQLALCHEMY'] = db
-Session(app)
-
 
 @app.errorhandler(CSRFError)
 def handle_csrf_error(e):
@@ -243,22 +219,6 @@ def utility_processor():
         except Exception:
             return None
     return dict(safe_url_for=safe_url_for)
-
-# ---------------------------------------------------------------------------
-# Import models and helpers AFTER app is created
-# ---------------------------------------------------------------------------
-# Extensions
-bcrypt        = Bcrypt(app)
-login_manager = LoginManager(app)
-login_manager.login_view = 'login'
-csrf          = CSRFProtect(app)
-
-limiter = Limiter(
-    app=app,
-    key_func=get_remote_address,
-    default_limits=['200 per day', '50 per hour'],
-    storage_uri=os.environ.get('REDIS_URL', 'memory://'),
-)
 
 # ---------------------------------------------------------------------------
 # Import models and helpers AFTER app is created
