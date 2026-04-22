@@ -653,6 +653,24 @@ def internal_error(e):
     return render_template('500.html'), 500
 
 
+
+
+def cleanup_orphaned_assessments():
+    """Remove assessments with missing students (orphaned records)"""
+    from models import Assessment, Student, db
+    try:
+        orphaned = db.session.query(Assessment).filter(
+            ~Assessment.student_id.in_(db.session.query(Student.id))
+        ).delete(synchronize_session=False)
+        if orphaned > 0:
+            db.session.commit()
+            print(f"Cleaned {orphaned} orphaned assessments")
+        return orphaned
+    except Exception as e:
+        print(f"Error cleaning assessments: {e}")
+        db.session.rollback()
+        return 0
+
 @app.route('/health')
 def health_check():
     try:
@@ -781,6 +799,9 @@ def dashboard():
     else:
         recent = Assessment.query.filter_by(archived=False) \
                                  .order_by(Assessment.date_recorded.desc()).limit(8).all()
+    
+    # Filter out assessments with missing students to avoid template errors
+    recent = [a for a in recent if a.student is not None]
 
     students_by_class, students_by_area = get_student_groups(current_user, app.config)
 
@@ -1269,6 +1290,9 @@ def assessments_list():
 
     pagination = q.order_by(Assessment.date_recorded.desc()) \
                   .paginate(page=page, per_page=per_page, error_out=False)
+    
+    # Filter out assessments with missing students
+    pagination.items = [a for a in pagination.items if a.student is not None]
 
     form = AssessmentFilterForm()
     form.subject.data    = subject
