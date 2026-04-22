@@ -1,254 +1,220 @@
 {% extends "base.html" %}
+{% block title %}{% if assessment %}Edit Assessment{% else %}New Assessment{% endif %}{% endblock %}
+{% block page_title %}{% if assessment %}Edit Assessment{% else %}New Assessment{% endif %}{% endblock %}
+{% block breadcrumbs %}
+<span class="sep">/</span>
+<a href="{{ url_for('assessments_list') }}">Assessments</a>
+<span class="sep">/</span>
+<span class="current">{% if assessment %}Edit{% else %}New{% endif %}</span>
+{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-    <h2>{% if assessment %}Edit Assessment{% else %}New Assessment{% endif %}</h2>
-    
-    <form method="POST">
-        {{ form.hidden_tag() }}
-        
-        <div class="row">
-            <div class="col-md-6">
-                <div class="mb-3">
-                    {{ form.student_name.label(class="form-label") }}
-                    {% if student_full_name %}
-                        <p class="form-control-plaintext">{{ student_full_name }}</p>
-                        <input type="hidden" name="student_name" value="{{ form.student_name.data }}">
-                    {% else %}
-                        <select name="student_name" class="form-select" id="student_name">
-                            <option value="">-- Select Student --</option>
-                            {% for class_name, students_in_class in grouped_students.items() %}
-                            <optgroup label="Form: {{ class_name }}">
-                                {% for student in students_in_class %}
-                                <option value="{{ student.student_number }}" 
-                                        data-ref="{{ student.reference_number or student.student_number }}"
-                                        {% if form.student_name.data == student.student_number %}selected{% endif %}>
-                                    {{ student.full_name() }} ({{ student.student_number }})
-                                </option>
-                                {% endfor %}
-                            </optgroup>
-                            {% endfor %}
-                        </select>
-                    {% endif %}
-                    {% for error in form.student_name.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
-                </div>
+<div class="page-header animate-in">
+    <div>
+        <h1 class="page-title">{% if assessment %}Edit Assessment{% else %}Capture Assessment{% endif %}</h1>
+        <p class="page-subtitle">Record student performance data</p>
+    </div>
+    <a href="{{ url_for('assessments_list') }}" class="btn btn-outline">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="row g-4 animate-in delay-1">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title"><i class="bi bi-pencil-square me-2" style="color:var(--brand);"></i>Assessment Details</span>
             </div>
-            <div class="col-md-6">
-                <div class="mb-3">
-                    {{ form.category.label(class="form-label") }}
-                    {{ form.category(class="form-select") }}
-                    {% for error in form.category.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
+            <div class="card-body">
+                <form method="POST">
+                    {{ form.hidden_tag() }}
+
+                    <!-- Student + Category -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-7">
+                            <label class="form-label">{{ form.student_name.label.text }}</label>
+                            {% if student_full_name %}
+                                <div style="padding:10px 14px;background:var(--surface);border:1.5px solid var(--border);border-radius:9px;font-weight:600;color:var(--ink);">{{ student_full_name }}</div>
+                                <input type="hidden" name="student_name" value="{{ form.student_name.data }}">
+                            {% else %}
+                                <select name="student_name" class="form-select" id="student_name">
+                                    <option value="">— Select Student —</option>
+                                    {% for class_name, students_in_class in grouped_students.items() %}
+                                    <optgroup label="Form: {{ class_name }}">
+                                        {% for student in students_in_class %}
+                                        <option value="{{ student.student_number }}"
+                                                data-ref="{{ student.reference_number or student.student_number }}"
+                                                {% if form.student_name.data == student.student_number %}selected{% endif %}>
+                                            {{ student.full_name() }} ({{ student.student_number }})
+                                        </option>
+                                        {% endfor %}
+                                    </optgroup>
+                                    {% endfor %}
+                                </select>
+                            {% endif %}
+                            {% for error in form.student_name.errors %}<div style="color:var(--rose);font-size:.75rem;margin-top:4px;">{{ error }}</div>{% endfor %}
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label">{{ form.category.label.text }}</label>
+                            {{ form.category(class="form-select") }}
+                            {% for error in form.category.errors %}<div style="color:var(--rose);font-size:.75rem;margin-top:4px;">{{ error }}</div>{% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Hidden fields -->
+                    {{ form.student_number(class="d-none") }}
+                    {{ form.reference_number(class="d-none") }}
+
+                    <!-- Subject + Class -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.subject.label.text }}</label>
+                            {% if current_user.is_teacher() and current_user.subject %}
+                            <input type="text" class="form-control" value="{{ current_user.subject|title }}" readonly style="background:var(--surface);color:var(--ink-3);">
+                            <input type="hidden" name="subject" value="{{ current_user.subject }}">
+                            {% else %}
+                            {{ form.subject(class="form-select") }}
+                            {% endif %}
+                            {% for error in form.subject.errors %}<div style="color:var(--rose);font-size:.75rem;margin-top:4px;">{{ error }}</div>{% endfor %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.class_name.label.text }}</label>
+                            {% if current_user.is_teacher() and current_user.class_name %}
+                            <input type="text" class="form-control" value="{{ current_user.class_name }}" readonly style="background:var(--surface);color:var(--ink-3);">
+                            <input type="hidden" name="class_name" value="{{ current_user.class_name }}">
+                            {% else %}
+                            {{ form.class_name(class="form-select") }}
+                            {% endif %}
+                            {% for error in form.class_name.errors %}<div style="color:var(--rose);font-size:.75rem;margin-top:4px;">{{ error }}</div>{% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Score Row -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">{{ form.score.label.text }}</label>
+                            {{ form.score(class="form-control", type="number", step="0.1", min="0") }}
+                            {% for error in form.score.errors %}<div style="color:var(--rose);font-size:.75rem;margin-top:4px;">{{ error }}</div>{% endfor %}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">{{ form.max_score.label.text }}</label>
+                            {{ form.max_score(class="form-select") }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Percentage</label>
+                            <div style="padding:9px 13px;background:var(--brand-dim);border:1.5px solid var(--border);border-radius:9px;font-family:var(--font-display);font-weight:700;color:var(--brand);" id="percentage">—</div>
+                        </div>
+                    </div>
+
+                    <!-- Term Row -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">{{ form.term.label.text }}</label>
+                            {{ form.term(class="form-control") }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">{{ form.academic_year.label.text }}</label>
+                            {{ form.academic_year(class="form-control", readonly=True) }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">{{ form.session.label.text }}</label>
+                            {{ form.session(class="form-control", readonly=True) }}
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.assessor.label.text }}</label>
+                            {{ form.assessor(class="form-control") }}
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label">{{ form.comments.label.text }}</label>
+                        {{ form.comments(class="form-control", rows=3) }}
+                    </div>
+
+                    <div style="display:flex;gap:10px;">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> {% if assessment %}Update{% else %}Save{% endif %} Assessment
+                        </button>
+                        <a href="{{ url_for('assessments_list') }}" class="btn btn-outline">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Panel -->
+    <div class="col-lg-4">
+        <div class="card" style="position:sticky;top:calc(var(--topbar-h) + 16px);">
+            <div class="card-header">
+                <span class="card-title">Scoring Guide</span>
+            </div>
+            <div class="card-body" style="padding:16px;">
+                <div style="font-size:.75rem;font-weight:700;color:var(--ink-4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Grade Boundaries</div>
+                {% set grades = [('A1','80–100','green'),('B2','70–79','brand'),('B3','65–69','brand'),('C4','60–64','amber'),('C5','55–59','amber'),('C6','50–54','amber'),('D7','45–49','rose'),('E8','40–44','rose'),('F9','0–39','ink')] %}
+                {% for grade, range, color in grades %}
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-radius:7px;margin-bottom:3px;background:var(--{{ color }}-dim);">
+                    <span style="font-family:var(--font-display);font-weight:700;font-size:.78rem;color:var(--{{ color }});">{{ grade }}</span>
+                    <span style="font-size:.75rem;color:var(--{{ color }});font-weight:600;">{{ range }}%</span>
+                </div>
+                {% endfor %}
+
+                <div class="divider"></div>
+                <div style="font-size:.75rem;font-weight:700;color:var(--ink-4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Category Max Scores</div>
+                {% for key, label in CATEGORY_LABELS.items() if key not in ['end_term','mid_term','practical'] %}
+                <div style="display:flex;justify-content:space-between;font-size:.75rem;padding:5px 0;border-bottom:1px solid var(--border);">
+                    <span style="color:var(--ink-2);">{{ label }}</span>
+                    <span style="font-weight:700;color:var(--brand);">50</span>
+                </div>
+                {% endfor %}
+                <div style="display:flex;justify-content:space-between;font-size:.75rem;padding:5px 0;">
+                    <span style="color:var(--ink-2);">Exams / Practical</span>
+                    <span style="font-weight:700;color:var(--brand);">100</span>
                 </div>
             </div>
         </div>
-        
-        <!-- Hidden fields for auto-filled data -->
-        {{ form.student_number(class="d-none") }}
-        {{ form.reference_number(class="d-none") }}
-        
-        <div class="row">
-            <div class="col-md-6">
-                <div class="mb-3">
-                    {{ form.subject.label(class="form-label") }}
-                    {% if current_user.is_teacher() and current_user.subject %}
-                    <input type="text" class="form-control" value="{{ current_user.subject|title }}" readonly>
-                    <input type="hidden" name="subject" value="{{ current_user.subject }}">
-                    {% else %}
-                    {{ form.subject(class="form-select") }}
-                    {% endif %}
-                    {% for error in form.subject.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="mb-3">
-                    {{ form.class_name.label(class="form-label") }}
-                    {% if current_user.is_teacher() and current_user.class_name %}
-                    <input type="text" class="form-control" value="{{ current_user.class_name }}" readonly>
-                    <input type="hidden" name="class_name" value="{{ current_user.class_name }}">
-                    {% else %}
-                    {{ form.class_name(class="form-select") }}
-                    {% endif %}
-                    {% for error in form.class_name.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-        
-        <div class="row">
-            <div class="col-md-4">
-                <div class="mb-3">
-                    {{ form.score.label(class="form-label") }}
-                    {{ form.score(class="form-control", type="number", step="0.1", min="0") }}
-                    {% for error in form.score.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="mb-3">
-                    {{ form.max_score.label(class="form-label") }}
-                    {{ form.max_score(class="form-select") }}
-                    {% for error in form.max_score.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="mb-3">
-                    <label class="form-label">Percentage</label>
-                    <input type="text" class="form-control" id="percentage" readonly>
-                </div>
-            </div>
-        </div>
-        
-        <div class="row">
-            <div class="col-md-4">
-                <div class="mb-3">
-                    {{ form.term.label(class="form-label") }}
-                    {{ form.term(class="form-control") }}
-                    {% for error in form.term.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="mb-3">
-                    {{ form.academic_year.label(class="form-label") }}
-                    {{ form.academic_year(class="form-control", readonly=True) }}
-                    {% for error in form.academic_year.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="mb-3">
-                    {{ form.session.label(class="form-label") }}
-                    {{ form.session(class="form-control", readonly=True) }}
-                    {% for error in form.session.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-        
-        <div class="row">
-            <div class="col-md-6">
-                <div class="mb-3">
-                    {{ form.assessor.label(class="form-label") }}
-                    {{ form.assessor(class="form-control") }}
-                    {% for error in form.assessor.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-        
-        <div class="mb-3">
-            {{ form.comments.label(class="form-label") }}
-            {{ form.comments(class="form-control", rows=3) }}
-            {% for error in form.comments.errors %}
-                <span class="text-danger">{{ error }}</span>
-            {% endfor %}
-        </div>
-        
-        <div class="mt-4">
-            <button type="submit" class="btn btn-primary">
-                {% if assessment %}Update{% else %}Save{% endif %} Assessment
-            </button>
-            <a href="{{ url_for('assessments_list') }}" class="btn btn-secondary">Cancel</a>
-        </div>
-    </form>
+    </div>
 </div>
 {% endblock %}
 
-{% block scripts %}
+{% block extra_js %}
 <script>
-    // Category max scores mapping
-    const categoryMaxScores = {
-        'ica1': 50.0,
-        'ica2': 50.0,
-        'icp1': 50.0,
-        'icp2': 50.0,
-        'gp1': 50.0,
-        'gp2': 50.0,
-        'practical': 100.0,
-        'mid_term': 100.0,
-        'end_term': 100.0
-    };
+const categoryMaxScores = {ica1:50,ica2:50,icp1:50,icp2:50,gp1:50,gp2:50,practical:100,mid_term:100,end_term:100};
+const studentData = {{ student_dict|tojson }};
 
-    const studentData = {{ student_dict|tojson }};
+document.addEventListener('DOMContentLoaded', function () {
+    const categorySelect = document.getElementById('category');
+    const maxScoreInput = document.getElementById('max_score');
+    const scoreInput = document.getElementById('score');
+    const pctEl = document.getElementById('percentage');
+    const snInput = document.getElementById('student_number');
+    const snameSelect = document.getElementById('student_name');
+    const refInput = document.getElementById('reference_number');
 
-    // Auto-update max score based on category
-    document.addEventListener('DOMContentLoaded', function() {
-        const categorySelect = document.getElementById('category');
-        const maxScoreInput = document.getElementById('max_score');
-        const scoreInput = document.getElementById('score');
-        const percentageInput = document.getElementById('percentage');
-        const studentNumberInput = document.getElementById('student_number');
-        const studentNameInput = document.getElementById('student_name');
-        const referenceNumberInput = document.getElementById('reference_number');
-        
-        function updateMaxScore() {
-            const category = categorySelect.value;
-            const maxScore = categoryMaxScores[category] || 100.0;
-            maxScoreInput.value = maxScore;
-            calculatePercentage();
+    function updateMaxScore() {
+        const ms = categoryMaxScores[categorySelect?.value] || 100;
+        if (maxScoreInput) maxScoreInput.value = ms;
+        calcPct();
+    }
+    function calcPct() {
+        const score = parseFloat(scoreInput?.value) || 0;
+        const max = parseFloat(maxScoreInput?.value) || 100;
+        const pct = max > 0 ? (score / max * 100).toFixed(1) : '0.0';
+        if (pctEl) pctEl.textContent = pct + '%';
+    }
+
+    snameSelect?.addEventListener('change', function () {
+        if (this.value && studentData[this.value]) {
+            if (snInput) snInput.value = this.value;
+            if (refInput) refInput.value = studentData[this.value].ref;
         }
-        
-        function calculatePercentage() {
-            const score = parseFloat(scoreInput.value) || 0;
-            const maxScore = parseFloat(maxScoreInput.value) || 100;
-            
-            if (maxScore > 0) {
-                const percentage = (score / maxScore) * 100;
-                percentageInput.value = percentage.toFixed(2) + '%';
-            } else {
-                percentageInput.value = '0%';
-            }
-        }
-        
-        // Auto-fill student info when student number changes
-        studentNumberInput.addEventListener('blur', function() {
-            const studentNumber = this.value.trim();
-            if (studentNumber) {
-                // Make AJAX call to get student info
-                fetch(`/api/student_search?q=${encodeURIComponent(studentNumber)}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.results && data.results.length > 0) {
-                            const student = data.results[0];
-                            studentNameInput.value = student.name;
-                            referenceNumberInput.value = student.reference_number || student.student_number;
-                        }
-                    })
-                    .catch(error => console.error('Error fetching student info:', error));
-            }
-        });
-        
-        const studentNameSelect = document.getElementById('student_name');
-        studentNameSelect.addEventListener('change', function() {
-            const sn = this.value;
-            if (sn && studentData[sn]) {
-                studentNumberInput.value = sn;
-                referenceNumberInput.value = studentData[sn].ref;
-            } else {
-                studentNumberInput.value = '';
-                referenceNumberInput.value = '';
-            }
-        });
-        
-        categorySelect.addEventListener('change', updateMaxScore);
-        scoreInput.addEventListener('input', calculatePercentage);
-        
-        // Set initial max score
-        updateMaxScore();
     });
+
+    categorySelect?.addEventListener('change', updateMaxScore);
+    scoreInput?.addEventListener('input', calcPct);
+    updateMaxScore();
+});
 </script>
 {% endblock %}
