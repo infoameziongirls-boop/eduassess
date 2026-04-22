@@ -600,7 +600,8 @@ class Message(db.Model):
 
 
 def init_db(app, bcrypt):
-    db.init_app(app)
+    if not app.extensions.get('sqlalchemy'):
+        db.init_app(app)
 
     with app.app_context():
         print(f"Initializing database at: {app.config['SQLALCHEMY_DATABASE_URI']}")
