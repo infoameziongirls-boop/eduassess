@@ -1178,7 +1178,7 @@ def student_bulk_import():
         abort(403)
     form = StudentBulkImportForm()
     if form.validate_on_submit():
-        file     = form.excel_file.data
+        file = form.excel_file.data
         filepath = os.path.join(app.config['UPLOAD_FOLDER'],
                                 secure_filename(file.filename))
         file.save(filepath)
@@ -1187,32 +1187,73 @@ def student_bulk_import():
             for item in data_list:
                 item['class_name'] = canonical_class_key(item.get('class_name'))
                 item['study_area'] = canonical_study_area_key(item.get('study_area'))
-            ok = 0; errors = []
-            for data in data_list:
-                try:
-                    if Student.query.filter_by(
-                            student_number=data['student_number']).first():
-                        errors.append(f"{data['student_number']} already exists")
+
+            # --- Single pre-fetch: avoids N queries in the loop ---
+            incoming_numbers = {
+                (d.get('student_number') or '').strip()
+                for d in data_list
+            }
+            existing_numbers = {
+                row[0] for row in
+                db.session.query(Student.student_number)
+                .filter(Student.student_number.in_(incoming_numbers))
+                .all()
+            }
+
+            # Pre-fetch existing reference numbers to avoid per-row checks
+            existing_refs = {
+                row[0] for row in
+                db.session.query(Student.reference_number).all()
+            }
+
+            ok = 0
+            errors = []
+            new_students = []
+
+            with db.session.no_autoflush:
+                for data in data_list:
+                    snum = (data.get('student_number') or '').strip()
+                    if not snum:
+                        errors.append('Row skipped: missing student number')
                         continue
-                    db.session.add(Student(
-                        student_number=(data.get('student_number') or '').strip(),
+                    if snum in existing_numbers:
+                        errors.append(f'{snum} already exists')
+                        continue
+
+                    # Generate unique reference number in-memory
+                    for _ in range(100):
+                        ref = f'STU{random.randint(100000, 999999)}'
+                        if ref not in existing_refs:
+                            existing_refs.add(ref)
+                            break
+                    else:
+                        ref = f'STU{int(time.time()) % 1000000:06d}'
+
+                    new_students.append(Student(
+                        student_number=snum,
                         first_name=(data.get('first_name') or '').strip(),
                         last_name=(data.get('last_name') or '').strip(),
                         middle_name=(data.get('middle_name') or '').strip() or None,
                         class_name=(data.get('class_name') or '').strip() or None,
                         study_area=(data.get('study_area') or '').strip() or None,
-                        reference_number=generate_unique_reference_number(),
+                        reference_number=ref,
                     ))
+                    existing_numbers.add(snum)
                     ok += 1
-                except Exception as exc:
-                    errors.append(str(exc))
+
+            db.session.bulk_save_objects(new_students)
             db.session.commit()
             os.remove(filepath)
+
             flash(f'Imported {ok} students. {len(errors)} errors.', 'success')
             if errors:
                 flash('Errors: ' + '; '.join(errors[:5]), 'warning')
             return redirect(url_for('students'))
+
         except Exception as exc:
+            db.session.rollback()
+            if os.path.exists(filepath):
+                os.remove(filepath)
             flash(f'Error: {exc}', 'danger')
     return render_template('student_bulk_import.html', form=form)
 
