@@ -18,21 +18,78 @@
 <div class="filter-bar animate-in delay-1">
     <form method="GET" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%;">
         <i class="bi bi-funnel" style="color:var(--ink-4);"></i>
-        <label>Subject</label>
-        <select name="subject" class="form-select" style="max-width:160px;" onchange="this.form.submit()">
-            <option value="">All Subjects</option>
-            {% for subject in ['Mathematics','English','Science','Social Studies','Arts','Physical Education'] %}
-            <option value="{{ subject }}" {% if selected_subject == subject %}selected{% endif %}>{{ subject }}</option>
-            {% endfor %}
-        </select>
-        <label>Class</label>
+        <label>Class Level</label>
         <select name="class" class="form-select" style="max-width:130px;" onchange="this.form.submit()">
             <option value="">All Classes</option>
-            {% for class_name in ['Form 1','Form 2','Form 3','Form 4','Form 5','Form 6'] %}
+            {% for class_name in ['Form 1','Form 2','Form 3'] %}
             <option value="{{ class_name }}" {% if selected_class == class_name %}selected{% endif %}>{{ class_name }}</option>
             {% endfor %}
         </select>
-        {% if selected_subject or selected_class %}
+        <label>Study Area</label>
+        <select name="study_area" class="form-select" style="max-width:160px;" onchange="this.form.submit()">
+            <option value="">All Study Areas</option>
+            {% for key, display in [('visual_performing_arts', 'Visual and Performing Arts'),
+                                   ('home_economics_a', 'Home Economics A'),
+                                   ('home_economics_b', 'Home Economics B'),
+                                   ('home_economics_c', 'Home Economics C'),
+                                   ('home_economics_d', 'Home Economics D'),
+                                   ('home_economics_e', 'Home Economics E'),
+                                   ('home_economics_f', 'Home Economics F'),
+                                   ('business_a', 'Business A'),
+                                   ('business_b', 'Business B'),
+                                   ('business_c', 'Business C'),
+                                   ('business_d', 'Business D'),
+                                   ('science_a', 'Science A'),
+                                   ('science_b', 'Science B'),
+                                   ('general_arts_1', 'General Arts 1'),
+                                   ('general_arts_2', 'General Arts 2'),
+                                   ('general_arts_3a', 'General Arts 3A'),
+                                   ('general_arts_3b', 'General Arts 3B'),
+                                   ('general_arts_4a', 'General Arts 4A'),
+                                   ('general_arts_4b', 'General Arts 4B'),
+                                   ('general_arts_5a', 'General Arts 5A'),
+                                   ('general_arts_5b', 'General Arts 5B'),
+                                   ('general_arts_6a', 'General Arts 6A'),
+                                   ('general_arts_6b', 'General Arts 6B')] %}
+            <option value="{{ key }}" {% if selected_study_area == key %}selected{% endif %}>{{ display }}</option>
+            {% endfor %}
+        </select>
+        <label>Subject</label>
+        <select name="subject" class="form-select" style="max-width:160px;" onchange="this.form.submit()">
+            <option value="">All Subjects</option>
+            {% for subject_key, subject_display in [('mathematics', 'Mathematics'),
+                                                   ('social_studies', 'Social Studies'),
+                                                   ('general_science', 'General Science'),
+                                                   ('english_language', 'English Language'),
+                                                   ('ict', 'ICT'),
+                                                   ('physical_education_health', 'Physical Education and Health'),
+                                                   ('music', 'Music'),
+                                                   ('additional_mathematics', 'Additional Mathematics'),
+                                                   ('biology', 'Biology'),
+                                                   ('chemistry', 'Chemistry'),
+                                                   ('physics', 'Physics'),
+                                                   ('geography', 'Geography'),
+                                                   ('economics', 'Economics'),
+                                                   ('french', 'French'),
+                                                   ('arts_design_studio', 'Arts and Design Studio'),
+                                                   ('arts_design_foundation', 'Arts and Design Foundation'),
+                                                   ('design_communication_technology', 'Design and Communication Technology'),
+                                                   ('clothing_textile', 'Clothing and Textile'),
+                                                   ('management_in_living', 'Management in Living'),
+                                                   ('food_nutrition', 'Food and Nutrition'),
+                                                   ('lit_in_english', 'Lit in English'),
+                                                   ('christian_religious_studies', 'Christian Religious Studies'),
+                                                   ('history', 'History'),
+                                                   ('ghanaian_language', 'Ghanaian Language'),
+                                                   ('religious_moral_education', 'Religious and Moral Education'),
+                                                   ('government', 'Government'),
+                                                   ('business_management', 'Business Management'),
+                                                   ('accounting', 'Accounting'),
+                                                   ('computing_in_business', 'Computing in Business')] %}
+            <option value="{{ subject_display }}" {% if selected_subject == subject_display %}selected{% endif %}>{{ subject_display }}</option>
+            {% endfor %}
+        </select>
+        {% if selected_subject or selected_class or selected_study_area %}
         <a href="{{ url_for('analytics_dashboard') }}" class="btn btn-outline btn-sm"><i class="bi bi-x"></i> Clear</a>
         {% endif %}
     </form>

@@ -4,7 +4,7 @@ from db import db
 from sqlalchemy import func
 
 
-def get_class_performance_summary(class_name=None, subject=None, teacher_id=None):
+def get_class_performance_summary(class_name=None, subject=None, teacher_id=None, study_area=None):
     """
     Returns per-class, per-subject aggregate statistics.
     All parameters are optional filters.
@@ -17,7 +17,7 @@ def get_class_performance_summary(class_name=None, subject=None, teacher_id=None
         func.min(Assessment.score / Assessment.max_score * 100).label('min_percentage'),
         func.max(Assessment.score / Assessment.max_score * 100).label('max_percentage'),
         func.count(db.distinct(Assessment.student_id)).label('student_count')
-    ).filter(Assessment.archived == False)
+    ).join(Student, Assessment.student_id == Student.id).filter(Assessment.archived == False)
 
     if class_name:
         query = query.filter(Assessment.class_name == class_name)
@@ -25,6 +25,8 @@ def get_class_performance_summary(class_name=None, subject=None, teacher_id=None
         query = query.filter(Assessment.subject == subject)
     if teacher_id:
         query = query.filter(Assessment.teacher_id == teacher_id)
+    if study_area:
+        query = query.filter(Student.study_area == study_area)
 
     return query.group_by(
         Assessment.class_name,
@@ -32,11 +34,13 @@ def get_class_performance_summary(class_name=None, subject=None, teacher_id=None
     ).all()
 
 
-def get_grade_distribution(subject=None, class_name=None, teacher_id=None):
+def get_grade_distribution(subject=None, class_name=None, teacher_id=None, study_area=None):
     """Returns count of students per grade band."""
     students = Student.query
     if class_name:
         students = students.filter_by(class_name=class_name)
+    if study_area:
+        students = students.filter_by(study_area=study_area)
     students = students.all()
 
     distribution = {

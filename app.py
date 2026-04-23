@@ -938,15 +938,17 @@ def analytics_dashboard():
         abort(403)
     subject    = request.args.get('subject')
     class_name = request.args.get('class')
+    study_area = request.args.get('study_area')
     tid        = current_user.id if current_user.is_teacher() else None
     return render_template(
         'analytics.html',
         performance_summary=get_class_performance_summary(
-            class_name=class_name, subject=subject, teacher_id=tid),
+            class_name=class_name, subject=subject, teacher_id=tid, study_area=study_area),
         grade_distribution=get_grade_distribution(
-            subject=subject, class_name=class_name, teacher_id=tid),
+            subject=subject, class_name=class_name, teacher_id=tid, study_area=study_area),
         selected_subject=subject,
         selected_class=class_name,
+        selected_study_area=study_area,
     )
 
 
