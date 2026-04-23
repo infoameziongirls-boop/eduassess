@@ -1794,7 +1794,12 @@ def class_register():
     class_keys = [l[0] for l in app.config['CLASS_LEVELS']]
     for s in students:
         cf = canonical_class_key(s.class_name)
-        sf = cf if (cf and cf in class_keys) else 'Form 1'
+        # Ensure sf is always a key that exists in forms_data
+        if cf and cf in forms_data:
+            sf = cf
+        else:
+            sf = 'Form 1'
+
         sa = s.study_area or 'unassigned'
         if sa not in forms_data[sf]['study_areas']:
             forms_data[sf]['study_areas'][sa] = {
