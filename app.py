@@ -186,11 +186,18 @@ def canonical_class_key(raw_value):
     normalized = normalize_label(raw_value)
     if not normalized:
         return None
+    
+    # Explicit compact-form mappings (handles 'form1', 'form2', 'form3' from DB)
+    compact_map = {
+        'form 1': 'Form 1', 'form 2': 'Form 2', 'form 3': 'Form 3',
+        '1': 'Form 1',      '2': 'Form 2',      '3': 'Form 3',
+    }
+    if normalized in compact_map:
+        return compact_map[normalized]
+    
+    # Build map from config
     form_map = {normalize_label(k): k for k, _ in app.config['CLASS_LEVELS']}
     form_map.update({normalize_label(l): k for k, l in app.config['CLASS_LEVELS']})
-    numeric_map = {'1': 'Form 1', '2': 'Form 2', '3': 'Form 3'}
-    if normalized in numeric_map:
-        return numeric_map[normalized]
     return form_map.get(normalized)
 
 
@@ -1783,7 +1790,7 @@ def class_management():
 def class_register():
     study_areas = app.config['STUDY_AREAS']
     students    = Student.query.all()
-    form_levels = ['Form 1', 'Form 2', 'Form 3']
+    form_levels = [k for k, _ in app.config['CLASS_LEVELS']]
     forms_data  = {}
     for fl in form_levels:
         forms_data[fl] = {'total_students': 0, 'study_areas': {}}
