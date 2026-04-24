@@ -1372,38 +1372,32 @@ def new_assessment():
 
     # Get students based on teacher's access level
     if current_user.is_teacher():
-        # Filter by subject - teacher can only assess their subject
         if not current_user.subject:
             flash('You must have a subject assigned to create assessments', 'warning')
             return redirect(url_for('teacher_subject'))
-        
-        # Filter by study area
-        areas = current_user.get_assigned_study_areas(app.config)
-        
-        # Filter by class - teacher can only assess students in their assigned class(es)
+
         teacher_classes = current_user.get_classes_list()
-        
-        if areas and teacher_classes:
-            # Filter by both study area AND class
-            students_qs = Student.query.filter(
-                Student.study_area.in_(areas),
-                Student.class_name.in_(teacher_classes)
-            ).order_by(Student.class_name, Student.last_name).all()
+        areas = current_user.get_assigned_study_areas(app.config)
+
+        if teacher_classes:
+            q = Student.query.filter(Student.class_name.in_(teacher_classes))
+            if areas:
+                q = q.filter(Student.study_area.in_(areas))
+            students_qs = q.order_by(Student.class_name, Student.last_name).all()
         elif areas:
-            # Filter by study area only
             students_qs = Student.query.filter(
                 Student.study_area.in_(areas)
             ).order_by(Student.class_name, Student.last_name).all()
-        elif teacher_classes:
-            # Filter by class only
-            students_qs = Student.query.filter(
-                Student.class_name.in_(teacher_classes)
-            ).order_by(Student.class_name, Student.last_name).all()
         else:
-            # No filters - teacher not properly configured
-            students_qs = []
+            students_qs = Student.query.order_by(
+                Student.class_name, Student.last_name
+            ).limit(500).all()
+            flash(
+                'Warning: No class or study area assigned to your account. '
+                'Contact the administrator to complete your profile.',
+                'warning'
+            )
     else:
-        # Admin can see all students
         students_qs = Student.query.order_by(Student.class_name, Student.last_name).limit(500).all()
 
     # Group students by class for dropdown

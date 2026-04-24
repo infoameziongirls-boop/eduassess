@@ -86,10 +86,16 @@ class User(UserMixin, db.Model):
     def can_access_student(self, student, config):
         if not self.is_teacher() or not self.subject:
             return False
+
+        teacher_classes = self.get_classes_list()
+        if teacher_classes and student.class_name in teacher_classes:
+            return True
+
         if student.study_area:
             assigned_areas = self.get_assigned_study_areas(config)
             if student.study_area in assigned_areas:
                 return True
+
         from models import Assessment
         existing_assessment = Assessment.query.filter_by(
             student_id=student.id,
