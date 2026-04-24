@@ -163,8 +163,41 @@ with app.app_context():
         else:
             log_test(f"All students in {class_name} have names", True, f"{len(students_list)} students")
 
-# Test 5: Student filtering (comprehensive)
-print("\n[TEST 5] Student filtering with multiple criteria")
+# Test 5: student_view route access control
+print("\n[TEST 5] student_view route access control")
+with app.app_context():
+    teacher2 = User.query.filter_by(username='teacher2').first()
+    unassigned_student = Student.query.filter(Student.class_name == 'form1').first()
+    assigned_student = Student.query.filter(Student.class_name == 'form3').first()
+
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess['_user_id'] = str(teacher2.id)
+            sess['_fresh'] = True
+
+        if unassigned_student:
+            resp = client.get(f'/students/{unassigned_student.id}')
+            log_test(
+                'Teacher prevented from viewing unassigned student',
+                resp.status_code == 403,
+                f'Status {resp.status_code}'
+            )
+            resp_detail = client.get(f'/students/{unassigned_student.id}/detail')
+            log_test(
+                'student_detail inherits student_view guard',
+                resp_detail.status_code == 403,
+                f'Status {resp_detail.status_code}'
+            )
+        if assigned_student:
+            resp2 = client.get(f'/students/{assigned_student.id}')
+            log_test(
+                'Teacher allowed to view assigned student',
+                resp2.status_code == 200,
+                f'Status {resp2.status_code}'
+            )
+
+# Test 6: Student filtering (comprehensive)
+print("\n[TEST 6] Student filtering with multiple criteria")
 with app.app_context():
     teacher1 = User.query.filter_by(username='teacher1').first()
     
