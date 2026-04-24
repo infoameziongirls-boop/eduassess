@@ -1088,8 +1088,8 @@ def student_new():
                 first_name=form.first_name.data.strip(),
                 last_name=form.last_name.data.strip(),
                 middle_name=form.middle_name.data.strip() if form.middle_name.data else None,
-                class_name=form.class_name.data or None,
-                study_area=form.study_area.data or None,
+                class_name=canonical_class_key(form.class_name.data) or None,
+                study_area=canonical_study_area_key(form.study_area.data) or None,
                 reference_number=ref,
             )
             db.session.add(s)
@@ -1113,8 +1113,8 @@ def student_edit(student_id):
         student.first_name  = form.first_name.data.strip()
         student.last_name   = form.last_name.data.strip()
         student.middle_name = form.middle_name.data.strip() if form.middle_name.data else None
-        student.class_name  = form.class_name.data or None
-        student.study_area  = form.study_area.data or None
+        student.class_name  = canonical_class_key(form.class_name.data) or None
+        student.study_area  = canonical_study_area_key(form.study_area.data) or None
         db.session.commit()
         log_activity(current_user, 'edit_student', f'Edited {student.full_name()}')
         flash(f'{student.full_name()} updated', 'success')

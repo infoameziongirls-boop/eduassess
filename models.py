@@ -152,12 +152,14 @@ class Student(UserMixin, db.Model):
     def get_class_display(self):
         if not self.class_name:
             return None
-        class_mapping = {
+        # After data normalisation all values are canonical (e.g. 'Form 1')
+        # Keep compact key fallback only as a safety net
+        compact_map = {
             'form1': 'Form 1',
             'form2': 'Form 2',
-            'form3': 'Form 3'
+            'form3': 'Form 3',
         }
-        return class_mapping.get(self.class_name.lower(), self.class_name.replace('_', ' ').title())
+        return compact_map.get(self.class_name.lower().replace(' ', ''), self.class_name)
 
     def get_study_area_display(self):
         if not self.study_area:

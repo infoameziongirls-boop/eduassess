@@ -5,7 +5,7 @@ import pytest
 # Ensure the application root is on the import path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from app import app, db
+from app import app, db, canonical_class_key, canonical_study_area_key
 from models import Student, User
 
 
@@ -40,6 +40,19 @@ def create_student(first_name, last_name, student_number, reference_number):
     db.session.add(student)
     db.session.commit()
     return student
+
+
+def create_admin_user():
+    admin = User(username='admin_test', password_hash='x', role='admin')
+    db.session.add(admin)
+    db.session.commit()
+    return admin
+
+
+def login_as(client, user):
+    with client.session_transaction() as sess:
+        sess['_user_id'] = str(user.id)
+        sess['_fresh'] = True
 
 
 def test_student_login_get_shows_form(client):
@@ -93,3 +106,79 @@ def test_student_login_unknown_identifier_shows_error(client):
     assert response.status_code == 200
     assert b'No student record was found' in response.data or b'No student record' in response.data
     assert b'Student Number or Reference Number' in response.data
+
+
+def test_student_new_normalizes_class_and_study_area(client):
+    admin = create_admin_user()
+    login_as(client, admin)
+
+    response = client.post(
+        '/students/new',
+        data={
+            'student_number': 'STU_CAN',
+            'first_name': 'Canon',
+            'last_name': 'Tester',
+            'middle_name': 'N',
+            'class_name': 'Form 1',
+            'study_area': 'science_a'
+        },
+        follow_redirects=False
+    )
+
+    assert response.status_code == 302
+    assert response.headers['Location'].endswith('/students')
+
+    student = Student.query.filter_by(student_number='STU_CAN').first()
+    assert student is not None
+    assert student.class_name == 'Form 1'
+    assert student.study_area == 'science_a'
+
+
+def test_student_edit_normalizes_class_and_study_area(client):
+    admin = create_admin_user()
+    student = Student(
+        student_number='STU_EDIT',
+        first_name='Edit',
+        last_name='Tester',
+        reference_number='REFEDIT',
+        class_name='form1',
+        study_area='science a'
+    )
+    db.session.add(student)
+    db.session.commit()
+
+    login_as(client, admin)
+
+    response = client.post(
+        f'/students/{student.id}/edit',
+        data={
+            'student_number': 'STU_EDIT',
+            'first_name': 'Edit',
+            'last_name': 'Tester',
+            'middle_name': '',
+            'class_name': 'Form 1',
+            'study_area': 'science_a'
+        },
+        follow_redirects=False
+    )
+
+    assert response.status_code == 302
+    assert response.headers['Location'].endswith('/students')
+
+    student = Student.query.get(student.id)
+    assert student.class_name == 'Form 1'
+    assert student.study_area == 'science_a'
+
+
+def test_canonical_helpers_normalize_inputs():
+    assert canonical_class_key('form1') == 'Form 1'
+    assert canonical_class_key('Form 2') == 'Form 2'
+    assert canonical_class_key('FORM3') == 'Form 3'
+    assert canonical_class_key('form 1') == 'Form 1'
+    assert canonical_class_key('  form_2  ') == 'Form 2'
+
+    assert canonical_study_area_key('science_a') == 'science_a'
+    assert canonical_study_area_key('Science A') == 'science_a'
+    assert canonical_study_area_key('home economics b') == 'home_economics_b'
+    assert canonical_study_area_key('visual performing arts') == 'visual_performing_arts'
+    assert canonical_study_area_key('  business-c  ') == 'business_c'
