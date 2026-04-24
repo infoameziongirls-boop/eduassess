@@ -95,6 +95,28 @@ def validate_excel_file(form, field):
         raise ValidationError('Unable to validate file. Please try again.')
 
 
+def teacher_can_view_student(teacher, student):
+    """
+    Returns True only if the teacher is permitted to view this student.
+    A teacher may view a student if and only if:
+      - the student is in one of the teacher's assigned classes, OR
+      - the student's study_area is in the teacher's assigned study areas.
+    Admins bypass this check at the call site.
+    """
+    if not hasattr(teacher, 'is_teacher') or not teacher.is_teacher():
+        return False
+
+    teacher_classes = teacher.get_classes_list()
+    if teacher_classes and student.class_name in teacher_classes:
+        return True
+
+    areas = teacher.get_assigned_study_areas(app.config)
+    if areas and student.study_area in areas:
+        return True
+
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Application factory
 # ---------------------------------------------------------------------------
@@ -971,19 +993,22 @@ def students():
 
     q = Student.query
     
-    # Filter by teacher's class and subject if user is a teacher
+    # Filter by teacher's class and study area if user is a teacher
     if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
-        areas = current_user.get_assigned_study_areas(app.config)
         teacher_classes = current_user.get_classes_list()
-        
-        filters = []
-        if areas:
-            filters.append(Student.study_area.in_(areas))
-        if teacher_classes:
-            filters.append(Student.class_name.in_(teacher_classes))
-        
-        if filters:
-            q = q.filter(db.and_(*filters))
+        areas = current_user.get_assigned_study_areas(app.config)
+
+        if not teacher_classes and not areas:
+            q = q.filter(db.false())
+        elif teacher_classes and areas:
+            q = q.filter(
+                Student.class_name.in_(teacher_classes),
+                Student.study_area.in_(areas)
+            )
+        elif teacher_classes:
+            q = q.filter(Student.class_name.in_(teacher_classes))
+        else:
+            q = q.filter(Student.study_area.in_(areas))
     
     if search:
         q = q.filter(
@@ -1114,20 +1139,48 @@ def student_view(student_id):
     student = Student.query.get_or_404(student_id)
     subject = request.args.get('subject')
 
-    if subject:
-        assessments = [a for a in student.assessments if a.subject == subject]
-    elif hasattr(current_user, 'is_teacher') and current_user.is_teacher():
-        assessments = [a for a in student.assessments
-                       if a.teacher_id == current_user.id]
-        if current_user.subject:
-            assessments = [a for a in assessments
-                           if a.subject == current_user.subject]
-    else:
-        assessments = student.assessments
+    if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
+        if not teacher_can_view_student(current_user, student):
+            abort(403)
 
-    tid       = current_user.id if current_user.is_teacher() else None
-    summary   = student.get_assessment_summary(subject, teacher_id=tid)
-    final_pct = student.calculate_final_grade(subject=subject, teacher_id=tid)
+    if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
+        assessments = [
+            a for a in student.assessments
+            if a.teacher_id == current_user.id
+            and not a.archived
+            and (not subject or a.subject == subject)
+        ]
+        if current_user.subject:
+            assessments = [
+                a for a in assessments
+                if a.subject == current_user.subject
+            ]
+        tid = current_user.id
+        effective_subject = current_user.subject
+        all_subjects = sorted({
+            a.subject for a in assessments
+        })
+    else:
+        if subject:
+            assessments = [
+                a for a in student.assessments
+                if a.subject == subject and not a.archived
+            ]
+        else:
+            assessments = [
+                a for a in student.assessments
+                if not a.archived
+            ]
+        tid = None
+        effective_subject = subject
+        all_subjects = sorted({
+            a.subject for a in student.assessments
+            if not a.archived
+        })
+
+    summary   = student.get_assessment_summary(effective_subject, teacher_id=tid)
+    final_pct = student.calculate_final_grade(
+        subject=effective_subject, teacher_id=tid)
 
     summary_list = [
         {'category': cat, 'count': d.get('count', 0),
@@ -1177,6 +1230,7 @@ def student_view(student_id):
 @app.route('/students/<int:student_id>/detail')
 @login_required
 def student_detail(student_id):
+    # Delegates entirely to student_view which enforces access control.
     return student_view(student_id)
 
 
@@ -2912,6 +2966,7 @@ def global_search():
     query = request.args.get('q', '').strip()
     if len(query) < 2:
         return jsonify({'results': []})
+
     q = Student.query.filter(
         db.or_(
             Student.student_number.ilike(f'%{query}%'),
@@ -2920,10 +2975,25 @@ def global_search():
             Student.reference_number.ilike(f'%{query}%'),
         )
     )
-    if current_user.is_teacher():
+
+    if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
+        teacher_classes = current_user.get_classes_list()
         areas = current_user.get_assigned_study_areas(app.config)
-        if areas:
+
+        if teacher_classes and areas:
+            q = q.filter(
+                db.or_(
+                    Student.class_name.in_(teacher_classes),
+                    Student.study_area.in_(areas)
+                )
+            )
+        elif teacher_classes:
+            q = q.filter(Student.class_name.in_(teacher_classes))
+        elif areas:
             q = q.filter(Student.study_area.in_(areas))
+        else:
+            return jsonify({'students': []})
+
     return jsonify({'students': [
         {'id': s.id, 'name': s.full_name(),
          'student_number': s.student_number,
