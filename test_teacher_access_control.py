@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
 
-from app import app, db
+from app import app, db, normalize_teacher_class_keys
 from models import User, Student, Assessment
 from flask_bcrypt import Bcrypt
 
@@ -109,8 +109,51 @@ with app.app_context():
     log_test("Teacher2 has English subject", teacher2.subject == 'english')
     log_test("Subjects are different", teacher1.subject != teacher2.subject)
 
-# Test 3: Assessment access control
-print("\n[TEST 3] Teachers can only access their own assessments")
+# Test 3: normalize_teacher_class_keys standardizes teacher class values
+print("\n[TEST 3] normalize_teacher_class_keys standardizes teacher class values")
+with app.app_context():
+    original_teacher_classes = {
+        t.username: t.get_classes_list()
+        for t in User.query.filter_by(role='teacher').all()
+    }
+
+    existing_temp = User.query.filter_by(username='teacher_norm_test').first()
+    if existing_temp:
+        db.session.delete(existing_temp)
+        db.session.commit()
+
+    temp_teacher = User(
+        username='teacher_norm_test',
+        password_hash=bcrypt.generate_password_hash('Test@123'),
+        role='teacher',
+        subject='mathematics',
+    )
+    temp_teacher.set_classes_list(['form2', 'FORM1', 'Form 3'])
+    db.session.add(temp_teacher)
+    db.session.commit()
+
+    normalize_teacher_class_keys()
+    refreshed = User.query.filter_by(username='teacher_norm_test').first()
+    normalized = refreshed.get_classes_list() if refreshed else []
+    expected = ['Form 2', 'Form 1', 'Form 3']
+    log_test(
+        'normalize_teacher_class_keys canonicalizes teacher classes',
+        sorted(normalized) == sorted(expected),
+        f'Got {normalized}'
+    )
+
+    # Restore teacher class assignments to the original values so later tests stay valid
+    for username, classes in original_teacher_classes.items():
+        teacher = User.query.filter_by(username=username).first()
+        if teacher:
+            teacher.set_classes_list(classes)
+
+    if refreshed:
+        db.session.delete(refreshed)
+    db.session.commit()
+
+# Test 4: Assessment access control
+print("\n[TEST 4] Teachers can only access their own assessments")
 with app.app_context():
     teacher1 = User.query.filter_by(username='teacher1').first()
     student = Student.query.first()
