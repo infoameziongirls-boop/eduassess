@@ -196,8 +196,40 @@ with app.app_context():
                 f'Status {resp2.status_code}'
             )
 
-# Test 6: Student filtering (comprehensive)
-print("\n[TEST 6] Student filtering with multiple criteria")
+# Test 6: Teacher search filter should use class OR study area when both exist
+print("\n[TEST 6] /api/search teacher filtering uses class OR study area")
+with app.app_context():
+    teacher1 = User.query.filter_by(username='teacher1').first()
+    if teacher1:
+        app.config['STUDY_AREA_SUBJECTS'] = {
+            'sciences': {
+                'core': ['mathematics', 'general_science'],
+                'electives': ['biology', 'chemistry', 'physics']
+            },
+            'arts': {
+                'core': ['english_language', 'social_studies'],
+                'electives': ['history', 'geography', 'government']
+            }
+        }
+        in_class_student = Student.query.filter_by(class_name='form1', study_area='arts').first()
+        if in_class_student:
+            with app.test_client() as client:
+                with client.session_transaction() as sess:
+                    sess['_user_id'] = str(teacher1.id)
+                    sess['_fresh'] = True
+
+                response = client.get('/api/search?q=Student')
+                data = response.get_json() or {}
+                returned_ids = {item['id'] for item in data.get('students', [])}
+
+                log_test(
+                    'Teacher search returns student in assigned class even when area differs',
+                    response.status_code == 200 and in_class_student.id in returned_ids,
+                    f'Status {response.status_code}, IDs: {sorted(returned_ids)}'
+                )
+
+# Test 7: Student filtering (comprehensive)
+print("\n[TEST 7] Student filtering with multiple criteria")
 with app.app_context():
     teacher1 = User.query.filter_by(username='teacher1').first()
     

@@ -257,6 +257,25 @@ def normalize_student_records():
         db.session.commit()
 
 
+def normalize_teacher_class_keys():
+    """Ensure teacher classes column uses canonical class keys, not compact keys."""
+    teachers = User.query.filter_by(role='teacher').all()
+    changed = False
+    for t in teachers:
+        raw_list = t.get_classes_list()
+        if not raw_list:
+            continue
+        corrected = []
+        for raw in raw_list:
+            canonical = canonical_class_key(raw)
+            corrected.append(canonical if canonical else raw)
+        if corrected != raw_list:
+            t.set_classes_list(corrected)
+            changed = True
+    if changed:
+        db.session.commit()
+
+
 @app.context_processor
 def utility_processor():
     def safe_url_for(endpoint, **values):
@@ -305,6 +324,7 @@ try:
     load_persistent_config()
     with app.app_context():
         normalize_student_records()
+        normalize_teacher_class_keys()
 except Exception as exc:
     print(f'Warning: Could not load persistent config: {exc}')
 
@@ -1002,8 +1022,10 @@ def students():
             q = q.filter(db.false())
         elif teacher_classes and areas:
             q = q.filter(
-                Student.class_name.in_(teacher_classes),
-                Student.study_area.in_(areas)
+                db.or_(
+                    Student.class_name.in_(teacher_classes),
+                    Student.study_area.in_(areas)
+                )
             )
         elif teacher_classes:
             q = q.filter(Student.class_name.in_(teacher_classes))
@@ -1433,11 +1455,18 @@ def new_assessment():
         teacher_classes = current_user.get_classes_list()
         areas = current_user.get_assigned_study_areas(app.config)
 
-        if teacher_classes:
-            q = Student.query.filter(Student.class_name.in_(teacher_classes))
-            if areas:
-                q = q.filter(Student.study_area.in_(areas))
+        if teacher_classes and areas:
+            q = Student.query.filter(
+                db.or_(
+                    Student.class_name.in_(teacher_classes),
+                    Student.study_area.in_(areas)
+                )
+            )
             students_qs = q.order_by(Student.class_name, Student.last_name).all()
+        elif teacher_classes:
+            students_qs = Student.query.filter(
+                Student.class_name.in_(teacher_classes)
+            ).order_by(Student.class_name, Student.last_name).all()
         elif areas:
             students_qs = Student.query.filter(
                 Student.study_area.in_(areas)
