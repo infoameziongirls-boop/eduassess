@@ -1,0 +1,765 @@
+{% extends "base.html" %}
+{% block title %}Archive — EduAssess{% endblock %}
+
+{% block extra_head %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;900&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --ink:      #0b1623;
+    --ink-mid:  #1e3353;
+    --gold:     #c9a84c;
+    --gold-lt:  #e8c96a;
+    --gold-dim: rgba(201,168,76,.15);
+    --cream:    #f7f2e8;
+    --white:    #ffffff;
+    --green:    #1d7a4c;
+    --red:      #c0392b;
+    --shadow-md: 0 8px 28px rgba(11,22,35,.13);
+    --radius:   18px;
+    --ease:     cubic-bezier(.4,0,.2,1);
+  }
+
+  body { background: #f0ebe0; font-family: 'DM Sans', sans-serif; }
+
+  /* ── HERO ── */
+  .archive-hero {
+    background: linear-gradient(140deg, #14202f 0%, #1c2e44 55%, #0f1d2e 100%);
+    border-radius: 28px;
+    padding: 2.75rem 3.5rem;
+    margin-bottom: 2rem;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(11,22,35,.28);
+  }
+  .archive-hero::before {
+    content: '';
+    position: absolute; top: 0; right: 0;
+    width: 260px; height: 260px;
+    background: radial-gradient(circle, rgba(201,168,76,.12) 0%, transparent 70%);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  .archive-hero-glyph {
+    position: absolute;
+    right: 3rem; top: 50%;
+    transform: translateY(-50%);
+    font-size: 8rem;
+    opacity: .06;
+    pointer-events: none;
+  }
+  .hero-inner { position: relative; z-index: 1; }
+  .archive-eyebrow {
+    font-family: 'DM Mono', monospace;
+    font-size: .74rem;
+    color: var(--gold);
+    text-transform: uppercase;
+    letter-spacing: .14em;
+    margin-bottom: .75rem;
+    display: flex; align-items: center; gap: .6rem;
+  }
+  .archive-eyebrow::before {
+    content: '';
+    display: inline-block;
+    width: 24px; height: 2px;
+    background: var(--gold);
+    opacity: .6;
+  }
+  .archive-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.4rem;
+    font-weight: 700;
+    color: var(--white);
+    line-height: 1.2;
+    margin-bottom: .55rem;
+  }
+  .archive-sub {
+    font-size: .9rem;
+    color: rgba(255,255,255,.5);
+    max-width: 540px;
+    line-height: 1.7;
+    margin-bottom: 2rem;
+  }
+  .hero-stats-row {
+    display: flex; gap: 2.5rem; flex-wrap: wrap;
+  }
+  .hero-kpi {
+    display: flex; flex-direction: column;
+  }
+  .hero-kpi .k-num {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--gold);
+    line-height: 1;
+  }
+  .hero-kpi .k-lbl {
+    font-size: .72rem;
+    color: rgba(255,255,255,.4);
+    text-transform: uppercase;
+    letter-spacing: .09em;
+    margin-top: .25rem;
+  }
+  .kpi-sep { width: 1px; background: rgba(255,255,255,.1); align-self: stretch; }
+
+  /* ── SEC HEAD ── */
+  .sec-head {
+    display: flex; align-items: center; gap: .75rem;
+    margin-bottom: 1.25rem;
+  }
+  .sec-head h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.25rem; font-weight: 700;
+    color: var(--ink); margin: 0;
+  }
+  .sec-head .line {
+    flex: 1; height: 1px;
+    background: linear-gradient(90deg, rgba(201,168,76,.5) 0%, transparent 100%);
+  }
+  .sec-head .chip {
+    font-size: .7rem; font-family: 'DM Mono', monospace;
+    background: var(--ink); color: var(--gold);
+    padding: .25rem .65rem; border-radius: 50px;
+    text-transform: uppercase; letter-spacing: .07em;
+  }
+
+  /* ── FILTER CARD ── */
+  .filter-card {
+    background: var(--white);
+    border-radius: 16px;
+    border: 1.5px solid rgba(11,22,35,.07);
+    box-shadow: 0 4px 16px rgba(11,22,35,.06);
+    padding: 1.4rem 1.75rem;
+    margin-bottom: 1.75rem;
+    display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-end;
+  }
+  .fld { display: flex; flex-direction: column; gap: .35rem; flex: 1; min-width: 160px; }
+  .fld label {
+    font-size: .72rem; font-weight: 700;
+    color: var(--ink); text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+  .fld input, .fld select {
+    border: 1.5px solid rgba(11,22,35,.12);
+    border-radius: 10px;
+    padding: .55rem .9rem;
+    font-family: 'DM Sans', sans-serif;
+    font-size: .88rem; color: var(--ink);
+    background: var(--cream);
+    outline: none;
+    transition: all .25s var(--ease);
+    width: 100%;
+  }
+  .fld input:focus, .fld select:focus {
+    border-color: var(--gold);
+    box-shadow: 0 0 0 3px var(--gold-dim);
+    background: var(--white);
+  }
+  .filter-actions { display: flex; gap: .6rem; align-items: flex-end; }
+  .btn-sm {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .55rem 1.1rem;
+    border-radius: 10px; font-size: .85rem; font-weight: 600;
+    border: none; cursor: pointer;
+    text-decoration: none;
+    transition: all .25s var(--ease);
+  }
+  .btn-gold { background: linear-gradient(135deg, var(--gold) 0%, #b8913e 100%); color: var(--ink); box-shadow: 0 4px 14px rgba(201,168,76,.28); }
+  .btn-gold:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(201,168,76,.38); color: var(--ink); }
+  .btn-outline { background: transparent; color: var(--ink); border: 1.5px solid rgba(11,22,35,.15); }
+  .btn-outline:hover { border-color: var(--gold); color: var(--gold); }
+  .btn-danger { background: rgba(192,57,43,.1); color: var(--red); border: 1.5px solid rgba(192,57,43,.2); }
+  .btn-danger:hover { background: var(--red); color: var(--white); border-color: var(--red); }
+  .btn-restore { background: rgba(29,122,76,.1); color: var(--green); border: 1.5px solid rgba(29,122,76,.2); }
+  .btn-restore:hover { background: var(--green); color: var(--white); border-color: var(--green); }
+
+  /* ── TABS ── */
+  .tab-row {
+    display: flex; gap: .5rem; flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+  }
+  .tab-btn {
+    display: inline-flex; align-items: center; gap: .45rem;
+    padding: .55rem 1.15rem;
+    border-radius: 10px;
+    font-size: .85rem; font-weight: 600;
+    border: 1.5px solid rgba(11,22,35,.12);
+    background: var(--white);
+    color: #6b7a8d;
+    cursor: pointer; text-decoration: none;
+    transition: all .25s var(--ease);
+  }
+  .tab-btn:hover { border-color: var(--gold); color: var(--gold); background: var(--gold-dim); }
+  .tab-btn.active { background: var(--ink); color: var(--gold); border-color: var(--ink); }
+  .tab-count {
+    font-family: 'DM Mono', monospace;
+    font-size: .7rem;
+    padding: .1rem .4rem;
+    border-radius: 4px;
+    background: rgba(255,255,255,.15);
+  }
+  .tab-btn.active .tab-count { background: var(--gold-dim); color: var(--gold-lt); }
+
+  /* ── ARCHIVE TABLE ── */
+  .archive-table-wrap {
+    background: var(--white);
+    border-radius: var(--radius);
+    border: 1.5px solid rgba(11,22,35,.07);
+    box-shadow: 0 4px 18px rgba(11,22,35,.07);
+    overflow: hidden;
+    margin-bottom: 2rem;
+  }
+  .archive-table-head {
+    background: linear-gradient(135deg, var(--ink) 0%, #1a2f52 100%);
+    padding: 1.2rem 1.75rem;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem; flex-wrap: wrap;
+  }
+  .archive-table-head h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.05rem; color: var(--white); margin: 0;
+  }
+  .archive-table-head .controls { display: flex; gap: .6rem; align-items: center; }
+  .archive-table-head select {
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18);
+    color: var(--white); border-radius: 8px; padding: .35rem .7rem;
+    font-size: .8rem; outline: none; cursor: pointer;
+  }
+  table.atbl {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+  }
+  .atbl thead tr { background: #f8f5ef; }
+  .atbl thead th {
+    padding: .75rem 1.1rem;
+    font-size: .7rem; text-transform: uppercase; letter-spacing: .09em;
+    color: #7a8898; font-weight: 700; text-align: left;
+    font-family: 'DM Mono', monospace;
+    border-bottom: 1.5px solid rgba(11,22,35,.07);
+    white-space: nowrap;
+  }
+  .atbl thead th.sort-active { color: var(--ink); cursor: pointer; }
+  .atbl thead th.sort-active::after { content: ' ▾'; }
+  .atbl tbody tr {
+    border-bottom: 1px solid rgba(11,22,35,.04);
+    transition: background .18s;
+  }
+  .atbl tbody tr:hover { background: var(--cream); }
+  .atbl tbody td {
+    padding: .85rem 1.1rem;
+    font-size: .86rem; color: var(--ink);
+    vertical-align: middle;
+  }
+  .atbl tbody tr:last-child td { border-bottom: none; }
+
+  /* Cell components */
+  .student-cell { display: flex; align-items: center; gap: .65rem; }
+  .stu-avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--ink-mid), var(--ink));
+    display: flex; align-items: center; justify-content: center;
+    color: var(--white);
+    font-size: .72rem; font-weight: 700;
+    font-family: 'Playfair Display', serif;
+    flex-shrink: 0;
+  }
+  .stu-name { font-weight: 600; font-size: .88rem; }
+  .stu-id   { font-size: .7rem; color: #8a97a8; font-family: 'DM Mono', monospace; }
+  .cat-badge {
+    display: inline-block;
+    padding: .22rem .6rem;
+    border-radius: 6px;
+    font-size: .72rem; font-weight: 600;
+    font-family: 'DM Mono', monospace;
+    background: var(--gold-dim); color: #8a6a1e;
+    white-space: nowrap;
+  }
+  .score-chip {
+    font-family: 'DM Mono', monospace;
+    font-size: .88rem; font-weight: 500;
+  }
+  .score-chip.hi  { color: var(--green); }
+  .score-chip.mid { color: #e07b00; }
+  .score-chip.lo  { color: var(--red); }
+  .date-cell {
+    font-size: .78rem; color: #8a97a8;
+    font-family: 'DM Mono', monospace;
+  }
+  .archived-tag {
+    display: inline-flex; align-items: center; gap: .3rem;
+    font-size: .7rem; padding: .2rem .55rem; border-radius: 50px;
+    background: rgba(11,22,35,.08); color: #6b7a8d;
+    font-family: 'DM Mono', monospace;
+    white-space: nowrap;
+  }
+  .archived-tag::before { content: '🗄'; font-size: .7rem; }
+  .btn-tbl {
+    display: inline-flex; align-items: center; gap: .3rem;
+    padding: .3rem .65rem;
+    border-radius: 7px; font-size: .75rem; font-weight: 600;
+    border: none; cursor: pointer;
+    text-decoration: none;
+    transition: all .2s;
+  }
+  .btn-tbl-restore {
+    background: rgba(29,122,76,.1); color: var(--green);
+    border: 1px solid rgba(29,122,76,.2);
+  }
+  .btn-tbl-restore:hover { background: var(--green); color: var(--white); border-color: var(--green); }
+  .btn-tbl-del {
+    background: rgba(192,57,43,.08); color: var(--red);
+    border: 1px solid rgba(192,57,43,.18);
+  }
+  .btn-tbl-del:hover { background: var(--red); color: var(--white); border-color: var(--red); }
+
+  /* ── PAGINATION ── */
+  .pager {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid rgba(11,22,35,.06);
+    flex-wrap: wrap; gap: .75rem;
+  }
+  .pager-info { font-size: .82rem; color: #8a97a8; }
+  .pager-links { display: flex; gap: .4rem; }
+  .pager-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 8px;
+    font-size: .82rem; font-weight: 600;
+    border: 1.5px solid rgba(11,22,35,.1);
+    background: var(--white); color: var(--ink);
+    text-decoration: none; transition: all .2s;
+  }
+  .pager-btn:hover { border-color: var(--gold); color: var(--gold); }
+  .pager-btn.active { background: var(--ink); color: var(--gold); border-color: var(--ink); }
+  .pager-btn.disabled { opacity: .35; pointer-events: none; }
+
+  /* ── BULK ACTION BAR ── */
+  .bulk-bar {
+    background: var(--ink);
+    border-radius: 14px;
+    padding: 1rem 1.5rem;
+    display: flex; align-items: center; gap: 1rem;
+    margin-bottom: 1.25rem;
+    opacity: 0; transform: translateY(6px);
+    transition: all .3s var(--ease);
+    pointer-events: none;
+  }
+  .bulk-bar.show { opacity: 1; transform: none; pointer-events: all; }
+  .bulk-label { font-size: .85rem; color: rgba(255,255,255,.6); }
+  .bulk-count { font-family: 'DM Mono', monospace; font-size: .85rem; color: var(--gold); font-weight: 600; }
+  .bulk-spacer { flex: 1; }
+
+  /* ── EMPTY STATE ── */
+  .empty-state {
+    text-align: center; padding: 5rem 2rem;
+  }
+  .empty-state .glyph { font-size: 4rem; opacity: .3; margin-bottom: 1rem; }
+  .empty-state h4 { font-family: 'Playfair Display', serif; font-size: 1.15rem; color: var(--ink); margin-bottom: .4rem; }
+  .empty-state p { font-size: .88rem; color: #8a97a8; max-width: 380px; margin: 0 auto; }
+
+  /* ── SUMMARY CARDS ── */
+  .summary-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 1rem; margin-bottom: 2rem;
+  }
+  @media(max-width:900px) { .summary-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media(max-width:520px) { .summary-grid { grid-template-columns: 1fr; } }
+  .sum-card {
+    background: var(--white);
+    border-radius: 14px;
+    border: 1.5px solid rgba(11,22,35,.07);
+    box-shadow: 0 4px 14px rgba(11,22,35,.06);
+    padding: 1.25rem 1.5rem;
+    display: flex; flex-direction: column; gap: .4rem;
+  }
+  .sum-card-icon { font-size: 1.4rem; margin-bottom: .2rem; }
+  .sum-card-val {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.65rem; font-weight: 700; color: var(--ink);
+    line-height: 1;
+  }
+  .sum-card-label { font-size: .75rem; color: #8a97a8; text-transform: uppercase; letter-spacing: .07em; }
+  .sum-card-change {
+    font-size: .78rem; font-family: 'DM Mono', monospace;
+    color: var(--green); margin-top: .15rem;
+  }
+
+  /* Animations */
+  .fade-up { opacity:0; transform:translateY(18px); animation: fadeUp .5s var(--ease) forwards; }
+  @keyframes fadeUp { to{opacity:1; transform:translateY(0);} }
+  .d1{animation-delay:.07s} .d2{animation-delay:.14s} .d3{animation-delay:.21s} .d4{animation-delay:.28s} .d5{animation-delay:.35s}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-xl py-4">
+
+  {# ── HERO ── #}
+  <div class="archive-hero fade-up">
+    <div class="archive-hero-glyph">🗄</div>
+    <div class="hero-inner">
+      <div class="archive-eyebrow">Admin Access Only · Secure Archive</div>
+      <h1 class="archive-title">Assessment Archive</h1>
+      <p class="archive-sub">
+        All archived assessments are stored here in full. Browse, search, restore, or
+        permanently delete records. Archives are preserved across promotion cycles.
+      </p>
+      <div class="hero-stats-row">
+        <div class="hero-kpi">
+          <span class="k-num">{{ total_archived }}</span>
+          <span class="k-lbl">Total Archived</span>
+        </div>
+        <div class="kpi-sep"></div>
+        <div class="hero-kpi">
+          <span class="k-num">{{ archived_students }}</span>
+          <span class="k-lbl">Students Affected</span>
+        </div>
+        <div class="kpi-sep"></div>
+        <div class="hero-kpi">
+          <span class="k-num">{{ archived_terms }}</span>
+          <span class="k-lbl">Terms Archived</span>
+        </div>
+        <div class="kpi-sep"></div>
+        <div class="hero-kpi">
+          <span class="k-num">{{ last_archive_date or '—' }}</span>
+          <span class="k-lbl">Last Archive</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── SUMMARY CARDS ── #}
+  <div class="summary-grid fade-up d1">
+    {% for term_group in term_summary %}
+    <div class="sum-card">
+      <div class="sum-card-icon">📁</div>
+      <div class="sum-card-val">{{ term_group.count }}</div>
+      <div class="sum-card-label">{{ term_group.academic_year }} · {{ term_group.term }}</div>
+      <div class="sum-card-change">{{ term_group.student_count }} students</div>
+    </div>
+    {% endfor %}
+    {% if not term_summary %}
+    <div class="sum-card" style="grid-column:1/-1; text-align:center; opacity:.5;">
+      <div class="sum-card-icon">🗄</div>
+      <div class="sum-card-val">0</div>
+      <div class="sum-card-label">No Archives Yet</div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── TABS ── #}
+  <div class="tab-row fade-up d2">
+    <a href="{{ url_for('assessments_archived', group='all') }}"
+       class="tab-btn {% if group == 'all' or not group %}active{% endif %}">
+      🗄 All Records
+      <span class="tab-count">{{ total_archived }}</span>
+    </a>
+    {% for term_group in term_summary %}
+    <a href="{{ url_for('assessments_archived', group=term_group.key) }}"
+       class="tab-btn {% if group == term_group.key %}active{% endif %}">
+      📅 {{ term_group.academic_year }} · {{ term_group.term_label }}
+      <span class="tab-count">{{ term_group.count }}</span>
+    </a>
+    {% endfor %}
+  </div>
+
+  {# ── FILTER FORM ── #}
+  <form method="GET" action="{{ url_for('assessments_archived') }}" id="filterForm">
+    <input type="hidden" name="group" value="{{ group or 'all' }}">
+    <div class="filter-card fade-up d2">
+      <div class="fld">
+        <label>Search Student</label>
+        <input type="text" name="search" placeholder="Name or student number…" value="{{ search or '' }}">
+      </div>
+      <div class="fld">
+        <label>Subject</label>
+        <select name="subject">
+          <option value="">All Subjects</option>
+          {% for s in learning_areas %}
+          <option value="{{ s[0] }}" {% if selected_subject == s[0] %}selected{% endif %}>{{ s[1] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="fld">
+        <label>Class</label>
+        <select name="class_name">
+          <option value="">All Classes</option>
+          {% for cls in class_levels %}
+          <option value="{{ cls[0] }}" {% if selected_class == cls[0] %}selected{% endif %}>{{ cls[1] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="fld">
+        <label>Term</label>
+        <select name="term">
+          <option value="">All Terms</option>
+          {% for t in terms %}
+          <option value="{{ t[0] }}" {% if selected_term == t[0] %}selected{% endif %}>{{ t[1] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="fld">
+        <label>Academic Year</label>
+        <input type="text" name="academic_year" placeholder="e.g. 2024-2025" value="{{ selected_year or '' }}">
+      </div>
+      <div class="filter-actions">
+        <button type="submit" class="btn-sm btn-gold">🔍 Search</button>
+        <a href="{{ url_for('assessments_archived') }}" class="btn-sm btn-outline">Reset</a>
+      </div>
+    </div>
+  </form>
+
+  {# ── BULK ACTION BAR ── #}
+  <div class="bulk-bar" id="bulkBar">
+    <span class="bulk-count" id="bulkCount">0</span>
+    <span class="bulk-label">records selected</span>
+    <div class="bulk-spacer"></div>
+    <form method="POST" action="{{ url_for('assessment_bulk_action') }}" id="bulkForm">
+      {{ csrf_token() }}
+      <input type="hidden" name="action" id="bulkAction" value="">
+      <div id="bulkIdsContainer"></div>
+      <div style="display:flex; gap:.6rem;">
+        <button type="button" class="btn-sm btn-restore" onclick="submitBulk('unarchive')">
+          ↩ Restore Selected
+        </button>
+        <button type="button" class="btn-sm btn-danger" onclick="submitBulk('delete')">
+          🗑 Delete Selected
+        </button>
+        <button type="button" class="btn-sm btn-outline" onclick="clearSelection()">
+          Cancel
+        </button>
+      </div>
+    </form>
+  </div>
+
+  {# ── ARCHIVE TABLE ── #}
+  <div class="archive-table-wrap fade-up d3">
+    <div class="archive-table-head">
+      <h3>
+        📁 Archive Records
+        {% if search %}&mdash; <em style="font-style:italic; color:rgba(255,255,255,.5); font-size:.9rem;">Search: {{ search }}</em>{% endif %}
+      </h3>
+      <div class="controls">
+        <span style="font-size:.8rem; color:rgba(255,255,255,.45);">{{ pagination.total }} records</span>
+        <a href="{{ url_for('export_csv') }}?archived=1" class="btn-sm btn-outline" style="color:var(--gold-lt); border-color:rgba(201,168,76,.3); font-size:.78rem; padding:.35rem .8rem;">
+          ⬇ Export CSV
+        </a>
+      </div>
+    </div>
+
+    {% if assessments %}
+    <div style="overflow-x:auto;">
+      <table class="atbl">
+        <thead>
+          <tr>
+            <th style="width:40px;">
+              <input type="checkbox" id="selectAll" onchange="toggleAll(this)"
+                     style="cursor:pointer; accent-color:var(--gold); width:15px; height:15px;">
+            </th>
+            <th>Student</th>
+            <th>Subject</th>
+            <th>Category</th>
+            <th>Class</th>
+            <th class="sort-active">Score</th>
+            <th>Grade</th>
+            <th>Term</th>
+            <th>Academic Year</th>
+            <th>Assessor</th>
+            <th>Archived Date</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in assessments %}
+          {% set pct = a.get_percentage() %}
+          <tr>
+            <td>
+              <input type="checkbox" class="row-check" data-id="{{ a.id }}"
+                     onchange="updateBulk()"
+                     style="cursor:pointer; accent-color:var(--gold); width:15px; height:15px;">
+            </td>
+            <td>
+              <div class="student-cell">
+                <div class="stu-avatar">
+                  {% if a.student %}{{ a.student.first_name[0] }}{{ a.student.last_name[0] }}{% else %}?{% endif %}
+                </div>
+                <div>
+                  <div class="stu-name">{{ a.student.full_name() if a.student else 'Unknown Student' }}</div>
+                  <div class="stu-id">{{ a.student.student_number if a.student else '—' }}</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <span style="font-size:.83rem;">{{ a.subject.replace('_',' ').title() }}</span>
+            </td>
+            <td>
+              <span class="cat-badge">{{ a.category.upper() }}</span>
+            </td>
+            <td>
+              <span style="font-size:.83rem; color:#6b7a8d;">{{ a.class_name or '—' }}</span>
+            </td>
+            <td>
+              <span class="score-chip {% if pct >= 70 %}hi{% elif pct >= 50 %}mid{% else %}lo{% endif %}">
+                {{ a.score }}/{{ a.max_score|int }}
+              </span>
+              <div style="font-size:.7rem; color:#aab4c0; margin-top:.15rem;">{{ pct }}%</div>
+            </td>
+            <td>
+              {% set g = a.get_grade_letter() %}
+              <span style="font-family:'DM Mono',monospace; font-size:.85rem; font-weight:700;
+                color:{% if g.startswith('A') %}var(--green){% elif g.startswith('B') %}#3b5bdb{% elif g.startswith('C') %}#8a6a1e{% elif g.startswith('D') %}#e07b00{% else %}var(--red){% endif %};">
+                {{ g }}
+              </span>
+            </td>
+            <td>
+              <span style="font-size:.8rem; color:#6b7a8d;">{{ a.term|replace('term','Term ') if a.term else '—' }}</span>
+            </td>
+            <td>
+              <span style="font-family:'DM Mono',monospace; font-size:.78rem; color:#8a97a8;">
+                {{ a.academic_year or '—' }}
+              </span>
+            </td>
+            <td>
+              <span style="font-size:.82rem; color:#6b7a8d;">{{ a.assessor or '—' }}</span>
+            </td>
+            <td>
+              <span class="date-cell">{{ a.date_recorded.strftime('%d %b %Y') if a.date_recorded else '—' }}</span>
+            </td>
+            <td>
+              <div style="display:flex; gap:.4rem; flex-wrap:nowrap;">
+                <form method="POST" action="{{ url_for('assessment_unarchive', assessment_id=a.id) }}" style="margin:0;">
+                  {{ csrf_token() }}
+                  <button type="submit" class="btn-tbl btn-tbl-restore" title="Restore this assessment">
+                    ↩ Restore
+                  </button>
+                </form>
+                {% if current_user.is_admin() %}
+                <form method="POST" action="{{ url_for('assessment_delete', assessment_id=a.id) }}"
+                      style="margin:0;"
+                      onsubmit="return confirm('Permanently delete this assessment? This cannot be undone.')">
+                  {{ csrf_token() }}
+                  <button type="submit" class="btn-tbl btn-tbl-del" title="Delete permanently">
+                    🗑
+                  </button>
+                </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# ── PAGINATION ── #}
+    <div class="pager">
+      <span class="pager-info">
+        Showing {{ ((pagination.page - 1) * pagination.per_page) + 1 }}–{{ [pagination.page * pagination.per_page, pagination.total]|min }}
+        of {{ pagination.total }} records
+      </span>
+      <div class="pager-links">
+        {% if pagination.has_prev %}
+        <a href="{{ url_for('assessments_archived', page=pagination.prev_num, search=search, subject=selected_subject, class_name=selected_class, term=selected_term, academic_year=selected_year, group=group) }}"
+           class="pager-btn">‹</a>
+        {% else %}
+        <span class="pager-btn disabled">‹</span>
+        {% endif %}
+
+        {% for p in pagination.iter_pages(left_edge=2, right_edge=2, left_current=2, right_current=3) %}
+          {% if p %}
+          <a href="{{ url_for('assessments_archived', page=p, search=search, subject=selected_subject, class_name=selected_class, term=selected_term, academic_year=selected_year, group=group) }}"
+             class="pager-btn {% if p == pagination.page %}active{% endif %}">{{ p }}</a>
+          {% else %}
+          <span class="pager-btn disabled" style="width:auto; padding:0 .3rem; font-size:.8rem; border:none; color:#aab4c0;">…</span>
+          {% endif %}
+        {% endfor %}
+
+        {% if pagination.has_next %}
+        <a href="{{ url_for('assessments_archived', page=pagination.next_num, search=search, subject=selected_subject, class_name=selected_class, term=selected_term, academic_year=selected_year, group=group) }}"
+           class="pager-btn">›</a>
+        {% else %}
+        <span class="pager-btn disabled">›</span>
+        {% endif %}
+      </div>
+    </div>
+
+    {% else %}
+    <div class="empty-state">
+      <div class="glyph">🗄</div>
+      <h4>No Archived Records Found</h4>
+      <p>
+        {% if search or selected_subject or selected_class or selected_term %}
+          No records match your current filters. Try broadening your search.
+        {% else %}
+          The archive is empty. Archived assessments will appear here after you archive
+          a term from <a href="{{ url_for('admin_settings') }}" style="color:var(--gold);">Settings</a>.
+        {% endif %}
+      </p>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── QUICK ACTIONS ── #}
+  <div class="filter-card fade-up d5" style="justify-content:flex-start; gap:1.5rem; flex-wrap:wrap;">
+    <div style="display:flex; flex-direction:column; gap:.25rem;">
+      <span style="font-size:.75rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--ink);">Quick Actions</span>
+      <span style="font-size:.8rem; color:#8a97a8;">Manage archive from settings or bulk actions above</span>
+    </div>
+    <div style="display:flex; gap:.6rem; flex-wrap:wrap; margin-left:auto;">
+      <a href="{{ url_for('admin_settings') }}" class="btn-sm btn-outline">⚙ Archive Settings</a>
+      <a href="{{ url_for('admin_activity_logs') }}" class="btn-sm btn-outline">📋 Activity Log</a>
+      <a href="{{ url_for('assessments_list') }}" class="btn-sm btn-outline">← Live Assessments</a>
+      <a href="{{ url_for('dashboard') }}" class="btn-sm btn-gold">🏠 Dashboard</a>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const selectedIds = new Set();
+
+  function updateBulk() {
+    const checks = document.querySelectorAll('.row-check:checked');
+    checks.forEach(c => selectedIds.add(c.dataset.id));
+    document.querySelectorAll('.row-check:not(:checked)').forEach(c => selectedIds.delete(c.dataset.id));
+    const bar = document.getElementById('bulkBar');
+    const cnt = document.getElementById('bulkCount');
+    cnt.textContent = selectedIds.size;
+    if (selectedIds.size > 0) bar.classList.add('show');
+    else bar.classList.remove('show');
+  }
+
+  function toggleAll(master) {
+    document.querySelectorAll('.row-check').forEach(c => {
+      c.checked = master.checked;
+      if (master.checked) selectedIds.add(c.dataset.id);
+      else selectedIds.delete(c.dataset.id);
+    });
+    updateBulk();
+  }
+
+  function clearSelection() {
+    document.querySelectorAll('.row-check').forEach(c => c.checked = false);
+    document.getElementById('selectAll').checked = false;
+    selectedIds.clear();
+    document.getElementById('bulkBar').classList.remove('show');
+  }
+
+  function submitBulk(action) {
+    if (!selectedIds.size) return;
+    const msg = action === 'delete'
+      ? `Permanently delete ${selectedIds.size} record(s)? This cannot be undone.`
+      : `Restore ${selectedIds.size} record(s) to active assessments?`;
+    if (!confirm(msg)) return;
+    document.getElementById('bulkAction').value = action;
+    const container = document.getElementById('bulkIdsContainer');
+    container.innerHTML = '';
+    selectedIds.forEach(id => {
+      const inp = document.createElement('input');
+      inp.type = 'hidden'; inp.name = 'assessment_ids'; inp.value = id;
+      container.appendChild(inp);
+    });
+    document.getElementById('bulkForm').submit();
+  }
+</script>
+{% endblock %}

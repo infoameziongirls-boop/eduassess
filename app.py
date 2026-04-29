@@ -299,6 +299,7 @@ from excel_utils import (ExcelTemplateHandler, ExcelBulkImporter,
                          create_question_import_template)
 from analytics import get_class_performance_summary, get_grade_distribution
 from api_v1 import api_bp
+from promotion_routes import promotion_bp
 from template_updater import AssessmentTemplateUpdater
 
 # Initialise DB
@@ -333,6 +334,7 @@ app.config['ASSESSMENTS_PER_PAGE'] = ASSESSMENTS_PER_PAGE
 app.config['CATEGORY_MAX_SCORES'] = CATEGORY_MAX_SCORES
 app.config['ASSESSMENT_WEIGHTS']  = ASSESSMENT_WEIGHTS
 app.register_blueprint(api_bp)
+app.register_blueprint(promotion_bp)
 migrate = Migrate(app, db)
 
 
@@ -683,6 +685,7 @@ def inject_config():
         'ASSESSMENT_WEIGHTS': app.config['ASSESSMENT_WEIGHTS'],
         'LEARNING_AREAS':     app.config['LEARNING_AREAS'],
         'CLASS_LEVELS':       app.config['CLASS_LEVELS'],
+        'now':                datetime.utcnow(),
     }
 
 
@@ -1661,18 +1664,117 @@ def assessment_unarchive(assessment_id):
 
 @app.route('/assessments/archived')
 @login_required
+@admin_required
 def assessments_archived():
-    page     = request.args.get('page', 1, type=int)
-    per_page = app.config['ASSESSMENTS_PER_PAGE']
-    if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
-        q = Assessment.query.filter_by(teacher_id=current_user.id, archived=True)
-    else:
-        q = Assessment.query.filter_by(archived=True)
-    pagination = q.order_by(Assessment.date_recorded.desc()) \
-                  .paginate(page=page, per_page=per_page, error_out=False)
-    return render_template('assessments.html', assessments=pagination.items,
-                           pagination=pagination, form=AssessmentFilterForm(),
-                           archived=True)
+    """
+    Dedicated archive container.
+    Admins can browse, search, filter, restore, or delete archived assessments.
+    """
+    from sqlalchemy import func
+
+    page         = request.args.get('page',          1,  type=int)
+    per_page     = app.config['ASSESSMENTS_PER_PAGE']
+    search       = request.args.get('search',       '').strip()
+    sel_subject  = request.args.get('subject',      '').strip()
+    sel_class    = request.args.get('class_name',   '').strip()
+    sel_term     = request.args.get('term',         '').strip()
+    sel_year     = request.args.get('academic_year','').strip()
+    group        = request.args.get('group',        'all').strip()
+
+    # ── Base query: all archived assessments ──────────────────────────────────
+    q = Assessment.query.filter_by(archived=True)
+
+    # ── Optional group filter (by term+year key) ──────────────────────────────
+    if group and group != 'all':
+        # key format: "2024-2025__term1"
+        parts = group.split('__')
+        if len(parts) == 2:
+            q = q.filter_by(academic_year=parts[0], term=parts[1])
+
+    # ── Text / field filters ──────────────────────────────────────────────────
+    if search:
+        q = q.join(Student, Assessment.student_id == Student.id).filter(
+            db.or_(
+                Student.first_name.ilike(f'%{search}%'),
+                Student.last_name.ilike(f'%{search}%'),
+                Student.student_number.ilike(f'%{search}%'),
+            )
+        )
+    if sel_subject:  q = q.filter_by(subject=sel_subject)
+    if sel_class:    q = q.filter_by(class_name=sel_class)
+    if sel_term:     q = q.filter_by(term=sel_term)
+    if sel_year:     q = q.filter_by(academic_year=sel_year)
+
+    pagination = (q.order_by(Assessment.date_recorded.desc())
+                   .paginate(page=page, per_page=per_page, error_out=False))
+
+    # Filter out orphaned records (missing students) to prevent template errors
+    pagination.items = [a for a in pagination.items if a.student is not None]
+
+    # ── Hero / KPI stats ──────────────────────────────────────────────────────
+    total_archived    = Assessment.query.filter_by(archived=True).count()
+    archived_students = (db.session.query(func.count(Assessment.student_id.distinct()))
+                           .filter_by(archived=True).scalar() or 0)
+
+    # Distinct (academic_year, term) pairs that have archived records
+    archived_pairs = (db.session.query(Assessment.academic_year, Assessment.term)
+                       .filter_by(archived=True)
+                       .group_by(Assessment.academic_year, Assessment.term)
+                       .order_by(Assessment.academic_year.desc(), Assessment.term)
+                       .all())
+    archived_terms = len(archived_pairs)
+
+    last_record = (Assessment.query.filter_by(archived=True)
+                    .order_by(Assessment.date_recorded.desc()).first())
+    last_archive_date = (last_record.date_recorded.strftime('%d %b %Y')
+                         if last_record else None)
+
+    # ── Term summary cards (one card per distinct year+term) ─────────────────
+    term_label_map = dict(app.config.get('TERMS', []))
+    term_summary = []
+    for year, term in archived_pairs:
+        count = (Assessment.query
+                   .filter_by(archived=True, academic_year=year, term=term)
+                   .count())
+        stu_count = (db.session.query(func.count(Assessment.student_id.distinct()))
+                      .filter_by(archived=True, academic_year=year, term=term)
+                      .scalar() or 0)
+        term_summary.append({
+            'key':           f'{year}__{term}',
+            'academic_year': year or '—',
+            'term':          term or '—',
+            'term_label':    term_label_map.get(term, (term or '').replace('term', 'Term ')),
+            'count':         count,
+            'student_count': stu_count,
+        })
+
+    return render_template(
+        'archive_view.html',
+        assessments=pagination.items,
+        pagination=pagination,
+
+        # Filter form state
+        search=search,
+        selected_subject=sel_subject,
+        selected_class=sel_class,
+        selected_term=sel_term,
+        selected_year=sel_year,
+        group=group,
+
+        # Config lists for filter dropdowns
+        learning_areas=app.config['LEARNING_AREAS'],
+        class_levels=app.config['CLASS_LEVELS'],
+        terms=app.config.get('TERMS', []),
+
+        # Hero KPIs
+        total_archived=total_archived,
+        archived_students=archived_students,
+        archived_terms=archived_terms,
+        last_archive_date=last_archive_date,
+
+        # Tab / summary data
+        term_summary=term_summary,
+    )
 
 
 @app.route('/assessments/bulk-action', methods=['POST'])

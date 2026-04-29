@@ -100,9 +100,13 @@
                 </a>
                 <div style="padding:10px;border-radius:9px;margin-bottom:4px;">
                     <div style="font-size:.75rem;font-weight:600;color:var(--ink-4);margin-bottom:8px;">Archive Previous Terms</div>
-                    <form method="POST" action="{{ url_for('archive_term') }}" onsubmit="return confirm('Archive all assessments from previous terms?')">
+                    <form method="POST" action="{{ url_for('archive_term') }}" onsubmit="return confirm('Archive all assessments from previous terms?')" style="display:inline;">
                         <button type="submit" class="btn btn-warning btn-sm"><i class="bi bi-archive"></i> Archive Now</button>
                     </form>
+                    <a href="{{ url_for('assessments_archived') }}"
+                       class="btn btn-outline-secondary btn-sm" style="margin-left:.4rem;">
+                      <i class="bi bi-collection"></i> View Archive
+                    </a>
                 </div>
             </div>
         </div>

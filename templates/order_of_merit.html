@@ -1,0 +1,638 @@
+{% extends "base.html" %}
+{% block title %}Order of Merit — EduAssess{% endblock %}
+
+{% block extra_head %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;0,900;1,600&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --ink:      #0b1623;
+    --ink-mid:  #1e3353;
+    --gold:     #c9a84c;
+    --gold-lt:  #e8c96a;
+    --gold-dim: rgba(201,168,76,.15);
+    --silver:   #a8b2c4;
+    --bronze:   #b87333;
+    --cream:    #f7f2e8;
+    --white:    #ffffff;
+    --green:    #1d7a4c;
+    --shadow-md: 0 8px 32px rgba(11,22,35,.14);
+    --radius:   18px;
+    --ease:     cubic-bezier(.4,0,.2,1);
+  }
+
+  body { background: #f0ebe0; font-family: 'DM Sans', sans-serif; }
+
+  /* ── HERO ── */
+  .merit-hero {
+    background: linear-gradient(140deg, #0b1623 0%, #1a2f52 50%, #0e2040 100%);
+    border-radius: 28px;
+    padding: 3rem 3.5rem;
+    margin-bottom: 2rem;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(11,22,35,.3);
+  }
+  .merit-hero::before {
+    content: '';
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 300px; height: 300px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(201,168,76,.18) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .merit-hero::after {
+    content: '🏆';
+    position: absolute;
+    right: 3rem; top: 50%;
+    transform: translateY(-50%);
+    font-size: 9rem;
+    opacity: .07;
+    pointer-events: none;
+  }
+  .merit-hero-inner { position: relative; z-index: 1; }
+  .merit-eyebrow {
+    font-family: 'DM Mono', monospace;
+    font-size: .75rem;
+    color: var(--gold);
+    text-transform: uppercase;
+    letter-spacing: .14em;
+    margin-bottom: .85rem;
+  }
+  .merit-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.8rem;
+    font-weight: 900;
+    color: var(--white);
+    line-height: 1.15;
+    margin-bottom: .6rem;
+  }
+  .merit-title em { color: var(--gold); font-style: italic; }
+  .merit-sub {
+    font-size: .92rem;
+    color: rgba(255,255,255,.55);
+    max-width: 520px;
+    line-height: 1.7;
+    margin-bottom: 2rem;
+  }
+  .merit-tabs {
+    display: flex; gap: .6rem; flex-wrap: wrap;
+  }
+  .merit-tab {
+    display: inline-flex; align-items: center; gap: .5rem;
+    padding: .6rem 1.3rem;
+    border-radius: 50px;
+    font-size: .85rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1.5px solid rgba(255,255,255,.15);
+    color: rgba(255,255,255,.6);
+    text-decoration: none;
+    transition: all .25s var(--ease);
+    background: rgba(255,255,255,.04);
+  }
+  .merit-tab:hover { border-color: var(--gold); color: var(--gold); background: var(--gold-dim); }
+  .merit-tab.active {
+    background: var(--gold);
+    border-color: var(--gold);
+    color: var(--ink);
+    font-weight: 700;
+  }
+
+  /* ── FILTER BAR ── */
+  .filter-bar {
+    background: var(--white);
+    border-radius: 16px;
+    border: 1.5px solid rgba(11,22,35,.07);
+    box-shadow: 0 4px 16px rgba(11,22,35,.06);
+    padding: 1.25rem 1.5rem;
+    display: flex; align-items: center; gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 2rem;
+  }
+  .filter-label {
+    font-size: .72rem;
+    font-weight: 700;
+    color: var(--ink);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    white-space: nowrap;
+  }
+  .filter-select {
+    border: 1.5px solid rgba(11,22,35,.12);
+    border-radius: 10px;
+    padding: .5rem .9rem;
+    font-family: 'DM Sans', sans-serif;
+    font-size: .88rem;
+    color: var(--ink);
+    background: var(--cream);
+    outline: none;
+    cursor: pointer;
+    transition: all .25s var(--ease);
+  }
+  .filter-select:focus { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-dim); }
+  .filter-spacer { flex: 1; }
+  .btn-filter {
+    display: inline-flex; align-items: center; gap: .5rem;
+    padding: .55rem 1.2rem;
+    border-radius: 10px;
+    font-size: .85rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all .25s var(--ease);
+    text-decoration: none;
+  }
+  .btn-gold {
+    background: linear-gradient(135deg, var(--gold) 0%, #b8913e 100%);
+    color: var(--ink);
+    box-shadow: 0 4px 14px rgba(201,168,76,.3);
+  }
+  .btn-gold:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(201,168,76,.4); color: var(--ink); }
+  .btn-outline {
+    background: transparent;
+    color: var(--ink);
+    border: 1.5px solid rgba(11,22,35,.15);
+  }
+  .btn-outline:hover { border-color: var(--gold); color: var(--gold); }
+
+  /* ── PODIUM ── */
+  .podium-wrap {
+    display: grid;
+    grid-template-columns: 1fr 1.15fr 1fr;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    align-items: flex-end;
+  }
+  .podium-slot {
+    background: var(--white);
+    border-radius: var(--radius);
+    border: 1.5px solid rgba(11,22,35,.07);
+    box-shadow: 0 4px 18px rgba(11,22,35,.08);
+    padding: 1.75rem 1.25rem 1.5rem;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    transition: transform .3s var(--ease);
+  }
+  .podium-slot:hover { transform: translateY(-4px); }
+  .podium-slot.rank-1 {
+    background: linear-gradient(160deg, #0b1623 0%, #1a2f52 100%);
+    border-color: var(--gold);
+    box-shadow: 0 8px 32px rgba(201,168,76,.25), 0 4px 18px rgba(11,22,35,.15);
+  }
+  .podium-slot.rank-1::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--gold) 0%, var(--gold-lt) 100%);
+  }
+  .podium-slot.rank-2 { border-color: rgba(168,178,196,.4); }
+  .podium-slot.rank-3 { border-color: rgba(184,115,51,.3); }
+  .podium-crown {
+    font-size: 2.2rem;
+    margin-bottom: .5rem;
+    display: block;
+    animation: float 3s ease-in-out infinite;
+  }
+  @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+  .podium-rank-badge {
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    font-weight: 900;
+    margin: 0 auto .75rem;
+  }
+  .rank-1 .podium-rank-badge { background: var(--gold); color: var(--ink); }
+  .rank-2 .podium-rank-badge { background: var(--silver); color: var(--ink); }
+  .rank-3 .podium-rank-badge { background: var(--bronze); color: var(--white); }
+  .podium-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: .2rem;
+  }
+  .rank-1 .podium-name { color: var(--white); }
+  .podium-class { font-size: .78rem; color: #8a97a8; margin-bottom: .75rem; }
+  .rank-1 .podium-class { color: rgba(255,255,255,.5); }
+  .podium-score {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem;
+    font-weight: 900;
+    line-height: 1;
+  }
+  .rank-1 .podium-score { color: var(--gold); }
+  .rank-2 .podium-score { color: var(--silver); }
+  .rank-3 .podium-score { color: var(--bronze); }
+  .podium-score-label {
+    font-size: .72rem;
+    color: #8a97a8;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    margin-top: .2rem;
+  }
+  .rank-1 .podium-score-label { color: rgba(255,255,255,.4); }
+  .podium-subject-tags {
+    display: flex; flex-wrap: wrap; gap: .35rem;
+    justify-content: center;
+    margin-top: .85rem;
+  }
+  .subject-tag {
+    font-size: .68rem;
+    padding: .2rem .55rem;
+    border-radius: 50px;
+    font-family: 'DM Mono', monospace;
+  }
+  .rank-1 .subject-tag { background: var(--gold-dim); color: var(--gold-lt); border: 1px solid rgba(201,168,76,.25); }
+  .rank-2 .subject-tag { background: rgba(168,178,196,.15); color: var(--silver); }
+  .rank-3 .subject-tag { background: rgba(184,115,51,.1); color: var(--bronze); }
+
+  /* ── MERIT TABLE ── */
+  .merit-table-wrap {
+    background: var(--white);
+    border-radius: var(--radius);
+    border: 1.5px solid rgba(11,22,35,.07);
+    box-shadow: 0 4px 18px rgba(11,22,35,.07);
+    overflow: hidden;
+    margin-bottom: 2rem;
+  }
+  .merit-table-head {
+    background: linear-gradient(135deg, var(--ink) 0%, #1a2f52 100%);
+    padding: 1.25rem 2rem;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .merit-table-head h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.05rem;
+    color: var(--white);
+    margin: 0;
+  }
+  .merit-table-head .badge-count {
+    background: var(--gold-dim);
+    border: 1px solid rgba(201,168,76,.3);
+    color: var(--gold);
+    font-size: .75rem;
+    font-family: 'DM Mono', monospace;
+    padding: .25rem .65rem;
+    border-radius: 50px;
+  }
+  table.merit-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  .merit-table thead tr {
+    background: var(--cream);
+  }
+  .merit-table thead th {
+    padding: .75rem 1.25rem;
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .09em;
+    color: #6b7a8d;
+    font-weight: 700;
+    text-align: left;
+    font-family: 'DM Mono', monospace;
+    border-bottom: 1px solid rgba(11,22,35,.07);
+  }
+  .merit-table tbody tr {
+    transition: background .2s;
+    border-bottom: 1px solid rgba(11,22,35,.04);
+  }
+  .merit-table tbody tr:hover { background: var(--cream); }
+  .merit-table tbody tr.top-3 { background: rgba(201,168,76,.04); }
+  .merit-table tbody td {
+    padding: .9rem 1.25rem;
+    font-size: .88rem;
+    color: var(--ink);
+    vertical-align: middle;
+  }
+  .rank-num {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    font-weight: 700;
+    width: 40px;
+    text-align: center;
+  }
+  .rank-num.gold   { color: var(--gold); }
+  .rank-num.silver { color: var(--silver); }
+  .rank-num.bronze { color: var(--bronze); }
+  .rank-num.normal { color: #6b7a8d; }
+  .student-avatar {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--ink-mid), var(--ink));
+    display: flex; align-items: center; justify-content: center;
+    color: var(--white);
+    font-family: 'Playfair Display', serif;
+    font-size: .8rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .student-info { display: flex; flex-direction: column; }
+  .student-name { font-weight: 600; font-size: .9rem; }
+  .student-id   { font-size: .72rem; color: #8a97a8; font-family: 'DM Mono', monospace; }
+  .score-bar-wrap { width: 100px; }
+  .score-bar {
+    height: 5px;
+    background: rgba(11,22,35,.07);
+    border-radius: 50px;
+    overflow: hidden;
+    margin-top: .3rem;
+  }
+  .score-bar-fill {
+    height: 100%;
+    border-radius: 50px;
+    background: linear-gradient(90deg, var(--gold) 0%, var(--gold-lt) 100%);
+  }
+  .score-val {
+    font-family: 'DM Mono', monospace;
+    font-size: .9rem;
+    font-weight: 500;
+  }
+  .grade-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 36px;
+    padding: .25rem .6rem;
+    border-radius: 8px;
+    font-size: .78rem;
+    font-weight: 700;
+    font-family: 'DM Mono', monospace;
+  }
+  .grade-a  { background: rgba(29,122,76,.12); color: var(--green); }
+  .grade-b  { background: rgba(59,91,219,.1); color: #3b5bdb; }
+  .grade-c  { background: var(--gold-dim); color: #8a6a1e; }
+  .grade-d  { background: rgba(255,153,0,.1); color: #e07b00; }
+  .grade-f  { background: rgba(192,57,43,.1); color: #c0392b; }
+  .trend-up   { color: var(--green); font-size:.8rem; }
+  .trend-down { color: #c0392b; font-size:.8rem; }
+  .trend-same { color: #8a97a8; font-size:.8rem; }
+  .action-cell { display: flex; gap: .5rem; }
+  .btn-xs {
+    padding: .3rem .7rem;
+    border-radius: 7px;
+    font-size: .75rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all .2s;
+    display: inline-flex; align-items: center; gap: .3rem;
+  }
+  .btn-xs-ghost {
+    background: rgba(11,22,35,.05);
+    color: var(--ink);
+  }
+  .btn-xs-ghost:hover { background: var(--gold-dim); color: var(--gold); }
+
+  /* ── PRINT BUTTON ── */
+  .print-bar {
+    background: var(--white);
+    border-radius: 14px;
+    border: 1.5px solid rgba(11,22,35,.07);
+    padding: 1rem 1.5rem;
+    display: flex; align-items: center; gap: 1rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+  }
+  .print-bar p { font-size: .85rem; color: #6b7a8d; margin: 0; flex:1; }
+
+  /* ── ANIMATIONS ── */
+  .fade-up { opacity:0; transform:translateY(20px); animation: fadeUp .5s cubic-bezier(.4,0,.2,1) forwards; }
+  @keyframes fadeUp { to{opacity:1; transform:translateY(0);} }
+  .d1{animation-delay:.08s} .d2{animation-delay:.16s} .d3{animation-delay:.24s} .d4{animation-delay:.32s} .d5{animation-delay:.4s}
+
+  @media print {
+    .merit-hero, .filter-bar, .print-bar, .action-cell, .merit-tabs { display:none !important; }
+    .merit-table-wrap { border:none; box-shadow:none; }
+    body { background: white; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-xl py-4">
+
+  {# ── HERO ── #}
+  <div class="merit-hero fade-up">
+    <div class="merit-hero-inner">
+      <div class="merit-eyebrow">Academic Excellence · {{ current_academic_year }}</div>
+      <h1 class="merit-title">Order of <em>Merit</em></h1>
+      <p class="merit-sub">
+        Ranked academic standings by cumulative performance across all assessments.
+        Select a view to filter by class, subject, or form level.
+      </p>
+      <nav class="merit-tabs">
+        <a href="{{ url_for('promotion.order_of_merit', view='all') }}"
+           class="merit-tab {% if view == 'all' or not view %}active{% endif %}">
+          🌐 All Students
+        </a>
+        <a href="{{ url_for('promotion.order_of_merit', view='class') }}"
+           class="merit-tab {% if view == 'class' %}active{% endif %}">
+          📘 By Class
+        </a>
+        <a href="{{ url_for('promotion.order_of_merit', view='subject') }}"
+           class="merit-tab {% if view == 'subject' %}active{% endif %}">
+          📚 By Subject
+        </a>
+        <a href="{{ url_for('promotion.order_of_merit', view='form') }}"
+           class="merit-tab {% if view == 'form' %}active{% endif %}">
+          🏫 By Form
+        </a>
+      </nav>
+    </div>
+  </div>
+
+  {# ── FILTER BAR ── #}
+  <form method="GET" action="{{ url_for('promotion.order_of_merit') }}">
+    <input type="hidden" name="view" value="{{ view or 'all' }}">
+    <div class="filter-bar fade-up d1">
+      <span class="filter-label">Filter</span>
+
+      <select name="class_name" class="filter-select" onchange="this.form.submit()">
+        <option value="">All Classes</option>
+        {% for cls in class_levels %}
+        <option value="{{ cls[0] }}" {% if selected_class == cls[0] %}selected{% endif %}>{{ cls[1] }}</option>
+        {% endfor %}
+      </select>
+
+      <select name="subject" class="filter-select" onchange="this.form.submit()">
+        <option value="">All Subjects</option>
+        {% for s in learning_areas %}
+        <option value="{{ s[0] }}" {% if selected_subject == s[0] %}selected{% endif %}>{{ s[1] }}</option>
+        {% endfor %}
+      </select>
+
+      <select name="term" class="filter-select" onchange="this.form.submit()">
+        <option value="">All Terms</option>
+        {% for t in terms %}
+        <option value="{{ t[0] }}" {% if selected_term == t[0] %}selected{% endif %}>{{ t[1] }}</option>
+        {% endfor %}
+      </select>
+
+      <div class="filter-spacer"></div>
+
+      <a href="{{ url_for('promotion.order_of_merit') }}" class="btn-filter btn-outline">Reset</a>
+      <button type="submit" class="btn-filter btn-gold">Apply Filters</button>
+    </div>
+  </form>
+
+  {# ── PODIUM (top 3) ── #}
+  {% if merit_list and merit_list|length >= 3 %}
+  <div class="podium-wrap fade-up d2">
+    {# 2nd place #}
+    <div class="podium-slot rank-2">
+      <span class="podium-rank-badge">2</span>
+      <div class="podium-name">{{ merit_list[1].student.full_name() }}</div>
+      <div class="podium-class">{{ merit_list[1].student.get_class_display() }}</div>
+      <div class="podium-score">{{ "%.1f"|format(merit_list[1].final_score) }}</div>
+      <div class="podium-score-label">Final Score</div>
+      <div class="podium-subject-tags">
+        {% for subj in merit_list[1].top_subjects[:2] %}
+        <span class="subject-tag">{{ subj }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {# 1st place #}
+    <div class="podium-slot rank-1">
+      <span class="podium-crown">👑</span>
+      <span class="podium-rank-badge">1</span>
+      <div class="podium-name">{{ merit_list[0].student.full_name() }}</div>
+      <div class="podium-class">{{ merit_list[0].student.get_class_display() }}</div>
+      <div class="podium-score">{{ "%.1f"|format(merit_list[0].final_score) }}</div>
+      <div class="podium-score-label">Final Score</div>
+      <div class="podium-subject-tags">
+        {% for subj in merit_list[0].top_subjects[:2] %}
+        <span class="subject-tag">{{ subj }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {# 3rd place #}
+    <div class="podium-slot rank-3">
+      <span class="podium-rank-badge">3</span>
+      <div class="podium-name">{{ merit_list[2].student.full_name() }}</div>
+      <div class="podium-class">{{ merit_list[2].student.get_class_display() }}</div>
+      <div class="podium-score">{{ "%.1f"|format(merit_list[2].final_score) }}</div>
+      <div class="podium-score-label">Final Score</div>
+      <div class="podium-subject-tags">
+        {% for subj in merit_list[2].top_subjects[:2] %}
+        <span class="subject-tag">{{ subj }}</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── PRINT BAR ── #}
+  <div class="print-bar fade-up d3">
+    <p>📋 Ready to publish rankings for the notice board?</p>
+    <button class="btn-filter btn-outline" onclick="window.print()">🖨 Print List</button>
+    <a href="{{ url_for('promotion.order_of_merit', view=view, class_name=selected_class, subject=selected_subject, export='csv') }}"
+       class="btn-filter btn-gold">⬇ Export CSV</a>
+  </div>
+
+  {# ── FULL MERIT TABLE ── #}
+  <div class="merit-table-wrap fade-up d4">
+    <div class="merit-table-head">
+      <h3>Full Rankings — {{ selected_class_label or 'All Classes' }}</h3>
+      <span class="badge-count">{{ merit_list|length }} students</span>
+    </div>
+    {% if merit_list %}
+    <table class="merit-table">
+      <thead>
+        <tr>
+          <th style="width:60px;">Rank</th>
+          <th>Student</th>
+          <th>Class</th>
+          <th>Final Score</th>
+          <th>Grade</th>
+          <th>GPA</th>
+          <th>Top Subject</th>
+          <th>Trend</th>
+          {% if current_user.is_admin() %}<th>Actions</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in merit_list %}
+        {% set r = loop.index %}
+        <tr class="{% if r <= 3 %}top-3{% endif %}">
+          <td>
+            <div class="rank-num {% if r == 1 %}gold{% elif r == 2 %}silver{% elif r == 3 %}bronze{% else %}normal{% endif %}">
+              {% if r == 1 %}🥇{% elif r == 2 %}🥈{% elif r == 3 %}🥉{% else %}{{ r }}{% endif %}
+            </div>
+          </td>
+          <td>
+            <div style="display:flex; align-items:center; gap:.75rem;">
+              <div class="student-avatar">
+                {{ entry.student.first_name[0] }}{{ entry.student.last_name[0] }}
+              </div>
+              <div class="student-info">
+                <span class="student-name">{{ entry.student.full_name() }}</span>
+                <span class="student-id">{{ entry.student.student_number }}</span>
+              </div>
+            </div>
+          </td>
+          <td>
+            <span style="font-size:.83rem; color:#6b7a8d;">
+              {{ entry.student.get_class_display() or '—' }}
+            </span>
+          </td>
+          <td>
+            <div class="score-bar-wrap">
+              <span class="score-val">{{ "%.1f"|format(entry.final_score) }}%</span>
+              <div class="score-bar">
+                <div class="score-bar-fill" style="width:{{ entry.final_score }}%"></div>
+              </div>
+            </div>
+          </td>
+          <td>
+            {% set g = entry.grade %}
+            <span class="grade-badge {% if g.startswith('A') %}grade-a{% elif g.startswith('B') %}grade-b{% elif g.startswith('C') %}grade-c{% elif g.startswith('D') %}grade-d{% else %}grade-f{% endif %}">
+              {{ g }}
+            </span>
+          </td>
+          <td>
+            <span style="font-family:'DM Mono',monospace; font-size:.88rem; font-weight:500;">
+              {{ entry.gpa }}
+            </span>
+          </td>
+          <td>
+            <span style="font-size:.82rem; color:#6b7a8d;">{{ entry.top_subjects[0] if entry.top_subjects else '—' }}</span>
+          </td>
+          <td>
+            {% if entry.trend == 'up' %}
+            <span class="trend-up">▲ +{{ entry.rank_change }}</span>
+            {% elif entry.trend == 'down' %}
+            <span class="trend-down">▼ {{ entry.rank_change }}</span>
+            {% else %}
+            <span class="trend-same">— —</span>
+            {% endif %}
+          </td>
+          {% if current_user.is_admin() %}
+          <td>
+            <div class="action-cell">
+              <a href="{{ url_for('student_view', student_id=entry.student.id) }}"
+                 class="btn-xs btn-xs-ghost">View</a>
+            </div>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center; padding:4rem 2rem;">
+      <div style="font-size:3.5rem; margin-bottom:1rem; opacity:.35;">🏆</div>
+      <p style="color:#8a97a8; font-size:.92rem; margin-bottom:.5rem;">No ranking data available.</p>
+      <p style="color:#aab4c0; font-size:.82rem;">Ensure assessments have been recorded and finalised.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

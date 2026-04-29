@@ -1,0 +1,771 @@
+{% extends "base.html" %}
+{% block title %}Class Promotion — EduAssess{% endblock %}
+
+{% block extra_head %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;900&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --ink:      #0b1623;
+    --ink-mid:  #1e3353;
+    --ink-soft: #2d4a6e;
+    --gold:     #c9a84c;
+    --gold-lt:  #e8c96a;
+    --gold-dim: rgba(201,168,76,.18);
+    --cream:    #f7f2e8;
+    --cream-dk: #ede6d6;
+    --white:    #ffffff;
+    --green:    #1d7a4c;
+    --green-lt: #2ea86a;
+    --red:      #c0392b;
+    --shadow-md: 0 8px 32px rgba(11,22,35,.18);
+    --shadow-lg: 0 20px 60px rgba(11,22,35,.25);
+    --radius:   18px;
+    --transition: .35s cubic-bezier(.4,0,.2,1);
+  }
+
+  body { background: #f0ebe0; font-family: 'DM Sans', sans-serif; }
+
+  /* ── PAGE HERO ── */
+  .promo-hero {
+    background: linear-gradient(135deg, var(--ink) 0%, var(--ink-mid) 60%, #163060 100%);
+    border-radius: 28px;
+    padding: 3rem 3.5rem;
+    margin-bottom: 2.5rem;
+    position: relative;
+    overflow: hidden;
+    box-shadow: var(--shadow-lg);
+  }
+  .promo-hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c9a84c' fill-opacity='0.06'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  }
+  .promo-hero::after {
+    content: '🎓';
+    position: absolute; right: 3rem; top: 50%;
+    transform: translateY(-50%);
+    font-size: 8rem;
+    opacity: .08;
+    pointer-events: none;
+  }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: .5rem;
+    background: var(--gold-dim);
+    border: 1px solid rgba(201,168,76,.3);
+    border-radius: 50px;
+    padding: .35rem 1rem;
+    font-size: .78rem;
+    font-family: 'DM Mono', monospace;
+    color: var(--gold-lt);
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+  }
+  .hero-badge::before { content: '●'; font-size: .55rem; animation: pulse-dot 2s infinite; }
+  @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .hero-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.6rem;
+    font-weight: 700;
+    color: var(--white);
+    line-height: 1.2;
+    margin-bottom: .6rem;
+  }
+  .hero-title span { color: var(--gold); }
+  .hero-sub {
+    font-size: .95rem;
+    color: rgba(255,255,255,.65);
+    max-width: 560px;
+    line-height: 1.7;
+  }
+  .hero-meta {
+    margin-top: 1.8rem;
+    display: flex; gap: 2rem; flex-wrap: wrap;
+  }
+  .hero-stat {
+    display: flex; flex-direction: column;
+  }
+  .hero-stat .num {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--gold);
+    line-height: 1;
+  }
+  .hero-stat .lbl {
+    font-size: .75rem;
+    color: rgba(255,255,255,.5);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin-top: .25rem;
+  }
+  .hero-divider {
+    width: 1px; background: rgba(255,255,255,.12);
+    align-self: stretch;
+  }
+
+  /* ── SECTION HEADING ── */
+  .sec-head {
+    display: flex; align-items: center; gap: .75rem;
+    margin-bottom: 1.25rem;
+  }
+  .sec-head h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--ink);
+    margin: 0;
+  }
+  .sec-head .line {
+    flex: 1; height: 1px;
+    background: linear-gradient(90deg, var(--gold) 0%, transparent 100%);
+    opacity: .4;
+  }
+  .sec-head .pill {
+    font-size: .72rem;
+    font-family: 'DM Mono', monospace;
+    background: var(--ink);
+    color: var(--gold);
+    padding: .25rem .7rem;
+    border-radius: 50px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+
+  /* ── CLASS GRID ── */
+  .class-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.25rem;
+    margin-bottom: 2.5rem;
+  }
+  .class-card {
+    background: var(--white);
+    border-radius: var(--radius);
+    border: 1.5px solid rgba(11,22,35,.07);
+    box-shadow: 0 4px 16px rgba(11,22,35,.06);
+    overflow: hidden;
+    transition: var(--transition);
+    cursor: pointer;
+    position: relative;
+  }
+  .class-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--gold);
+  }
+  .class-card.selected {
+    border-color: var(--gold);
+    box-shadow: 0 0 0 3px var(--gold-dim), var(--shadow-md);
+  }
+  .class-card-accent {
+    height: 5px;
+    background: linear-gradient(90deg, var(--gold) 0%, var(--gold-lt) 100%);
+  }
+  .class-card-accent.green  { background: linear-gradient(90deg, var(--green) 0%, var(--green-lt) 100%); }
+  .class-card-accent.indigo { background: linear-gradient(90deg, #3b5bdb 0%, #74c0fc 100%); }
+  .class-card-body { padding: 1.5rem; }
+  .class-card-icon {
+    width: 46px; height: 46px;
+    border-radius: 12px;
+    background: var(--gold-dim);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem;
+    margin-bottom: 1rem;
+  }
+  .class-card-icon.green  { background: rgba(29,122,76,.12); }
+  .class-card-icon.indigo { background: rgba(59,91,219,.12); }
+  .class-card-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--ink);
+    margin-bottom: .25rem;
+  }
+  .class-card-sub {
+    font-size: .82rem;
+    color: #6b7a8d;
+    margin-bottom: 1.1rem;
+  }
+  .class-card-stats {
+    display: flex; gap: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(11,22,35,.06);
+  }
+  .stat-mini { flex: 1; }
+  .stat-mini .val {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--ink);
+    font-family: 'DM Mono', monospace;
+  }
+  .stat-mini .key {
+    font-size: .72rem;
+    color: #8a97a8;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .card-checkbox {
+    position: absolute;
+    top: 1.1rem; right: 1.1rem;
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    border: 2px solid rgba(11,22,35,.15);
+    background: var(--white);
+    display: flex; align-items: center; justify-content: center;
+    transition: var(--transition);
+  }
+  .class-card.selected .card-checkbox {
+    background: var(--gold);
+    border-color: var(--gold);
+  }
+  .class-card.selected .card-checkbox::after {
+    content: '✓';
+    font-size: .75rem;
+    color: var(--ink);
+    font-weight: 700;
+  }
+
+  /* ── ACTION PANEL ── */
+  .action-panel {
+    background: var(--white);
+    border-radius: var(--radius);
+    border: 1.5px solid rgba(11,22,35,.07);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+    margin-bottom: 2.5rem;
+  }
+  .action-panel-head {
+    background: linear-gradient(135deg, var(--ink) 0%, var(--ink-mid) 100%);
+    padding: 1.5rem 2rem;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .action-panel-head h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    color: var(--white);
+    margin: 0;
+  }
+  .action-panel-head .tag {
+    background: var(--gold-dim);
+    border: 1px solid rgba(201,168,76,.35);
+    color: var(--gold);
+    font-size: .72rem;
+    font-family: 'DM Mono', monospace;
+    padding: .25rem .65rem;
+    border-radius: 50px;
+  }
+  .action-panel-body { padding: 2rem; }
+  .action-row {
+    display: flex; align-items: flex-start;
+    gap: 1.5rem; flex-wrap: wrap;
+  }
+  .action-info { flex: 1; min-width: 220px; }
+  .action-info h4 {
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: .35rem;
+    font-size: .95rem;
+  }
+  .action-info p {
+    font-size: .85rem;
+    color: #6b7a8d;
+    line-height: 1.6;
+    margin: 0;
+  }
+  .checklist {
+    list-style: none;
+    padding: 0; margin: 1rem 0 0;
+    display: flex; flex-direction: column; gap: .5rem;
+  }
+  .checklist li {
+    display: flex; align-items: center; gap: .6rem;
+    font-size: .83rem;
+    color: #6b7a8d;
+  }
+  .checklist li::before {
+    content: '✓';
+    width: 18px; height: 18px;
+    background: rgba(29,122,76,.12);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .65rem;
+    color: var(--green);
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  /* ── BUTTONS ── */
+  .btn-promo {
+    display: inline-flex; align-items: center; gap: .6rem;
+    padding: .75rem 1.75rem;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: .9rem;
+    border: none;
+    cursor: pointer;
+    transition: var(--transition);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .btn-promo-gold {
+    background: linear-gradient(135deg, var(--gold) 0%, #b8913e 100%);
+    color: var(--ink);
+    box-shadow: 0 4px 16px rgba(201,168,76,.35);
+  }
+  .btn-promo-gold:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(201,168,76,.45);
+    color: var(--ink);
+  }
+  .btn-promo-outline {
+    background: transparent;
+    color: var(--ink);
+    border: 1.5px solid rgba(11,22,35,.2);
+  }
+  .btn-promo-outline:hover {
+    border-color: var(--gold);
+    color: var(--gold);
+    background: var(--gold-dim);
+  }
+  .btn-promo-danger {
+    background: rgba(192,57,43,.1);
+    color: var(--red);
+    border: 1.5px solid rgba(192,57,43,.2);
+  }
+  .btn-promo-danger:hover {
+    background: var(--red);
+    color: var(--white);
+    border-color: var(--red);
+  }
+
+  /* ── SELECTION BAR ── */
+  .selection-bar {
+    background: var(--ink);
+    border-radius: 14px;
+    padding: 1rem 1.5rem;
+    display: flex; align-items: center; gap: 1rem;
+    margin-bottom: 1.5rem;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: var(--transition);
+    pointer-events: none;
+  }
+  .selection-bar.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: all;
+  }
+  .sel-count {
+    font-family: 'DM Mono', monospace;
+    font-size: .85rem;
+    color: var(--gold);
+    font-weight: 500;
+  }
+  .sel-label { color: rgba(255,255,255,.6); font-size: .85rem; }
+  .sel-spacer { flex: 1; }
+
+  /* ── PROGRESS BAR ── */
+  .promo-progress {
+    background: rgba(11,22,35,.07);
+    border-radius: 50px;
+    height: 6px;
+    overflow: hidden;
+    margin-top: .5rem;
+  }
+  .promo-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--gold) 0%, var(--gold-lt) 100%);
+    border-radius: 50px;
+    transition: width 1s ease;
+  }
+
+  /* ── FORM FIELDS ── */
+  .field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  @media(max-width:768px) { .field-row { grid-template-columns: 1fr; } }
+  .field-group { display: flex; flex-direction: column; gap: .4rem; }
+  .field-group label {
+    font-size: .78rem;
+    font-weight: 600;
+    color: var(--ink);
+    text-transform: uppercase;
+    letter-spacing: .07em;
+  }
+  .field-group select,
+  .field-group input {
+    border: 1.5px solid rgba(11,22,35,.15);
+    border-radius: 10px;
+    padding: .6rem 1rem;
+    font-family: 'DM Sans', sans-serif;
+    font-size: .9rem;
+    color: var(--ink);
+    background: var(--cream);
+    transition: var(--transition);
+    outline: none;
+  }
+  .field-group select:focus,
+  .field-group input:focus {
+    border-color: var(--gold);
+    box-shadow: 0 0 0 3px var(--gold-dim);
+    background: var(--white);
+  }
+
+  /* ── WARNING BOX ── */
+  .warn-box {
+    background: rgba(192,57,43,.06);
+    border: 1.5px solid rgba(192,57,43,.2);
+    border-radius: 12px;
+    padding: 1.1rem 1.4rem;
+    display: flex; gap: .85rem; align-items: flex-start;
+    margin-bottom: 1.5rem;
+  }
+  .warn-icon { font-size: 1.2rem; flex-shrink: 0; margin-top: .05rem; }
+  .warn-text { font-size: .85rem; color: var(--red); line-height: 1.6; }
+  .warn-text strong { display: block; margin-bottom: .15rem; font-size: .88rem; }
+
+  /* ── INFO BOX ── */
+  .info-box {
+    background: rgba(29,122,76,.06);
+    border: 1.5px solid rgba(29,122,76,.2);
+    border-radius: 12px;
+    padding: 1.1rem 1.4rem;
+    display: flex; gap: .85rem; align-items: flex-start;
+    margin-bottom: 1.5rem;
+  }
+  .info-text { font-size: .85rem; color: var(--green); line-height: 1.6; }
+  .info-text strong { display: block; font-size: .88rem; margin-bottom: .15rem; }
+
+  /* ── HISTORY TABLE ── */
+  .hist-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 6px;
+  }
+  .hist-table thead th {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: #8a97a8;
+    font-weight: 600;
+    padding: .5rem 1rem;
+    text-align: left;
+    font-family: 'DM Mono', monospace;
+  }
+  .hist-table tbody tr td {
+    background: var(--white);
+    padding: .9rem 1rem;
+    border-top: 1px solid rgba(11,22,35,.05);
+    border-bottom: 1px solid rgba(11,22,35,.05);
+    font-size: .88rem;
+    color: var(--ink);
+  }
+  .hist-table tbody tr td:first-child {
+    border-left: 1px solid rgba(11,22,35,.05);
+    border-radius: 10px 0 0 10px;
+  }
+  .hist-table tbody tr td:last-child {
+    border-right: 1px solid rgba(11,22,35,.05);
+    border-radius: 0 10px 10px 0;
+  }
+  .hist-table tbody tr:hover td { background: var(--cream); }
+
+  /* ── BADGE ── */
+  .badge-pill {
+    display: inline-flex; align-items: center; gap: .35rem;
+    padding: .25rem .75rem;
+    border-radius: 50px;
+    font-size: .72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    font-family: 'DM Mono', monospace;
+  }
+  .badge-success { background: rgba(29,122,76,.1); color: var(--green); }
+  .badge-pending { background: var(--gold-dim); color: #8a6a1e; }
+  .badge-info    { background: rgba(59,91,219,.1); color: #3b5bdb; }
+
+  /* ── ANIMATIONS ── */
+  .fade-up {
+    opacity: 0; transform: translateY(20px);
+    animation: fadeUp .5s cubic-bezier(.4,0,.2,1) forwards;
+  }
+  @keyframes fadeUp { to { opacity:1; transform:translateY(0); } }
+  .delay-1 { animation-delay: .08s; }
+  .delay-2 { animation-delay: .16s; }
+  .delay-3 { animation-delay: .24s; }
+  .delay-4 { animation-delay: .32s; }
+
+  /* ── RESPONSIVE ── */
+  @media(max-width:600px) {
+    .promo-hero { padding: 2rem 1.5rem; }
+    .hero-title { font-size: 1.8rem; }
+    .promo-hero::after { display:none; }
+    .action-row { flex-direction: column; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-xl py-4">
+
+  {# ── HERO ── #}
+  <div class="promo-hero fade-up">
+    <div class="hero-badge">Admin Panel · Class Promotion</div>
+    <h1 class="hero-title">Advance <span>Students</span><br>to the Next Level</h1>
+    <p class="hero-sub">
+      Promote entire form groups at the end of term. Assessment records are
+      archived automatically and the academic year advances.
+    </p>
+    <div class="hero-meta">
+      <div class="hero-stat">
+        <span class="num">{{ total_students }}</span>
+        <span class="lbl">Total Students</span>
+      </div>
+      <div class="hero-divider"></div>
+      <div class="hero-stat">
+        <span class="num">{{ class_levels|length }}</span>
+        <span class="lbl">Form Levels</span>
+      </div>
+      <div class="hero-divider"></div>
+      <div class="hero-stat">
+        <span class="num">{{ current_academic_year }}</span>
+        <span class="lbl">Academic Year</span>
+      </div>
+      <div class="hero-divider"></div>
+      <div class="hero-stat">
+        <span class="num">{{ current_term }}</span>
+        <span class="lbl">Current Term</span>
+      </div>
+    </div>
+  </div>
+
+  {# ── SELECT CLASSES ── #}
+  <div class="sec-head fade-up delay-1">
+    <h2>Select Classes to Promote</h2>
+    <div class="line"></div>
+    <div class="pill">Step 1 of 3</div>
+  </div>
+
+  {# Selection bar #}
+  <div class="selection-bar" id="selectionBar">
+    <span class="sel-count" id="selCount">0</span>
+    <span class="sel-label">class(es) selected</span>
+    <div class="sel-spacer"></div>
+    <button class="btn-promo btn-promo-outline" onclick="clearAll()" style="padding:.5rem 1rem; font-size:.82rem;">
+      Clear
+    </button>
+    <button class="btn-promo btn-promo-gold" onclick="document.getElementById('confirmPanel').scrollIntoView({behavior:'smooth'})" style="padding:.5rem 1.2rem; font-size:.82rem;">
+      Continue →
+    </button>
+  </div>
+
+  <div class="class-grid fade-up delay-2" id="classGrid">
+    {% set colors = ['', 'green', 'indigo'] %}
+    {% set icons = ['📘', '📗', '📙'] %}
+    {% for cls in class_levels %}
+    {% set idx = loop.index0 %}
+    <div class="class-card {{ colors[idx % 3] }}" 
+         id="card-{{ cls[0] }}"
+         onclick="toggleCard(this, '{{ cls[0] }}')">
+      <div class="class-card-accent {{ colors[idx % 3] }}"></div>
+      <div class="class-card-body">
+        <div class="card-checkbox" id="chk-{{ cls[0] }}"></div>
+        <div class="class-card-icon {{ colors[idx % 3] }}">{{ icons[idx % 3] }}</div>
+        <div class="class-card-name">{{ cls[1] }}</div>
+        <div class="class-card-sub">{{ class_student_counts.get(cls[0], 0) }} students enrolled</div>
+        <div class="promo-progress">
+          <div class="promo-progress-fill" style="width:{{ class_completion.get(cls[0], 0) }}%"></div>
+        </div>
+        <div style="font-size:.72rem; color:#8a97a8; margin-top:.3rem;">
+          {{ class_completion.get(cls[0], 0) }}% assessments complete
+        </div>
+        <div class="class-card-stats">
+          <div class="stat-mini">
+            <div class="val">{{ class_student_counts.get(cls[0], 0) }}</div>
+            <div class="key">Students</div>
+          </div>
+          <div class="stat-mini">
+            <div class="val">{{ class_assessment_counts.get(cls[0], 0) }}</div>
+            <div class="key">Assessments</div>
+          </div>
+          <div class="stat-mini">
+            <div class="val" style="color:var(--green);">{% if class_completion.get(cls[0], 0) >= 80 %}Ready{% else %}Pending{% endif %}</div>
+            <div class="key">Status</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ── CONFIGURE PROMOTION ── #}
+  <div class="sec-head fade-up delay-3" id="confirmPanel">
+    <h2>Configure Promotion</h2>
+    <div class="line"></div>
+    <div class="pill">Step 2 of 3</div>
+  </div>
+
+  <div class="action-panel fade-up delay-3">
+    <div class="action-panel-head">
+      <h3>Promotion Parameters</h3>
+      <span class="tag">Required before proceeding</span>
+    </div>
+    <div class="action-panel-body">
+
+      <div class="warn-box">
+        <span class="warn-icon">⚠️</span>
+        <div class="warn-text">
+          <strong>Irreversible Operation</strong>
+          This action will archive all current-term assessment records for the selected
+          classes and advance students to the next academic year. Ensure all assessments
+          are finalised before proceeding.
+        </div>
+      </div>
+
+      <form method="POST" action="{{ url_for('promotion.promote_class_view') }}" id="promoForm">
+        {{ csrf_token() }}
+        <input type="hidden" name="selected_classes" id="selectedClassesInput" value="">
+
+        <div class="field-row">
+          <div class="field-group">
+            <label>New Academic Year</label>
+            <input type="text" name="new_academic_year"
+                   placeholder="e.g. 2025-2026"
+                   value="{{ next_academic_year }}" required>
+          </div>
+          <div class="field-group">
+            <label>New Term</label>
+            <select name="new_term">
+              {% for t in terms %}
+              <option value="{{ t[0] }}" {% if t[0] == 'term1' %}selected{% endif %}>{{ t[1] }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field-group">
+            <label>Archive Current Records</label>
+            <select name="archive_records">
+              <option value="yes">Yes – Archive all current records</option>
+              <option value="no">No – Keep records active</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="action-row">
+          <div class="action-info">
+            <h4>What happens when you promote?</h4>
+            <p>The system will process all selected classes and perform the following:</p>
+            <ul class="checklist">
+              <li>Student records are updated to the next form level</li>
+              <li>All term assessments are archived and preserved</li>
+              <li>The academic year counter advances automatically</li>
+              <li>Order-of-merit rankings are snapshot and saved</li>
+              <li>Teachers retain access to archived performance data</li>
+            </ul>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:.75rem; min-width:220px; justify-content:flex-end;">
+            <button type="submit" class="btn-promo btn-promo-gold" id="submitBtn" onclick="prepareSubmit()">
+              🔄 Promote Selected Classes
+            </button>
+            <a href="{{ url_for('dashboard') }}" class="btn-promo btn-promo-outline" style="text-align:center; justify-content:center;">
+              Cancel
+            </a>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# ── PROMOTION HISTORY ── #}
+  <div class="sec-head fade-up delay-4">
+    <h2>Promotion History</h2>
+    <div class="line"></div>
+    <div class="pill">Archive Log</div>
+  </div>
+
+  <div class="action-panel fade-up delay-4">
+    <div class="action-panel-body" style="padding:1.5rem;">
+      {% if promotion_history %}
+      <table class="hist-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Classes Promoted</th>
+            <th>Academic Year</th>
+            <th>Students Moved</th>
+            <th>Archived By</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in promotion_history %}
+          <tr>
+            <td style="font-family:'DM Mono',monospace; font-size:.82rem;">
+              {{ event.date.strftime('%d %b %Y') }}
+            </td>
+            <td>{{ event.classes|join(', ') }}</td>
+            <td>{{ event.academic_year }}</td>
+            <td style="font-family:'DM Mono',monospace;">{{ event.student_count }}</td>
+            <td>{{ event.promoted_by }}</td>
+            <td>
+              <span class="badge-pill badge-success">✓ Complete</span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div style="text-align:center; padding:3rem 2rem;">
+        <div style="font-size:3rem; margin-bottom:1rem; opacity:.4;">📋</div>
+        <p style="color:#8a97a8; font-size:.9rem;">No promotion events recorded yet.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const selected = new Set();
+
+  function toggleCard(card, key) {
+    if (selected.has(key)) {
+      selected.delete(key);
+      card.classList.remove('selected');
+    } else {
+      selected.add(key);
+      card.classList.add('selected');
+    }
+    updateBar();
+  }
+
+  function clearAll() {
+    selected.forEach(key => {
+      document.getElementById('card-' + key)?.classList.remove('selected');
+    });
+    selected.clear();
+    updateBar();
+  }
+
+  function updateBar() {
+    const bar = document.getElementById('selectionBar');
+    const cnt = document.getElementById('selCount');
+    cnt.textContent = selected.size;
+    if (selected.size > 0) {
+      bar.classList.add('visible');
+    } else {
+      bar.classList.remove('visible');
+    }
+  }
+
+  function prepareSubmit() {
+    document.getElementById('selectedClassesInput').value = [...selected].join(',');
+  }
+</script>
+{% endblock %}
