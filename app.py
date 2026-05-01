@@ -300,6 +300,7 @@ from excel_utils import (ExcelTemplateHandler, ExcelBulkImporter,
 from analytics import get_class_performance_summary, get_grade_distribution
 from api_v1 import api_bp
 from promotion_routes import promotion_bp
+from support_routes import support_bp
 from template_updater import AssessmentTemplateUpdater
 
 # Initialise DB
@@ -335,6 +336,7 @@ app.config['CATEGORY_MAX_SCORES'] = CATEGORY_MAX_SCORES
 app.config['ASSESSMENT_WEIGHTS']  = ASSESSMENT_WEIGHTS
 app.register_blueprint(api_bp)
 app.register_blueprint(promotion_bp)
+app.register_blueprint(support_bp)
 migrate = Migrate(app, db)
 
 

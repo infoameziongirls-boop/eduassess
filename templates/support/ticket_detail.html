@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block title %}{{ ticket.ticket_number }} – Support{% endblock %}
+
+{% block content %}
+<style>
+  .ticket-detail-wrap { max-width: 800px; margin: 2rem auto; }
+
+  .ticket-header {
+    background: linear-gradient(135deg, #1e293b, #334155);
+    color: #fff;
+    border-radius: 16px;
+    padding: 1.6rem 2rem;
+    margin-bottom: 1.5rem;
+  }
+  .ticket-number { font-size: .75rem; opacity: .6; letter-spacing: 1px; text-transform: uppercase; }
+  .ticket-subject { font-size: 1.35rem; font-weight: 800; margin: .3rem 0 .6rem; }
+  .ticket-badges { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+  .badge-pill {
+    padding: .25rem .8rem; border-radius: 20px; font-size: .72rem;
+    font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  }
+  .status-open        { background:#3b82f6; color:#fff; }
+  .status-in_progress { background:#0ea5e9; color:#fff; }
+  .status-waiting     { background:#f59e0b; color:#fff; }
+  .status-resolved    { background:#22c55e; color:#fff; }
+  .status-closed      { background:#94a3b8; color:#fff; }
+  .pri-low       { background:#bbf7d0; color:#14532d; }
+  .pri-medium    { background:#fde68a; color:#78350f; }
+  .pri-high      { background:#fca5a5; color:#7f1d1d; }
+  .pri-critical  { background:#1e293b; color:#f87171; border:1px solid #f87171; }
+
+  .ticket-body {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+  }
+  .ticket-meta-row {
+    display: flex; gap: 1.5rem; flex-wrap: wrap;
+    padding-bottom: 1rem; border-bottom: 1px solid #f1f5f9;
+    margin-bottom: 1rem; font-size: .8rem; color: #64748b;
+  }
+  .ticket-meta-row strong { color: #374151; }
+  .ticket-description { white-space: pre-wrap; font-size: .9rem; color: #1e293b; }
+
+  .tech-info {
+    background: #f8fafc; border: 1px solid #e2e8f0;
+    border-radius: 8px; padding: .75rem 1rem;
+    font-size: .75rem; color: #64748b; margin-top: 1rem;
+    font-family: monospace;
+  }
+
+  .replies-section { margin-bottom: 1.5rem; }
+  .reply-card {
+    display: flex; gap: 1rem; margin-bottom: 1rem;
+  }
+  .reply-avatar {
+    width: 38px; height: 38px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: .9rem; flex-shrink: 0;
+    color: #fff;
+  }
+  .reply-bubble {
+    flex: 1; background: #f8fafc;
+    border: 1px solid #e2e8f0; border-radius: 0 12px 12px 12px;
+    padding: .9rem 1.1rem;
+  }
+  .reply-bubble.admin-bubble {
+    background: #eff6ff; border-color: #bfdbfe;
+  }
+  .reply-bubble.internal-bubble {
+    background: #fefce8; border-color: #fde68a;
+  }
+  .reply-meta { font-size: .75rem; color: #94a3b8; margin-bottom: .4rem; }
+  .reply-meta strong { color: #374151; }
+  .reply-content { font-size: .88rem; white-space: pre-wrap; }
+
+  .reply-form-card {
+    background: #fff; border: 1px solid #e2e8f0;
+    border-radius: 12px; padding: 1.5rem;
+  }
+  .reply-form-card h6 { font-weight: 800; margin-bottom: 1rem; color: #1e293b; }
+  .btn-reply {
+    background: #1a73e8; color: #fff; border: none;
+    border-radius: 8px; padding: .6rem 1.5rem;
+    font-weight: 700; transition: all .2s;
+  }
+  .btn-reply:hover { background: #1557b0; color: #fff; }
+
+  .section-divider {
+    display: flex; align-items: center; gap: 1rem;
+    color: #94a3b8; font-size: .75rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .8px; margin: 1.5rem 0 1rem;
+  }
+  .section-divider::before, .section-divider::after {
+    content: ''; flex: 1; height: 1px; background: #e2e8f0;
+  }
+</style>
+
+<div class="ticket-detail-wrap">
+
+  <!-- Back -->
+  <a href="{{ url_for('support.support_home') }}" class="text-muted small d-inline-flex align-items-center mb-3">
+    ← Back to Support Centre
+  </a>
+  {% if current_user.is_admin() %}
+  <a href="{{ url_for('support.admin_support_dashboard') }}"
+     class="text-muted small d-inline-flex align-items-center mb-3 ms-3">
+    ← Admin Queue
+  </a>
+  {% endif %}
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="alert alert-{{ cat }} alert-dismissible fade show">
+        {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endwith %}
+
+  <div class="ticket-header">
+    <div class="ticket-number">{{ ticket.ticket_number }}</div>
+    <div class="ticket-subject">{{ ticket.subject }}</div>
+    <div class="ticket-badges">
+      <span class="badge-pill status-{{ ticket.status }}">
+        {{ ticket.status.replace('_',' ').title() }}
+      </span>
+      <span class="badge-pill pri-{{ ticket.priority }}">
+        {{ ticket.priority.title() }} Priority
+      </span>
+      <span class="badge-pill" style="background:rgba(255,255,255,.15);color:#fff;">
+        {% set cat_labels = {'bug':'🐛 Bug','access':'🔐 Access','data':'📊 Data',
+                             'performance':'⚡ Performance','feature':'💡 Feature',
+                             'general':'💬 General'} %}
+        {{ cat_labels[ticket.category] | default(ticket.category) }}
+      </span>
+    </div>
+  </div>
+
+  <div class="ticket-body">
+    <div class="ticket-meta-row">
+      <div><strong>Submitted by:</strong> {{ ticket.submitter.username }}</div>
+      <div><strong>Created:</strong> {{ ticket.created_at.strftime('%d %b %Y, %H:%M') }}</div>
+      <div><strong>Last updated:</strong> {{ ticket.updated_at.strftime('%d %b %Y, %H:%M') }}</div>
+      {% if ticket.resolved_at %}
+      <div><strong>Resolved:</strong> {{ ticket.resolved_at.strftime('%d %b %Y') }}</div>
+      {% endif %}
+      {% if ticket.assignee %}
+      <div><strong>Assigned to:</strong> {{ ticket.assignee.username }}</div>
+      {% endif %}
+    </div>
+    <div class="ticket-description">{{ ticket.description }}</div>
+
+    {% if ticket.browser_info or ticket.page_url %}
+    <div class="tech-info">
+      {% if ticket.page_url %}<div>📍 Page: {{ ticket.page_url }}</div>{% endif %}
+      {% if ticket.browser_info %}<div>🌐 Browser: {{ ticket.browser_info[:120] }}…</div>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  {% if replies %}
+  <div class="section-divider">Replies ({{ replies|length }})</div>
+  <div class="replies-section">
+    {% for reply in replies %}
+      {% set is_admin_reply = reply.author.is_admin() %}
+      {% set bg = '#1a73e8' if is_admin_reply else '#64748b' %}
+      {% set initials = reply.author.username[:2].upper() %}
+      <div class="reply-card">
+        <div class="reply-avatar" style="background:{{ bg }};">{{ initials }}</div>
+        <div class="reply-bubble {% if is_admin_reply %}admin-bubble{% endif %} {% if reply.is_internal %}internal-bubble{% endif %}">
+          <div class="reply-meta">
+            <strong>{{ reply.author.username }}</strong>
+            {% if is_admin_reply %}<span class="badge bg-primary ms-1" style="font-size:.65rem;">Support</span>{% endif %}
+            {% if reply.is_internal %}<span class="badge bg-warning text-dark ms-1" style="font-size:.65rem;">Internal Note</span>{% endif %}
+            &middot; {{ reply.created_at.strftime('%d %b %Y, %H:%M') }}
+          </div>
+          <div class="reply-content">{{ reply.message }}</div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if ticket.status != 'closed' %}
+  <div class="reply-form-card">
+    <h6>💬 Add a Reply</h6>
+    <form method="POST"
+          action="{{ url_for('support.reply_ticket', ticket_number=ticket.ticket_number) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="mb-3">
+        <textarea class="form-control" name="message" rows="4"
+                  placeholder="Type your reply here…" required></textarea>
+      </div>
+
+      {% if current_user.is_admin() %}
+      <div class="row g-2 mb-3">
+        <div class="col-md-5">
+          <label class="form-label small fw-bold">Update Status</label>
+          <select class="form-select form-select-sm" name="status_update">
+            <option value="">— no change —</option>
+            {% for val, lbl in statuses %}
+            <option value="{{ val }}" {% if val == ticket.status %}selected{% endif %}>{{ lbl }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4 d-flex align-items-end">
+          <div class="form-check mb-0">
+            <input class="form-check-input" type="checkbox" name="is_internal"
+                   id="internal_note" value="1">
+            <label class="form-check-label small" for="internal_note">
+              Internal note (hidden from user)
+            </label>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-reply">Send Reply</button>
+      </div>
+    </form>
+    {% if current_user.is_admin() and ticket.status != 'closed' %}
+    <form method="POST"
+          action="{{ url_for('support.close_ticket', ticket_number=ticket.ticket_number) }}"
+          class="mt-3"
+          onsubmit="return confirm('Close this ticket?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-outline-secondary">Close Ticket</button>
+    </form>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="alert alert-secondary text-center">
+    🔒 This ticket is closed. <a href="{{ url_for('support.new_ticket') }}">Open a new ticket</a> if you need further help.
+  </div>
+  {% endif %}
+
+  {% if current_user.is_admin() %}
+  <div class="ticket-body mt-3">
+    <form method="POST"
+          action="{{ url_for('support.assign_ticket', ticket_number=ticket.ticket_number) }}"
+          class="d-flex gap-2 align-items-center">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="form-label mb-0 small fw-bold">Assign to admin:</label>
+      <select class="form-select form-select-sm" name="assignee_id" style="width:auto;">
+        <option value="">— unassigned —</option>
+        {% for admin in admins %}
+        <option value="{{ admin.id }}"
+                {% if ticket.assigned_to == admin.id %}selected{% endif %}>
+          {{ admin.username }}
+        </option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-sm btn-outline-primary">Assign</button>
+    </form>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

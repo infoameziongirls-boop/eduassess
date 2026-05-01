@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}Support Centre{% endblock %}
+
+{% block content %}
+<style>
+  :root {
+    --sup-blue:   #1a73e8;
+    --sup-teal:   #00897b;
+    --sup-amber:  #f59e0b;
+    --sup-red:    #dc2626;
+    --sup-card-bg:#f8fafc;
+    --sup-border: #e2e8f0;
+    --sup-text:   #1e293b;
+    --sup-muted:  #64748b;
+  }
+
+  .support-hero {
+    background: linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%);
+    border-radius: 16px;
+    padding: 2.5rem 2rem;
+    color: #fff;
+    margin-bottom: 2rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .support-hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Ccircle cx='30' cy='30' r='20'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    opacity: .5;
+  }
+  .support-hero h1 { font-size: 1.9rem; font-weight: 800; letter-spacing: -.5px; }
+  .support-hero p  { opacity: .85; font-size: 1rem; }
+
+  .btn-new-ticket {
+    background: #fff;
+    color: var(--sup-blue);
+    font-weight: 700;
+    border: none;
+    border-radius: 10px;
+    padding: .65rem 1.4rem;
+    transition: all .2s;
+    box-shadow: 0 2px 8px rgba(0,0,0,.15);
+  }
+  .btn-new-ticket:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.2); }
+
+  .ticket-card {
+    background: #fff;
+    border: 1px solid var(--sup-border);
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: .85rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: box-shadow .2s, transform .15s;
+    text-decoration: none;
+    color: inherit;
+  }
+  .ticket-card:hover {
+    box-shadow: 0 4px 20px rgba(0,0,0,.09);
+    transform: translateY(-1px);
+    color: inherit;
+  }
+
+  .ticket-icon {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem; flex-shrink: 0;
+  }
+
+  .ticket-info { flex: 1; min-width: 0; }
+  .ticket-subject {
+    font-weight: 700; font-size: .95rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ticket-meta { font-size: .78rem; color: var(--sup-muted); margin-top: 2px; }
+
+  .ticket-badges { display: flex; gap: .4rem; align-items: center; flex-shrink: 0; }
+
+  .badge-status {
+    padding: .25rem .7rem; border-radius: 20px;
+    font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  }
+  .badge-priority {
+    padding: .2rem .55rem; border-radius: 6px;
+    font-size: .7rem; font-weight: 700;
+  }
+
+  .status-open        { background:#dbeafe; color:#1d4ed8; }
+  .status-in_progress { background:#e0f2fe; color:#0369a1; }
+  .status-waiting     { background:#fef3c7; color:#92400e; }
+  .status-resolved    { background:#dcfce7; color:#15803d; }
+  .status-closed      { background:#f1f5f9; color:#475569; }
+
+  .priority-low      { background:#f0fdf4; color:#16a34a; }
+  .priority-medium   { background:#fff7ed; color:#c2410c; }
+  .priority-high     { background:#fef2f2; color:#b91c1c; }
+  .priority-critical { background:#1e293b; color:#f87171; }
+
+  .empty-state {
+    text-align: center; padding: 4rem 2rem;
+    color: var(--sup-muted);
+  }
+  .empty-state .icon { font-size: 3rem; margin-bottom: 1rem; opacity:.4; }
+  .section-label {
+    font-size: .72rem; font-weight: 800; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--sup-muted); margin-bottom: .75rem;
+    padding-bottom: .35rem; border-bottom: 1px solid var(--sup-border);
+  }
+</style>
+
+<div class="container py-4">
+
+  <!-- Hero -->
+  <div class="support-hero">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 position-relative">
+      <div>
+        <h1>🛠️ Support Centre</h1>
+        <p class="mb-0">
+          Report errors, request help, or send feedback to the support team.<br>
+          We typically respond within one business day.
+        </p>
+      </div>
+      <a href="{{ url_for('support.new_ticket') }}" class="btn btn-new-ticket">
+        + New Ticket
+      </a>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="alert alert-{{ cat }} alert-dismissible fade show" role="alert">
+        {{ msg }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endwith %}
+
+  <!-- Admin link -->
+  {% if current_user.is_admin() %}
+  <div class="alert alert-info d-flex justify-content-between align-items-center py-2">
+    <span>👑 You are an admin — view the full support queue.</span>
+    <a href="{{ url_for('support.admin_support_dashboard') }}"
+       class="btn btn-sm btn-primary">Admin Dashboard →</a>
+  </div>
+  {% endif %}
+
+  <!-- Ticket list -->
+  {% if tickets %}
+    <div class="section-label">My Tickets ({{ tickets|length }})</div>
+    {% for t in tickets %}
+      {% set cat_icon = {'bug':'🐛','access':'🔐','data':'📊',
+                         'performance':'⚡','feature':'💡','general':'💬'}[t.category] | default('📋') %}
+      {% set icon_bg  = {'open':'#dbeafe','in_progress':'#e0f2fe','waiting':'#fef3c7',
+                         'resolved':'#dcfce7','closed':'#f1f5f9'}[t.status] | default('#f1f5f9') %}
+      <a href="{{ url_for('support.ticket_detail', ticket_number=t.ticket_number) }}"
+         class="ticket-card">
+        <div class="ticket-icon" style="background:{{ icon_bg }};">{{ cat_icon }}</div>
+        <div class="ticket-info">
+          <div class="ticket-subject">{{ t.subject }}</div>
+          <div class="ticket-meta">
+            {{ t.ticket_number }} &middot;
+            {{ t.created_at.strftime('%d %b %Y, %H:%M') }} &middot;
+            {{ t.replies|length }} repl{{ 'y' if t.replies|length == 1 else 'ies' }}
+          </div>
+        </div>
+        <div class="ticket-badges">
+          <span class="badge-priority priority-{{ t.priority }}">{{ t.priority }}</span>
+          <span class="badge-status status-{{ t.status }}">
+            {{ t.status.replace('_',' ').title() }}
+          </span>
+        </div>
+      </a>
+    {% endfor %}
+
+  {% else %}
+    <div class="empty-state">
+      <div class="icon">📭</div>
+      <h5>No tickets yet</h5>
+      <p>Encountered a problem or need assistance? Submit your first support ticket.</p>
+      <a href="{{ url_for('support.new_ticket') }}" class="btn btn-primary mt-2">
+        Create a ticket
+      </a>
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}

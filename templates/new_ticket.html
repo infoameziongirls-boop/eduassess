@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Submit a Support Ticket{% endblock %}
+
+{% block content %}
+<style>
+  .ticket-form-wrap {
+    max-width: 740px;
+    margin: 2rem auto;
+  }
+  .form-header {
+    background: linear-gradient(135deg, #1a73e8, #0d47a1);
+    color: #fff;
+    border-radius: 16px 16px 0 0;
+    padding: 1.8rem 2rem 1.5rem;
+  }
+  .form-header h2 { font-size: 1.5rem; font-weight: 800; margin: 0; }
+  .form-header p  { opacity: .8; margin: .3rem 0 0; font-size: .9rem; }
+
+  .form-body {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-top: none;
+    border-radius: 0 0 16px 16px;
+    padding: 2rem;
+  }
+
+  .form-label { font-weight: 700; font-size: .85rem; color: #374151; }
+  .form-control, .form-select {
+    border-radius: 8px;
+    border: 1.5px solid #d1d5db;
+    font-size: .9rem;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .form-control:focus, .form-select:focus {
+    border-color: #1a73e8;
+    box-shadow: 0 0 0 3px rgba(26,115,232,.15);
+  }
+  textarea.form-control { resize: vertical; min-height: 130px; }
+
+  .btn-submit {
+    background: linear-gradient(135deg, #1a73e8, #0d47a1);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: .7rem 2rem;
+    font-weight: 700;
+    font-size: .95rem;
+    transition: transform .2s, box-shadow .2s;
+  }
+  .btn-submit:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(26,115,232,.4);
+    color: #fff;
+  }
+
+  .priority-hint {
+    font-size: .76rem; color: #6b7280; margin-top: .25rem;
+  }
+  .auto-info {
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 8px;
+    padding: .75rem 1rem;
+    font-size: .8rem;
+    color: #0369a1;
+  }
+  .cat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+  .cat-option input { display: none; }
+  .cat-option label {
+    display: block; border: 1.5px solid #d1d5db; border-radius: 8px;
+    padding: .5rem .75rem; cursor: pointer; font-size: .82rem; font-weight: 600;
+    transition: all .15s; text-align: center;
+  }
+  .cat-option input:checked + label {
+    border-color: #1a73e8; background: #eff6ff; color: #1d4ed8;
+  }
+  .cat-option label:hover { border-color: #93c5fd; background: #f0f9ff; }
+</style>
+
+<div class="ticket-form-wrap">
+  <div class="form-header">
+    <h2>🛠 Submit a Support Ticket</h2>
+    <p>Describe your issue in detail and our team will get back to you promptly.</p>
+  </div>
+
+  <div class="form-body">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+        <div class="alert alert-{{ cat }}">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('support.new_ticket') }}"
+          id="ticketForm" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="browser_info" id="browser_info">
+      <input type="hidden" name="page_url"     id="page_url">
+
+      <!-- Category -->
+      <div class="mb-4">
+        <label class="form-label">Category *</label>
+        <div class="cat-grid">
+          {% set cat_icons = {'bug':'🐛','access':'🔐','data':'📊',
+                              'performance':'⚡','feature':'💡','general':'💬'} %}
+          {% for val, lbl in categories %}
+          <div class="cat-option">
+            <input type="radio" name="category" id="cat_{{ val }}" value="{{ val }}"
+                   {% if val == 'general' %}checked{% endif %}>
+            <label for="cat_{{ val }}">
+              {{ cat_icons[val] | default('📋') }} {{ lbl }}
+            </label>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Subject -->
+      <div class="mb-3">
+        <label for="subject" class="form-label">Subject *</label>
+        <input type="text" class="form-control" id="subject" name="subject"
+               maxlength="200" placeholder="Brief summary of your issue" required>
+      </div>
+
+      <!-- Description -->
+      <div class="mb-3">
+        <label for="description" class="form-label">Description *</label>
+        <textarea class="form-control" id="description" name="description"
+                  rows="6"
+                  placeholder="Please describe the problem in detail:&#10;• What were you trying to do?&#10;• What happened?&#10;• What did you expect to happen?&#10;• Any error messages you saw?"
+                  required></textarea>
+      </div>
+
+      <!-- Priority -->
+      <div class="mb-4">
+        <label for="priority" class="form-label">Priority</label>
+        <select class="form-select" id="priority" name="priority">
+          {% for val, lbl in priorities %}
+          <option value="{{ val }}" {% if val == 'medium' %}selected{% endif %}>{{ lbl }}</option>
+          {% endfor %}
+        </select>
+        <div class="priority-hint">
+          Use <strong>Critical</strong> only for complete system outages or data loss.
+        </div>
+      </div>
+
+      <!-- Auto-collected info notice -->
+      <div class="auto-info mb-4">
+        ℹ️ Browser and page information will be collected automatically to help the support team diagnose your issue faster.
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-submit">Submit Ticket</button>
+        <a href="{{ url_for('support.support_home') }}" class="btn btn-outline-secondary">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    // Auto-fill browser + page info
+    document.getElementById('browser_info').value =
+      navigator.userAgent.substring(0, 300);
+    document.getElementById('page_url').value =
+      (document.referrer || window.location.href).substring(0, 500);
+  });
+</script>
+{% endblock %}

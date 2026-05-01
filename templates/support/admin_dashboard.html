@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}Support Admin Dashboard{% endblock %}
+
+{% block content %}
+<style>
+  .admin-sup-header {
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    color: #fff; border-radius: 16px;
+    padding: 2rem; margin-bottom: 1.5rem;
+  }
+  .admin-sup-header h2 { font-size: 1.6rem; font-weight: 800; margin: 0 0 .3rem; }
+  .admin-sup-header p  { opacity: .6; margin: 0; font-size: .9rem; }
+
+  .kpi-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem; margin-bottom: 1.5rem;
+  }
+  .kpi-card {
+    background: #fff; border: 1px solid #e2e8f0;
+    border-radius: 12px; padding: 1.1rem 1.3rem;
+    text-align: center;
+  }
+  .kpi-number {
+    font-size: 2rem; font-weight: 900; line-height: 1;
+    margin-bottom: .25rem;
+  }
+  .kpi-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .8px; color: #94a3b8; }
+
+  .filter-bar {
+    background: #fff; border: 1px solid #e2e8f0;
+    border-radius: 12px; padding: 1rem 1.2rem;
+    margin-bottom: 1.25rem;
+    display: flex; gap: .75rem; flex-wrap: wrap; align-items: flex-end;
+  }
+  .filter-bar label { font-size: .78rem; font-weight: 700; color: #374151; }
+
+  .ticket-table { background: #fff; border-radius: 12px; overflow: hidden;
+    border: 1px solid #e2e8f0; }
+  .ticket-table table { margin: 0; font-size: .84rem; }
+  .ticket-table thead th {
+    background: #f8fafc; border-bottom: 2px solid #e2e8f0;
+    font-size: .72rem; text-transform: uppercase; letter-spacing: .6px;
+    color: #64748b; font-weight: 800;
+  }
+  .ticket-table tbody tr:hover { background: #f8fafc; }
+
+  .badge-status { padding:.22rem .65rem; border-radius:20px; font-size:.7rem; font-weight:700; }
+  .badge-pri    { padding:.18rem .55rem; border-radius:6px;  font-size:.68rem; font-weight:700; }
+  .status-open        { background:#dbeafe; color:#1d4ed8; }
+  .status-in_progress { background:#e0f2fe; color:#0369a1; }
+  .status-waiting     { background:#fef3c7; color:#92400e; }
+  .status-resolved    { background:#dcfce7; color:#15803d; }
+  .status-closed      { background:#f1f5f9; color:#475569; }
+  .pri-low       { background:#f0fdf4; color:#15803d; }
+  .pri-medium    { background:#fff7ed; color:#c2410c; }
+  .pri-high      { background:#fef2f2; color:#b91c1c; }
+  .pri-critical  { background:#1e293b; color:#f87171; }
+</style>
+
+<div class="container-fluid py-3">
+
+  <div class="admin-sup-header d-flex justify-content-between align-items-start flex-wrap gap-3">
+    <div>
+      <h2>🎫 Support Queue</h2>
+      <p>Manage all user-submitted support tickets</p>
+    </div>
+    <a href="{{ url_for('support.support_home') }}" class="btn btn-outline-light btn-sm">
+      ← My Tickets
+    </a>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="alert alert-{{ cat }} alert-dismissible fade show">
+        {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endwith %}
+
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-number text-primary">{{ total }}</div>
+      <div class="kpi-label">Total Tickets</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-number text-warning">{{ open_count }}</div>
+      <div class="kpi-label">Open / In Progress</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-number text-danger">{{ critical_count }}</div>
+      <div class="kpi-label">Critical (Open)</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-number text-success">{{ resolved_count }}</div>
+      <div class="kpi-label">Resolved</div>
+    </div>
+  </div>
+
+  <form method="GET" action="{{ url_for('support.admin_support_dashboard') }}"
+        class="filter-bar">
+    <div>
+      <label>Status</label>
+      <select class="form-select form-select-sm" name="status" style="width:140px;">
+        <option value="">All</option>
+        {% for val, lbl in statuses %}
+        <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Priority</label>
+      <select class="form-select form-select-sm" name="priority" style="width:120px;">
+        <option value="">All</option>
+        {% for val, lbl in priorities %}
+        <option value="{{ val }}" {% if priority_filter == val %}selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Category</label>
+      <select class="form-select form-select-sm" name="category" style="width:160px;">
+        <option value="">All</option>
+        {% for val, lbl in categories %}
+        <option value="{{ val }}" {% if category_filter == val %}selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="d-flex gap-2 align-items-end">
+      <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+      <a href="{{ url_for('support.admin_support_dashboard') }}"
+         class="btn btn-outline-secondary btn-sm">Clear</a>
+    </div>
+  </form>
+
+  <div class="ticket-table">
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Ticket #</th>
+          <th>Subject</th>
+          <th>User</th>
+          <th>Category</th>
+          <th>Priority</th>
+          <th>Status</th>
+          <th>Replies</th>
+          <th>Assigned</th>
+          <th>Created</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tickets %}
+        <tr>
+          <td><code class="text-primary">{{ t.ticket_number }}</code></td>
+          <td style="max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+            {{ t.subject }}
+          </td>
+          <td>{{ t.submitter.username }}</td>
+          <td>{{ t.category.replace('_',' ').title() }}</td>
+          <td><span class="badge-pri pri-{{ t.priority }}">{{ t.priority }}</span></td>
+          <td><span class="badge-status status-{{ t.status }}">{{ t.status.replace('_',' ').title() }}</span></td>
+          <td class="text-center">{{ t.replies|length }}</td>
+          <td>{{ t.assignee.username if t.assignee else '—' }}</td>
+          <td class="text-muted">{{ t.created_at.strftime('%d %b, %H:%M') }}</td>
+          <td>
+            <a href="{{ url_for('support.ticket_detail', ticket_number=t.ticket_number) }}"
+               class="btn btn-outline-primary btn-sm">View</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="10" class="text-center text-muted py-4">No tickets found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if pagination.pages > 1 %}
+  <nav class="mt-3">
+    <ul class="pagination pagination-sm justify-content-center">
+      {% if pagination.has_prev %}
+      <li class="page-item">
+        <a class="page-link"
+           href="{{ url_for('support.admin_support_dashboard', page=pagination.prev_num,
+                   status=status_filter, priority=priority_filter,
+                   category=category_filter) }}">«</a>
+      </li>
+      {% endif %}
+      {% for p in pagination.iter_pages() %}
+        {% if p %}
+        <li class="page-item {% if p == pagination.page %}active{% endif %}">
+          <a class="page-link"
+             href="{{ url_for('support.admin_support_dashboard', page=p,
+                     status=status_filter, priority=priority_filter,
+                     category=category_filter) }}">{{ p }}</a>
+        </li>
+        {% endif %}
+      {% endfor %}
+      {% if pagination.has_next %}
+      <li class="page-item">
+        <a class="page-link"
+           href="{{ url_for('support.admin_support_dashboard', page=pagination.next_num,
+                   status=status_filter, priority=priority_filter,
+                   category=category_filter) }}">»</a>
+      </li>
+      {% endif %}
+    </ul>
+  </nav>
+  {% endif %}
+
+</div>
+{% endblock %}
