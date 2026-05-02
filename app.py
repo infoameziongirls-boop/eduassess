@@ -262,10 +262,20 @@ login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 csrf          = CSRFProtect(app)
 
+def get_real_ip():
+    """
+    Return the originating client IP from X-Forwarded-For when behind a proxy.
+    Falls back to the request remote address if the header is absent.
+    """
+    forwarded_for = request.headers.get('X-Forwarded-For', '')
+    if forwarded_for:
+        return forwarded_for.split(',')[0].strip()
+    return get_remote_address()
+
 limiter = Limiter(
     app=app,
-    key_func=get_remote_address,
-    default_limits=['200 per day', '50 per hour'],
+    key_func=get_real_ip,
+    default_limits=['2000 per day', '500 per hour'],
     storage_uri=os.environ.get('REDIS_URL', 'memory://'),
 )
 
