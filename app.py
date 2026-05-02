@@ -2180,6 +2180,52 @@ def manage_study_area_subjects(area_key):
     return jsonify({'success': False, 'message': 'Invalid'})
 
 
+@app.route('/admin/apply-default-study-area-subjects', methods=['POST'])
+@login_required
+@admin_required
+def apply_default_study_area_subjects():
+    """One-time admin endpoint to seed correct default study area subjects."""
+    CORE = [
+        'mathematics', 'general_science', 'social_studies',
+        'english_language', 'physical_education_health', 'ict',
+    ]
+    ELECTIVES = {
+        'science_a':              ['biology', 'chemistry', 'physics', 'additional_mathematics'],
+        'science_b':              ['biology', 'chemistry', 'physics', 'additional_mathematics'],
+        'business_a':             ['accounting', 'business_management', 'computing_in_business'],
+        'business_b':             ['accounting', 'business_management', 'computing_in_business'],
+        'business_c':             ['accounting', 'business_management', 'computing_in_business'],
+        'business_d':             ['accounting', 'business_management', 'computing_in_business'],
+        'home_economics_a':       ['food_nutrition', 'clothing_textile', 'management_in_living'],
+        'home_economics_b':       ['food_nutrition', 'clothing_textile', 'management_in_living'],
+        'home_economics_c':       ['food_nutrition', 'clothing_textile', 'management_in_living'],
+        'home_economics_d':       ['food_nutrition', 'clothing_textile', 'management_in_living'],
+        'home_economics_e':       ['food_nutrition', 'clothing_textile', 'management_in_living'],
+        'home_economics_f':       ['food_nutrition', 'clothing_textile', 'management_in_living'],
+        'general_arts_1':         ['history', 'geography', 'economics', 'government', 'lit_in_english'],
+        'general_arts_2':         ['history', 'geography', 'economics', 'government', 'lit_in_english'],
+        'general_arts_3a':        ['history', 'geography', 'economics', 'government', 'lit_in_english'],
+        'general_arts_3b':        ['history', 'geography', 'economics', 'government', 'lit_in_english'],
+        'general_arts_4a':        ['history', 'geography', 'economics', 'government', 'lit_in_english'],
+        'general_arts_4b':        ['history', 'geography', 'economics', 'government', 'lit_in_english'],
+        'general_arts_5a':        ['history', 'geography', 'economics', 'government', 'lit_in_english'],
+        'general_arts_5b':        ['history', 'geography', 'economics', 'government', 'lit_in_english'],
+        'general_arts_6a':        ['history', 'geography', 'economics', 'government', 'lit_in_english'],
+        'general_arts_6b':        ['history', 'geography', 'economics', 'government', 'lit_in_english'],
+        'visual_performing_arts': ['music', 'arts_design_studio', 'arts_design_foundation'],
+    }
+
+    sas = {}
+    for area_key, electives in ELECTIVES.items():
+        sas[area_key] = {'core': CORE, 'electives': electives}
+
+    SystemConfig.set_config('STUDY_AREA_SUBJECTS', sas)
+    app.config['STUDY_AREA_SUBJECTS'] = sas
+    flash(f'Applied default subjects to {len(sas)} study areas successfully.', 'success')
+    log_activity(current_user, 'apply_default_sas', f'Seeded {len(sas)} study areas')
+    return redirect(url_for('manage_study_area_subjects_form'))
+
+
 @app.route('/admin/study-area-subjects', methods=['GET', 'POST'])
 @login_required
 @admin_required

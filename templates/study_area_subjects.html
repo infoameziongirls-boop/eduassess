@@ -25,6 +25,16 @@
     {% endfor %}
   {% endwith %}
 
+  {% if study_areas %}
+    <form method="POST" action="{{ url_for('apply_default_study_area_subjects') }}"
+          onsubmit="return confirm('This will overwrite all current study-area subject assignments and replace them with the school defaults. Continue?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-warning mb-4">
+        Apply School Default Subjects (One-Time Setup)
+      </button>
+    </form>
+  {% endif %}
+
   {% if not study_areas %}
     <div class="alert alert-warning">
       No study areas have been configured yet. 
