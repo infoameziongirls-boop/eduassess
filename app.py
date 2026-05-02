@@ -2233,45 +2233,295 @@ def manage_study_area_subjects(area_key):
 @login_required
 @admin_required
 def apply_default_study_area_subjects():
-    """One-time admin endpoint to seed correct default study area subjects."""
-    CORE = [
-        'mathematics', 'general_science', 'social_studies',
-        'english_language', 'physical_education_health', 'ict',
-    ]
-    ELECTIVES = {
-        'science_a':              ['biology', 'chemistry', 'physics', 'additional_mathematics'],
-        'science_b':              ['biology', 'chemistry', 'physics', 'additional_mathematics'],
-        'business_a':             ['accounting', 'business_management', 'computing_in_business'],
-        'business_b':             ['accounting', 'business_management', 'computing_in_business'],
-        'business_c':             ['accounting', 'business_management', 'computing_in_business'],
-        'business_d':             ['accounting', 'business_management', 'computing_in_business'],
-        'home_economics_a':       ['food_nutrition', 'clothing_textile', 'management_in_living'],
-        'home_economics_b':       ['food_nutrition', 'clothing_textile', 'management_in_living'],
-        'home_economics_c':       ['food_nutrition', 'clothing_textile', 'management_in_living'],
-        'home_economics_d':       ['food_nutrition', 'clothing_textile', 'management_in_living'],
-        'home_economics_e':       ['food_nutrition', 'clothing_textile', 'management_in_living'],
-        'home_economics_f':       ['food_nutrition', 'clothing_textile', 'management_in_living'],
-        'general_arts_1':         ['history', 'geography', 'economics', 'government', 'lit_in_english'],
-        'general_arts_2':         ['history', 'geography', 'economics', 'government', 'lit_in_english'],
-        'general_arts_3a':        ['history', 'geography', 'economics', 'government', 'lit_in_english'],
-        'general_arts_3b':        ['history', 'geography', 'economics', 'government', 'lit_in_english'],
-        'general_arts_4a':        ['history', 'geography', 'economics', 'government', 'lit_in_english'],
-        'general_arts_4b':        ['history', 'geography', 'economics', 'government', 'lit_in_english'],
-        'general_arts_5a':        ['history', 'geography', 'economics', 'government', 'lit_in_english'],
-        'general_arts_5b':        ['history', 'geography', 'economics', 'government', 'lit_in_english'],
-        'general_arts_6a':        ['history', 'geography', 'economics', 'government', 'lit_in_english'],
-        'general_arts_6b':        ['history', 'geography', 'economics', 'government', 'lit_in_english'],
-        'visual_performing_arts': ['music', 'arts_design_studio', 'arts_design_foundation'],
-    }
+    """
+    Seed the STUDY_AREA_SUBJECTS config with the school's official
+    subject allocation per study area, exactly as specified in the
+    school curriculum document.
+    """
 
-    sas = {}
-    for area_key, electives in ELECTIVES.items():
-        sas[area_key] = {'core': CORE, 'electives': electives}
+    # ------------------------------------------------------------------
+    # Common core subjects shared by most study areas
+    # (Science A and Science B are the exception — see below)
+    # ------------------------------------------------------------------
+    COMMON_CORE = [
+        'mathematics',
+        'general_science',
+        'social_studies',
+        'english_language',
+        'physical_education_health',
+        'ict',
+    ]
+
+    # Science A and B omit General Science from their core list
+    SCIENCE_CORE = [
+        'mathematics',
+        'social_studies',
+        'english_language',
+        'physical_education_health',
+        'ict',
+    ]
+
+    # ------------------------------------------------------------------
+    # Full subject allocation — every study area from the document
+    # ------------------------------------------------------------------
+    sas = {
+
+        # ── Visual and Performing Arts ─────────────────────────────────
+        'visual_performing_arts': {
+            'core': COMMON_CORE,
+            'electives': [
+                'clothing_textile',
+                'arts_design_foundation',
+                'arts_design_studio',
+                'design_communication_technology',
+                'music',
+            ],
+        },
+
+        # ── Home Economics ─────────────────────────────────────────────
+        'home_economics_a': {
+            'core': COMMON_CORE,
+            'electives': [
+                'management_in_living',
+                'food_nutrition',
+                'biology',
+                'economics',
+                'music',
+            ],
+        },
+        'home_economics_b': {
+            'core': COMMON_CORE,
+            'electives': [
+                'management_in_living',
+                'clothing_textile',
+                'biology',
+                'economics',
+                'music',
+            ],
+        },
+        'home_economics_c': {
+            'core': COMMON_CORE,
+            'electives': [
+                'management_in_living',
+                'food_nutrition',
+                'biology',
+                'arts_design_studio',
+                'music',
+            ],
+        },
+        'home_economics_d': {
+            'core': COMMON_CORE,
+            'electives': [
+                'management_in_living',
+                'clothing_textile',
+                'biology',
+                'arts_design_studio',
+                'music',
+            ],
+        },
+        'home_economics_e': {
+            'core': COMMON_CORE,
+            'electives': [
+                'management_in_living',
+                'food_nutrition',
+                'biology',
+                'french',
+                'music',
+            ],
+        },
+        'home_economics_f': {
+            'core': COMMON_CORE,
+            'electives': [
+                'management_in_living',
+                'clothing_textile',
+                'biology',
+                'french',
+                'music',
+            ],
+        },
+
+        # ── Business ───────────────────────────────────────────────────
+        'business_a': {
+            'core': COMMON_CORE,
+            'electives': [
+                'business_management',
+                'accounting',
+                'economics',
+                'additional_mathematics',
+                'geography',
+            ],
+        },
+        'business_b': {
+            'core': COMMON_CORE,
+            'electives': [
+                'business_management',
+                'accounting',
+                'economics',
+                'computing_in_business',
+                'geography',
+            ],
+        },
+        'business_c': {
+            'core': COMMON_CORE,
+            'electives': [
+                'business_management',
+                'accounting',
+                'economics',
+                'additional_mathematics',
+                'french',
+            ],
+        },
+        'business_d': {
+            'core': COMMON_CORE,
+            'electives': [
+                'business_management',
+                'accounting',
+                'economics',
+                'computing_in_business',
+                'french',
+            ],
+        },
+
+        # ── Science ────────────────────────────────────────────────────
+        # NOTE: Science A and B do NOT have General Science as a core
+        # subject (they study the individual sciences as electives instead)
+        'science_a': {
+            'core': SCIENCE_CORE,
+            'electives': [
+                'biology',
+                'chemistry',
+                'physics',
+                'additional_mathematics',
+                'geography',
+                'economics',
+            ],
+        },
+        'science_b': {
+            'core': SCIENCE_CORE,
+            'electives': [
+                'biology',
+                'chemistry',
+                'physics',
+                'additional_mathematics',
+                'geography',
+                'french',
+            ],
+        },
+
+        # ── General Arts ───────────────────────────────────────────────
+        'general_arts_1': {
+            'core': COMMON_CORE,
+            'electives': [
+                'lit_in_english',
+                'christian_religious_studies',
+                'history',
+                'ghanaian_language',
+                'french',
+            ],
+        },
+        'general_arts_2': {
+            'core': COMMON_CORE,
+            'electives': [
+                'geography',
+                'economics',
+                'government',
+                'religious_moral_education',
+                'additional_mathematics',
+            ],
+        },
+        'general_arts_3a': {
+            'core': COMMON_CORE,
+            'electives': [
+                'history',
+                'music',
+                'lit_in_english',
+                'religious_moral_education',
+                'ghanaian_language',
+            ],
+        },
+        'general_arts_3b': {
+            'core': COMMON_CORE,
+            'electives': [
+                'history',
+                'music',
+                'lit_in_english',
+                'religious_moral_education',
+                'french',
+            ],
+        },
+        'general_arts_4a': {
+            'core': COMMON_CORE,
+            'electives': [
+                'music',
+                'economics',
+                'geography',
+                'religious_moral_education',
+                'ghanaian_language',
+            ],
+        },
+        'general_arts_4b': {
+            'core': COMMON_CORE,
+            'electives': [
+                'music',
+                'economics',
+                'geography',
+                'religious_moral_education',
+                'french',
+            ],
+        },
+        'general_arts_5a': {
+            'core': COMMON_CORE,
+            'electives': [
+                'music',
+                'history',
+                'government',
+                'ghanaian_language',
+                'religious_moral_education',
+            ],
+        },
+        'general_arts_5b': {
+            'core': COMMON_CORE,
+            'electives': [
+                'music',
+                'history',
+                'government',
+                'french',
+                'religious_moral_education',
+            ],
+        },
+        'general_arts_6a': {
+            'core': COMMON_CORE,
+            'electives': [
+                'government',
+                'economics',
+                'biology',
+                'chemistry',
+                'christian_religious_studies',
+            ],
+        },
+        'general_arts_6b': {
+            'core': COMMON_CORE,
+            'electives': [
+                'government',
+                'economics',
+                'biology',
+                'management_in_living',
+                'christian_religious_studies',
+            ],
+        },
+    }
 
     SystemConfig.set_config('STUDY_AREA_SUBJECTS', sas)
     app.config['STUDY_AREA_SUBJECTS'] = sas
-    flash(f'Applied default subjects to {len(sas)} study areas successfully.', 'success')
-    log_activity(current_user, 'apply_default_sas', f'Seeded {len(sas)} study areas')
+    flash(
+        f'Successfully loaded the school curriculum into {len(sas)} study areas.',
+        'success'
+    )
+    log_activity(
+        current_user,
+        'apply_default_sas',
+        f'Seeded {len(sas)} study areas with official school curriculum'
+    )
     return redirect(url_for('manage_study_area_subjects_form'))
 
 
