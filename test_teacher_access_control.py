@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
 
-from app import app, db, normalize_teacher_class_keys
+from app import app, db, normalize_teacher_class_keys, get_student_groups, get_teacher_students_query
 from models import User, Student, Assessment
 from flask_bcrypt import Bcrypt
 

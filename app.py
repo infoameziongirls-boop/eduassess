@@ -98,28 +98,39 @@ def validate_excel_file(form, field):
 def teacher_can_view_student(teacher, student):
     """
     Returns True only if the teacher is permitted to view this student.
-    A teacher may view a student if and only if:
-      - the student is in one of the teacher's assigned classes, AND
-      - the student's study_area is in the teacher's assigned study areas.
+
+    The authorization rules are:
+      1. If the teacher has classes assigned, the student must be in one of them.
+      2. If STUDY_AREA_SUBJECTS is configured, the student's study_area must
+         teach the teacher's subject in either 'core' or 'electives'.
+
     Admins bypass this check at the call site.
     """
     if not hasattr(teacher, 'is_teacher') or not teacher.is_teacher():
         return False
 
+    teacher_subject = (teacher.subject or '').strip()
     teacher_classes = teacher.get_classes_list()
-    assigned_areas = teacher.get_assigned_study_areas()
 
-    if teacher_classes and assigned_areas:
-        return (student.class_name in teacher_classes and
-                student.study_area in assigned_areas)
+    if not teacher_subject:
+        return False
 
-    if teacher_classes and not assigned_areas:
-        return student.class_name in teacher_classes
+    if teacher_classes and student.class_name not in teacher_classes:
+        return False
 
-    if assigned_areas and not teacher_classes:
-        return student.study_area in assigned_areas
+    sas = _get_study_area_subjects_config()
+    configured = _is_study_area_subjects_configured(sas)
 
-    return False
+    if configured:
+        area_curriculum = sas.get(student.study_area or '', {})
+        if teacher_subject not in area_curriculum.get('core', []) and \
+                teacher_subject not in area_curriculum.get('electives', []):
+            return False
+    else:
+        if not teacher_classes:
+            return False
+
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +145,31 @@ def get_study_areas():
 def get_study_area_subjects():
     from models import SystemConfig
     return SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
+
+
+def _get_study_area_subjects_config():
+    """
+    Load STUDY_AREA_SUBJECTS from the database-backed SystemConfig,
+    falling back to the Flask app config cache.
+    """
+    try:
+        from models import SystemConfig
+        sas = SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
+        if isinstance(sas, dict):
+            return sas
+    except Exception:
+        pass
+    return app.config.get('STUDY_AREA_SUBJECTS', {}) or {}
+
+
+def _is_study_area_subjects_configured(sas):
+    """Return True when at least one area has a non-empty core or elective list."""
+    if not isinstance(sas, dict):
+        return False
+    for curriculum in sas.values():
+        if curriculum.get('core') or curriculum.get('electives'):
+            return True
+    return False
 
 
 def refresh_study_area_config():
@@ -153,39 +189,42 @@ def get_teacher_students_query(teacher):
       1. The student is in one of the teacher's assigned classes, AND
       2. The student's study_area teaches the teacher's subject.
 
-    If the teacher has no class restriction or STUDY_AREA_SUBJECTS is not
-    configured, the function falls back to the appropriate single-filter
-    query. If no viable filter exists, it returns None so callers can block
-    access instead of returning all students.
+    STUDY_AREA_SUBJECTS is only used if configured. If it is empty then a
+    class-only fallback is used. If it is configured but the teacher's
+    subject is not found in any area, access is denied.
     """
     from models import Student
 
     teacher_classes = teacher.get_classes_list()          # e.g. ['Form 1', 'Form 2']
-    teacher_subject = teacher.subject                     # e.g. 'biology'
+    teacher_subject = (teacher.subject or '').strip()      # e.g. 'biology'
 
-    subject_areas = []
-    if teacher_subject:
-        sas = get_study_area_subjects()
-        for area_key, subjects in sas.items():
-            if (teacher_subject in subjects.get('core', []) or
-                    teacher_subject in subjects.get('electives', [])):
-                subject_areas.append(area_key)
+    if not teacher_subject:
+        return None
 
-    if teacher_classes and subject_areas:
-        return (Student.query
+    sas = _get_study_area_subjects_config()
+    eligible_areas = [
+        area_key for area_key, subjects in sas.items()
+        if teacher_subject in subjects.get('core', []) or
+           teacher_subject in subjects.get('electives', [])
+    ]
+
+    base_query = Student.query.order_by(Student.class_name, Student.last_name)
+    has_classes = bool(teacher_classes)
+    has_areas = bool(eligible_areas)
+    configured = _is_study_area_subjects_configured(sas)
+
+    if has_classes and has_areas:
+        return (base_query
                 .filter(Student.class_name.in_(teacher_classes))
-                .filter(Student.study_area.in_(subject_areas))
-                .order_by(Student.class_name, Student.last_name))
+                .filter(Student.study_area.in_(eligible_areas)))
 
-    if subject_areas and not teacher_classes:
-        return (Student.query
-                .filter(Student.study_area.in_(subject_areas))
-                .order_by(Student.class_name, Student.last_name))
+    if has_classes and not has_areas:
+        if configured:
+            return None
+        return base_query.filter(Student.class_name.in_(teacher_classes))
 
-    if teacher_classes and not subject_areas:
-        return (Student.query
-                .filter(Student.class_name.in_(teacher_classes))
-                .order_by(Student.class_name, Student.last_name))
+    if has_areas and not has_classes:
+        return base_query.filter(Student.study_area.in_(eligible_areas))
 
     return None
 
