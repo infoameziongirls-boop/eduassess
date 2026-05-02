@@ -27,6 +27,9 @@
                     <button type="button" class="btn btn-outline-info btn-sm" data-bs-toggle="modal" data-bs-target="#manageSubjectsModal">
                         <i class="bi bi-book"></i> Manage Subjects
                     </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#refreshStudyAreasModal">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh Study Areas
+                    </button>
                     <a href="{{ url_for('manage_study_area_subjects_form') }}" class="btn btn-warning btn-sm">
                         <i class="bi bi-list-check"></i> Configure Study Area Subjects
                     </a>
@@ -381,6 +384,26 @@
   </div>
 </div>
 
+<!-- Refresh Study Areas Modal -->
+<div class="modal fade" id="refreshStudyAreasModal" tabindex="-1" aria-labelledby="refreshStudyAreasModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="refreshStudyAreasModalLabel">Refresh Study Areas</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>This will reload <strong>STUDY_AREAS</strong> and <strong>STUDY_AREA_SUBJECTS</strong> from the database into this worker.</p>
+        <p class="text-muted">Use this when the application appears to be using stale study-area configuration.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="confirmRefreshStudyAreas">Refresh Now</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Add Study Area Modal -->
 <div class="modal fade" id="addStudyAreaModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
@@ -680,6 +703,29 @@
                     setTimeout(function () { location.reload(); }, 1200);
                 },
                 function (errMsg) {
+                    showAlert("Error: " + errMsg, "danger");
+                }
+            );
+        });
+    }
+
+    // ── Refresh Study Areas ────────────────────────────────────────────────────
+    var refreshButton = document.getElementById('confirmRefreshStudyAreas');
+    if (refreshButton) {
+        refreshButton.addEventListener('click', function () {
+            refreshButton.disabled = true;
+            apiPost(
+                "/admin/api/refresh-study-areas",
+                {},
+                function (msg) {
+                    showAlert(msg, "success");
+                    var modalElement = document.getElementById("refreshStudyAreasModal");
+                    var modal = bootstrap.Modal.getInstance(modalElement);
+                    if (modal) { modal.hide(); }
+                    setTimeout(function () { location.reload(); }, 1000);
+                },
+                function (errMsg) {
+                    refreshButton.disabled = false;
                     showAlert("Error: " + errMsg, "danger");
                 }
             );

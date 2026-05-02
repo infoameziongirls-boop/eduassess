@@ -107,7 +107,7 @@ def teacher_can_view_student(teacher, student):
         return False
 
     teacher_classes = teacher.get_classes_list()
-    assigned_areas = teacher.get_assigned_study_areas(app.config)
+    assigned_areas = teacher.get_assigned_study_areas()
 
     if teacher_classes and assigned_areas:
         return (student.class_name in teacher_classes and
@@ -125,6 +125,25 @@ def teacher_can_view_student(teacher, student):
 # ---------------------------------------------------------------------------
 # FIX — centralised, authoritative student filter for teachers
 # ---------------------------------------------------------------------------
+
+def get_study_areas():
+    from models import SystemConfig
+    return SystemConfig.get_config('STUDY_AREAS', [])
+
+
+def get_study_area_subjects():
+    from models import SystemConfig
+    return SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
+
+
+def refresh_study_area_config():
+    study_areas = get_study_areas()
+    study_area_subjects = get_study_area_subjects()
+    app.config['STUDY_AREAS'] = study_areas
+    app.config['STUDY_AREA_SUBJECTS'] = study_area_subjects
+    return study_areas, study_area_subjects
+
+
 def get_teacher_students_query(teacher):
     """
     Return a SQLAlchemy query restricted to students that the given teacher
@@ -146,7 +165,7 @@ def get_teacher_students_query(teacher):
 
     subject_areas = []
     if teacher_subject:
-        sas = app.config.get('STUDY_AREA_SUBJECTS', {})
+        sas = get_study_area_subjects()
         for area_key, subjects in sas.items():
             if (teacher_subject in subjects.get('core', []) or
                     teacher_subject in subjects.get('electives', [])):
@@ -896,7 +915,7 @@ def dashboard():
     incomplete_list  = get_incomplete_assessments()
 
     if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
-        assigned = set(current_user.get_assigned_study_areas(app.config))
+        assigned = set(current_user.get_assigned_study_areas())
         if assigned:
             incomplete_list = [i for i in incomplete_list if i['subject'] in assigned]
         recent = Assessment.query.filter_by(teacher_id=current_user.id, archived=False) \
@@ -1997,16 +2016,16 @@ def class_management():
         if t.subject:
             teacher_assignments[t.id] = {
                 'teacher': t, 'subject': t.subject,
-                'assigned_areas': t.get_assigned_study_areas(app.config),
+                'assigned_areas': t.get_assigned_study_areas(),
                 'assigned_classes': t.get_classes_list(),
             }
-    all_keys     = [a[0] for a in app.config['STUDY_AREAS']]
+    all_keys     = [a[0] for a in get_study_areas()]
     assigned_set = set()
     for v in teacher_assignments.values():
         assigned_set.update(v['assigned_areas'])
     return render_template('class_management.html',
-                           study_areas=app.config['STUDY_AREAS'],
-                           study_area_subjects=app.config['STUDY_AREA_SUBJECTS'],
+                           study_areas=get_study_areas(),
+                           study_area_subjects=get_study_area_subjects(),
                            class_levels=app.config['CLASS_LEVELS'],
                            learning_areas=app.config['LEARNING_AREAS'],
                            teacher_assignments=teacher_assignments,
@@ -2018,7 +2037,7 @@ def class_management():
 @login_required
 @admin_required
 def class_register():
-    study_areas = app.config['STUDY_AREAS']
+    study_areas = get_study_areas()
     students    = Student.query.all()
     form_levels = [k for k, _ in app.config['CLASS_LEVELS']]
     forms_data  = {}
@@ -2051,7 +2070,7 @@ def class_register():
     return render_template('class_register.html',
                            forms_data=forms_data,
                            study_areas=study_areas,
-                           study_area_subjects=app.config['STUDY_AREA_SUBJECTS'])
+                           study_area_subjects=get_study_area_subjects())
 
 
 @app.route('/admin/api/class-levels', methods=['POST'])
@@ -2114,6 +2133,15 @@ def manage_study_areas():
             app.config['STUDY_AREAS'] = new
             return jsonify({'success': True, 'message': 'Deleted'})
     return jsonify({'success': False, 'message': 'Invalid action'})
+
+
+@app.route('/admin/api/refresh-study-areas', methods=['POST'])
+@login_required
+@admin_required
+@csrf.exempt
+def api_refresh_study_area_config():
+    refresh_study_area_config()
+    return jsonify({'success': True, 'message': 'STUDY_AREAS and STUDY_AREA_SUBJECTS refreshed from database.'})
 
 
 @app.route('/admin/api/study-area-subjects/<area_key>', methods=['GET', 'POST'])
@@ -2224,7 +2252,7 @@ def manage_study_area_subjects_form():
 
     sas = SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
     changed = False
-    for area_key, _ in app.config.get('STUDY_AREAS', []):
+    for area_key, _ in get_study_areas():
         if area_key not in sas:
             sas[area_key] = {'core': [], 'electives': []}
             changed = True
@@ -2236,7 +2264,7 @@ def manage_study_area_subjects_form():
 
     return render_template(
         'study_area_subjects.html',
-        study_areas=app.config.get('STUDY_AREAS', []),
+        study_areas=get_study_areas(),
         study_area_subjects=sas,
         learning_areas=app.config.get('LEARNING_AREAS', []),
         learning_areas_dict=learning_areas_dict,

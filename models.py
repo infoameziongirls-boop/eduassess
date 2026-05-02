@@ -71,12 +71,20 @@ class User(UserMixin, db.Model):
             return None
         return self.subject.replace('_', ' ').title()
 
-    def get_assigned_study_areas(self, config):
+    def get_assigned_study_areas(self, config=None):
         if not self.subject or not self.is_teacher():
             return []
-        study_area_subjects = config.get('STUDY_AREA_SUBJECTS') if isinstance(config, dict) else config.get('STUDY_AREA_SUBJECTS')
+
+        if config is None:
+            study_area_subjects = SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
+        else:
+            study_area_subjects = config.get('STUDY_AREA_SUBJECTS') if isinstance(config, dict) else config.get('STUDY_AREA_SUBJECTS')
+            if not study_area_subjects:
+                study_area_subjects = SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
+
         if not study_area_subjects:
             return []
+
         assigned_areas = []
         for area_key, subjects in study_area_subjects.items():
             if self.subject in subjects.get('core', []) or self.subject in subjects.get('electives', []):
