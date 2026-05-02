@@ -98,6 +98,11 @@
                     <span style="font-size:.82rem;font-weight:600;color:var(--ink);">Manage Users</span>
                     <i class="bi bi-chevron-right" style="margin-left:auto;font-size:11px;color:var(--ink-4);"></i>
                 </a>
+                <a href="{{ url_for('manage_study_area_subjects_form') }}" style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:9px;text-decoration:none;transition:background .15s;margin-bottom:4px;" onmouseover="this.style.background='var(--brand-dim)'" onmouseout="this.style.background=''">
+                    <div style="width:30px;height:30px;background:var(--brand-dim);border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--brand);font-size:13px;"><i class="bi bi-list-check"></i></div>
+                    <span style="font-size:.82rem;font-weight:600;color:var(--ink);">Study Area Subjects</span>
+                    <i class="bi bi-chevron-right" style="margin-left:auto;font-size:11px;color:var(--ink-4);"></i>
+                </a>
                 <div style="padding:10px;border-radius:9px;margin-bottom:4px;">
                     <div style="font-size:.75rem;font-weight:600;color:var(--ink-4);margin-bottom:8px;">Archive Previous Terms</div>
                     <form method="POST" action="{{ url_for('archive_term') }}" onsubmit="return confirm('Archive all assessments from previous terms?')" style="display:inline;">

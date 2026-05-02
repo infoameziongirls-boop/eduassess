@@ -271,6 +271,31 @@ with app.app_context():
                     f'Status {response.status_code}, IDs: {sorted(returned_ids)}'
                 )
 
+# Test 6b: get_student_groups uses authorized teacher query
+print("\n[TEST 6b] get_student_groups uses authorised student query for teachers")
+with app.app_context():
+    teacher1 = User.query.filter_by(username='teacher1').first()
+    if teacher1:
+        app.config['STUDY_AREA_SUBJECTS'] = {
+            'sciences': {
+                'core': ['mathematics', 'general_science'],
+                'electives': ['biology', 'chemistry', 'physics']
+            },
+            'arts': {
+                'core': ['english_language', 'social_studies'],
+                'electives': ['history', 'geography', 'government']
+            }
+        }
+        groups = get_student_groups(teacher1, app.config)
+        visible_student_ids = {s.id for students in groups[0].values() for s in students}
+        authorized_q = get_teacher_students_query(teacher1)
+        expected_ids = {s.id for s in authorized_q.all()} if authorized_q is not None else set()
+        log_test(
+            'get_student_groups returns only authorized students for teacher1',
+            visible_student_ids == expected_ids,
+            f'Got {len(visible_student_ids)} students, expected {len(expected_ids)}'
+        )
+
 # Test 7: Student filtering (comprehensive)
 print("\n[TEST 7] Student filtering with multiple criteria")
 with app.app_context():

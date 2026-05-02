@@ -91,13 +91,13 @@ class User(UserMixin, db.Model):
         assigned_areas = self.get_assigned_study_areas(config)
 
         if teacher_classes and assigned_areas:
-            return (student.class_name in teacher_classes or
+            return (student.class_name in teacher_classes and
                     student.study_area in assigned_areas)
 
-        if teacher_classes:
+        if teacher_classes and not assigned_areas:
             return student.class_name in teacher_classes
 
-        if assigned_areas:
+        if assigned_areas and not teacher_classes:
             return student.study_area in assigned_areas
 
         return False

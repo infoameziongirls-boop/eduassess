@@ -99,7 +99,7 @@ def teacher_can_view_student(teacher, student):
     """
     Returns True only if the teacher is permitted to view this student.
     A teacher may view a student if and only if:
-      - the student is in one of the teacher's assigned classes, OR
+      - the student is in one of the teacher's assigned classes, AND
       - the student's study_area is in the teacher's assigned study areas.
     Admins bypass this check at the call site.
     """
@@ -107,12 +107,17 @@ def teacher_can_view_student(teacher, student):
         return False
 
     teacher_classes = teacher.get_classes_list()
-    if teacher_classes and student.class_name in teacher_classes:
-        return True
+    assigned_areas = teacher.get_assigned_study_areas(app.config)
 
-    areas = teacher.get_assigned_study_areas(app.config)
-    if areas and student.study_area in areas:
-        return True
+    if teacher_classes and assigned_areas:
+        return (student.class_name in teacher_classes and
+                student.study_area in assigned_areas)
+
+    if teacher_classes and not assigned_areas:
+        return student.class_name in teacher_classes
+
+    if assigned_areas and not teacher_classes:
+        return student.study_area in assigned_areas
 
     return False
 
@@ -125,29 +130,20 @@ def get_teacher_students_query(teacher):
     Return a SQLAlchemy query restricted to students that the given teacher
     is authorised to assess.
 
-    Resolution order (most-specific first):
-      1. Students whose class_name is in the teacher's assigned classes OR
-         whose study_area teaches the teacher's subject.
-      2. Students whose study_area teaches the teacher's subject (class-
-         agnostic, used when the teacher has no class restriction).
-      3. Students whose class_name is in the teacher's assigned classes
-         (subject-agnostic fallback — should not normally be reached, but
-         prevents a blank list when STUDY_AREA_SUBJECTS is unconfigured).
+    A student is visible to a teacher only when both of these are true:
+      1. The student is in one of the teacher's assigned classes, AND
+      2. The student's study_area teaches the teacher's subject.
 
-    If none of the three conditions can be evaluated (teacher has no subject,
-    no classes, and no study-area mapping) the function returns None, and the
-    caller must handle the blocked state explicitly — it must NOT fall back to
-    returning all students.
+    If the teacher has no class restriction or STUDY_AREA_SUBJECTS is not
+    configured, the function falls back to the appropriate single-filter
+    query. If no viable filter exists, it returns None so callers can block
+    access instead of returning all students.
     """
     from models import Student
 
-    teacher_classes  = teacher.get_classes_list()          # e.g. ['Form 1', 'Form 2']
-    assigned_areas   = teacher.get_assigned_study_areas(app.config)  # e.g. ['science_a']
-    teacher_subject  = teacher.subject                     # e.g. 'biology'
+    teacher_classes = teacher.get_classes_list()          # e.g. ['Form 1', 'Form 2']
+    teacher_subject = teacher.subject                     # e.g. 'biology'
 
-    # --- derive study areas that teach the teacher's subject -----------------
-    # This is the canonical, subject-first filter.  It reads STUDY_AREA_SUBJECTS
-    # from the live app config (which is kept in sync with SystemConfig).
     subject_areas = []
     if teacher_subject:
         sas = app.config.get('STUDY_AREA_SUBJECTS', {})
@@ -156,37 +152,23 @@ def get_teacher_students_query(teacher):
                     teacher_subject in subjects.get('electives', [])):
                 subject_areas.append(area_key)
 
-    # --- build filter conditions ----------------------------------------------
-    conditions = []
-
     if teacher_classes and subject_areas:
-        # Teacher can access students either by assigned class or by study area.
-        conditions.append(
-            db.or_(
-                Student.class_name.in_(teacher_classes),
-                Student.study_area.in_(subject_areas),
-            )
-        )
+        return (Student.query
+                .filter(Student.class_name.in_(teacher_classes))
+                .filter(Student.study_area.in_(subject_areas))
+                .order_by(Student.class_name, Student.last_name))
 
     if subject_areas and not teacher_classes:
-        # Teacher has a subject mapping but no class restriction
-        conditions.append(Student.study_area.in_(subject_areas))
+        return (Student.query
+                .filter(Student.study_area.in_(subject_areas))
+                .order_by(Student.class_name, Student.last_name))
 
     if teacher_classes and not subject_areas:
-        # STUDY_AREA_SUBJECTS not configured — fall back to class filter only
-        conditions.append(Student.class_name.in_(teacher_classes))
+        return (Student.query
+                .filter(Student.class_name.in_(teacher_classes))
+                .order_by(Student.class_name, Student.last_name))
 
-    if not conditions:
-        # No usable filter criteria — return None; callers must block access.
-        return None
-
-    q = Student.query
-    if len(conditions) == 1:
-        q = q.filter(conditions[0])
-    else:
-        q = q.filter(db.or_(*conditions))
-
-    return q.order_by(Student.class_name, Student.last_name)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -381,7 +363,7 @@ def load_persistent_config():
     with app.app_context():
         for key in ('CLASS_LEVELS', 'STUDY_AREAS', 'STUDY_AREA_SUBJECTS'):
             db_val = SystemConfig.get_config(key)
-            if db_val:
+            if db_val is not None:
                 app.config[key] = db_val
             else:
                 SystemConfig.set_config(key, app.config[key])
@@ -500,12 +482,16 @@ def calculate_short_answer_score(answer, question):
 def get_student_groups(cur_user, app_config):
     by_class = {}
     by_area  = {}
-    q = Student.query
+
     if hasattr(cur_user, 'is_teacher') and cur_user.is_teacher():
-        areas = cur_user.get_assigned_study_areas(app_config)
-        if areas:
-            q = q.filter(Student.study_area.in_(areas))
-    for s in q.all():
+        q = get_teacher_students_query(cur_user)
+        if q is None:
+            return {}, {}
+        students = q.all()
+    else:
+        students = Student.query.all()
+
+    for s in students:
         cls  = s.get_class_display() or 'Unspecified'
         by_class.setdefault(cls, []).append(s)
         area = s.get_study_area_display() or 'Unspecified'
@@ -1523,6 +1509,15 @@ def new_assessment():
             )
             return redirect(url_for('dashboard'))
 
+        if current_user.is_teacher() and current_user.subject:
+            sas = app.config.get('STUDY_AREA_SUBJECTS', {})
+            if not sas:
+                flash(
+                    'Warning: study area subjects have not been configured by the administrator. '
+                    'Student filtering may be incomplete.',
+                    'warning',
+                )
+
         students_qs = students_query.all()
 
         if not students_qs:
@@ -2155,6 +2150,97 @@ def manage_study_area_subjects(area_key):
             app.config['STUDY_AREA_SUBJECTS'] = sas
             return jsonify({'success': True, 'message': 'Removed'})
     return jsonify({'success': False, 'message': 'Invalid'})
+
+
+@app.route('/admin/study-area-subjects', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def manage_study_area_subjects_form():
+    """
+    Full-page UI for configuring which subjects belong to each study area.
+    This drives the teacher → student filtering logic throughout the app.
+    POST handles add_core / add_elective / remove / clear_all actions.
+    """
+    if request.method == 'POST':
+        area_key    = request.form.get('area_key', '').strip()
+        subject_key = request.form.get('subject_key', '').strip()
+        action      = request.form.get('action', '').strip()
+
+        if not area_key:
+            flash('Missing study area key.', 'danger')
+            return redirect(url_for('manage_study_area_subjects_form'))
+
+        sas = SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
+        sas.setdefault(area_key, {'core': [], 'electives': []})
+        cfg = sas[area_key]
+
+        if action == 'clear_all':
+            cfg['core']      = []
+            cfg['electives'] = []
+            SystemConfig.set_config('STUDY_AREA_SUBJECTS', sas)
+            app.config['STUDY_AREA_SUBJECTS'] = sas
+            flash(f'Cleared all subjects from {area_key}.', 'success')
+
+        elif action in ('add_core', 'add_elective'):
+            if not subject_key:
+                flash('Please select a subject first.', 'warning')
+                return redirect(url_for('manage_study_area_subjects_form'))
+
+            bucket = 'core' if action == 'add_core' else 'electives'
+            other  = 'electives' if bucket == 'core' else 'core'
+
+            if subject_key in cfg.get(other, []):
+                cfg[other].remove(subject_key)
+
+            if subject_key not in cfg.get(bucket, []):
+                cfg.setdefault(bucket, []).append(subject_key)
+                SystemConfig.set_config('STUDY_AREA_SUBJECTS', sas)
+                app.config['STUDY_AREA_SUBJECTS'] = sas
+                flash(f'Subject added to {bucket} for {area_key}.', 'success')
+            else:
+                flash('Subject already assigned.', 'info')
+
+        elif action == 'remove':
+            if not subject_key:
+                flash('No subject specified.', 'warning')
+                return redirect(url_for('manage_study_area_subjects_form'))
+
+            removed = False
+            for bucket in ('core', 'electives'):
+                if subject_key in cfg.get(bucket, []):
+                    cfg[bucket].remove(subject_key)
+                    removed = True
+
+            if removed:
+                SystemConfig.set_config('STUDY_AREA_SUBJECTS', sas)
+                app.config['STUDY_AREA_SUBJECTS'] = sas
+                flash('Subject removed.', 'success')
+            else:
+                flash('Subject not found in this area.', 'warning')
+        else:
+            flash('Unknown action.', 'danger')
+
+        return redirect(url_for('manage_study_area_subjects_form'))
+
+    sas = SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
+    changed = False
+    for area_key, _ in app.config.get('STUDY_AREAS', []):
+        if area_key not in sas:
+            sas[area_key] = {'core': [], 'electives': []}
+            changed = True
+    if changed:
+        SystemConfig.set_config('STUDY_AREA_SUBJECTS', sas)
+        app.config['STUDY_AREA_SUBJECTS'] = sas
+
+    learning_areas_dict = dict(app.config.get('LEARNING_AREAS', []))
+
+    return render_template(
+        'study_area_subjects.html',
+        study_areas=app.config.get('STUDY_AREAS', []),
+        study_area_subjects=sas,
+        learning_areas=app.config.get('LEARNING_AREAS', []),
+        learning_areas_dict=learning_areas_dict,
+    )
 
 
 @app.route('/admin/archive-term', methods=['POST'])
