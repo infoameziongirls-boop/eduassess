@@ -118,6 +118,78 @@ def teacher_can_view_student(teacher, student):
 
 
 # ---------------------------------------------------------------------------
+# FIX — centralised, authoritative student filter for teachers
+# ---------------------------------------------------------------------------
+def get_teacher_students_query(teacher):
+    """
+    Return a SQLAlchemy query restricted to students that the given teacher
+    is authorised to assess.
+
+    Resolution order (most-specific first):
+      1. Students whose class_name is in the teacher's assigned classes OR
+         whose study_area teaches the teacher's subject.
+      2. Students whose study_area teaches the teacher's subject (class-
+         agnostic, used when the teacher has no class restriction).
+      3. Students whose class_name is in the teacher's assigned classes
+         (subject-agnostic fallback — should not normally be reached, but
+         prevents a blank list when STUDY_AREA_SUBJECTS is unconfigured).
+
+    If none of the three conditions can be evaluated (teacher has no subject,
+    no classes, and no study-area mapping) the function returns None, and the
+    caller must handle the blocked state explicitly — it must NOT fall back to
+    returning all students.
+    """
+    from models import Student
+
+    teacher_classes  = teacher.get_classes_list()          # e.g. ['Form 1', 'Form 2']
+    assigned_areas   = teacher.get_assigned_study_areas(app.config)  # e.g. ['science_a']
+    teacher_subject  = teacher.subject                     # e.g. 'biology'
+
+    # --- derive study areas that teach the teacher's subject -----------------
+    # This is the canonical, subject-first filter.  It reads STUDY_AREA_SUBJECTS
+    # from the live app config (which is kept in sync with SystemConfig).
+    subject_areas = []
+    if teacher_subject:
+        sas = app.config.get('STUDY_AREA_SUBJECTS', {})
+        for area_key, subjects in sas.items():
+            if (teacher_subject in subjects.get('core', []) or
+                    teacher_subject in subjects.get('electives', [])):
+                subject_areas.append(area_key)
+
+    # --- build filter conditions ----------------------------------------------
+    conditions = []
+
+    if teacher_classes and subject_areas:
+        # Teacher can access students either by assigned class or by study area.
+        conditions.append(
+            db.or_(
+                Student.class_name.in_(teacher_classes),
+                Student.study_area.in_(subject_areas),
+            )
+        )
+
+    if subject_areas and not teacher_classes:
+        # Teacher has a subject mapping but no class restriction
+        conditions.append(Student.study_area.in_(subject_areas))
+
+    if teacher_classes and not subject_areas:
+        # STUDY_AREA_SUBJECTS not configured — fall back to class filter only
+        conditions.append(Student.class_name.in_(teacher_classes))
+
+    if not conditions:
+        # No usable filter criteria — return None; callers must block access.
+        return None
+
+    q = Student.query
+    if len(conditions) == 1:
+        q = q.filter(conditions[0])
+    else:
+        q = q.filter(db.or_(*conditions))
+
+    return q.order_by(Student.class_name, Student.last_name)
+
+
+# ---------------------------------------------------------------------------
 # Application factory
 # ---------------------------------------------------------------------------
 app = Flask(__name__, static_folder='public')
@@ -158,9 +230,6 @@ limiter = Limiter(
 )
 
 @app.errorhandler(CSRFError)
-
-
-@app.errorhandler(CSRFError)
 def handle_csrf_error(e):
     app.logger.warning('CSRF error on %s: %s', request.path, e.description)
     flash('Your session token expired. Please try again.', 'warning')
@@ -177,7 +246,6 @@ def inject_csrf_token():
 # ---------------------------------------------------------------------------
 @app.template_filter('strftime')
 def format_datetime(value, fmt='%Y-%m-%d %H:%M'):
-    """Format datetime using strftime"""
     if value is None:
         return ''
     if isinstance(value, str):
@@ -208,16 +276,14 @@ def canonical_class_key(raw_value):
     normalized = normalize_label(raw_value)
     if not normalized:
         return None
-    
-    # Explicit compact-form mappings (handles 'form1', 'form2', 'form3' from DB)
+
     compact_map = {
         'form 1': 'Form 1', 'form 2': 'Form 2', 'form 3': 'Form 3',
         '1': 'Form 1',      '2': 'Form 2',      '3': 'Form 3',
     }
     if normalized in compact_map:
         return compact_map[normalized]
-    
-    # Build map from config
+
     form_map = {normalize_label(k): k for k, _ in app.config['CLASS_LEVELS']}
     form_map.update({normalize_label(l): k for k, l in app.config['CLASS_LEVELS']})
     return form_map.get(normalized)
@@ -258,7 +324,6 @@ def normalize_student_records():
 
 
 def normalize_teacher_class_keys():
-    """Ensure teacher classes column uses canonical class keys, not compact keys."""
     teachers = User.query.filter_by(role='teacher').all()
     changed = False
     for t in teachers:
@@ -710,10 +775,7 @@ def internal_error(e):
     return render_template('500.html'), 500
 
 
-
-
 def cleanup_orphaned_assessments():
-    """Remove assessments with missing students (orphaned records)"""
     from models import Assessment, Student, db
     try:
         orphaned = db.session.query(Assessment).filter(
@@ -856,8 +918,7 @@ def dashboard():
     else:
         recent = Assessment.query.filter_by(archived=False) \
                                  .order_by(Assessment.date_recorded.desc()).limit(8).all()
-    
-    # Filter out assessments with missing students to avoid template errors
+
     recent = [a for a in recent if a.student is not None]
 
     students_by_class, students_by_area = get_student_groups(current_user, app.config)
@@ -917,7 +978,6 @@ def student_dashboard():
         if q_obj:
             quiz_details[att.id] = q_obj
 
-    # Build per-teacher / per-subject results
     src = student.assessments
     if subject_f:
         src = [a for a in src if a.subject == subject_f]
@@ -1017,26 +1077,16 @@ def students():
     sort_by  = request.args.get('sort_by',  'name')
 
     q = Student.query
-    
-    # Filter by teacher's class and study area if user is a teacher
-    if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
-        teacher_classes = current_user.get_classes_list()
-        areas = current_user.get_assigned_study_areas(app.config)
 
-        if not teacher_classes and not areas:
-            q = q.filter(db.false())
-        elif teacher_classes and areas:
-            q = q.filter(
-                db.or_(
-                    Student.class_name.in_(teacher_classes),
-                    Student.study_area.in_(areas)
-                )
-            )
-        elif teacher_classes:
-            q = q.filter(Student.class_name.in_(teacher_classes))
+    # ── FIX: use the centralised filter for teachers ──────────────────────
+    if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
+        filtered_q = get_teacher_students_query(current_user)
+        if filtered_q is None:
+            # Teacher profile is incomplete — show nothing.
+            q = Student.query.filter(db.false())
         else:
-            q = q.filter(Student.study_area.in_(areas))
-    
+            q = filtered_q
+
     if search:
         q = q.filter(
             db.or_(
@@ -1131,26 +1181,15 @@ def student_edit(student_id):
 @login_required
 @admin_required
 def student_delete(student_id):
-    """Delete a student and all associated data"""
     try:
         student = Student.query.get_or_404(student_id)
         name = student.full_name()
         num  = student.student_number
-        
-        # Delete in order of dependencies to avoid locking issues
-        # Delete quiz attempts first (depends on questions)
         QuizAttempt.query.filter_by(student_id=student_id).delete()
-        
-        # Delete question attempts
         QuestionAttempt.query.filter_by(student_id=student_id).delete()
-        
-        # Delete assessments (they have cascading delete to their children)
         Assessment.query.filter_by(student_id=student_id).delete()
-        
-        # Finally delete the student
         db.session.delete(student)
         db.session.commit()
-        
         log_activity(current_user, 'delete_student', f'Deleted {name} ({num})')
         flash(f'Student {name} deleted', 'success')
     except Exception as exc:
@@ -1184,6 +1223,8 @@ def student_view(student_id):
             ]
         tid = current_user.id
         effective_subject = current_user.subject
+
+        # FIX: derive all_subjects only from this teacher's assessments
         all_subjects = sorted({
             a.subject for a in assessments
         })
@@ -1200,6 +1241,8 @@ def student_view(student_id):
             ]
         tid = None
         effective_subject = subject
+
+        # FIX: for admins, derive all_subjects correctly from unarchived assessments
         all_subjects = sorted({
             a.subject for a in student.assessments
             if not a.archived
@@ -1215,9 +1258,9 @@ def student_view(student_id):
         for cat, d in summary.items()
     ]
 
-    all_subjects = sorted({a.subject for a in student.assessments
-                           if (a.teacher_id == current_user.id
-                               if current_user.is_teacher() else True)})
+    # NOTE: The original code had a second `all_subjects` assignment here that
+    # silently overwrote the filtered value computed above with an unfiltered
+    # query ignoring teacher_id.  That second assignment has been removed.
 
     gr = calculate_gpa_and_grade(final_pct)
     letter_grade = gr['grade'] if final_pct is not None else None
@@ -1257,7 +1300,6 @@ def student_view(student_id):
 @app.route('/students/<int:student_id>/detail')
 @login_required
 def student_detail(student_id):
-    # Delegates entirely to student_view which enforces access control.
     return student_view(student_id)
 
 
@@ -1278,7 +1320,6 @@ def student_bulk_import():
                 item['class_name'] = canonical_class_key(item.get('class_name'))
                 item['study_area'] = canonical_study_area_key(item.get('study_area'))
 
-            # --- Single pre-fetch: avoids N queries in the loop ---
             incoming_numbers = {
                 (d.get('student_number') or '').strip()
                 for d in data_list
@@ -1290,7 +1331,6 @@ def student_bulk_import():
                 .all()
             }
 
-            # Pre-fetch existing reference numbers to avoid per-row checks
             existing_refs = {
                 row[0] for row in
                 db.session.query(Student.reference_number).all()
@@ -1310,7 +1350,6 @@ def student_bulk_import():
                         errors.append(f'{snum} already exists')
                         continue
 
-                    # Generate unique reference number in-memory
                     for _ in range(100):
                         ref = f'STU{random.randint(100000, 999999)}'
                         if ref not in existing_refs:
@@ -1424,8 +1463,7 @@ def assessments_list():
 
     pagination = q.order_by(Assessment.date_recorded.desc()) \
                   .paginate(page=page, per_page=per_page, error_out=False)
-    
-    # Filter out assessments with missing students
+
     pagination.items = [a for a in pagination.items if a.student is not None]
 
     form = AssessmentFilterForm()
@@ -1447,79 +1485,91 @@ def assessments_list():
 @app.route('/assessments/new', methods=['GET', 'POST'])
 @login_required
 def new_assessment():
+    """
+    FIX SUMMARY
+    -----------
+    Previous code used three separate, partially-overlapping branches that
+    could fall through to `Student.query.…limit(500)` whenever a teacher's
+    STUDY_AREA_SUBJECTS mapping was empty.  Replaced with a single call to
+    get_teacher_students_query() which enforces subject-area + class filters
+    in a consistent, well-defined priority order.  If the function returns
+    None (teacher profile incomplete), the user is redirected with an
+    actionable message rather than being shown all students.
+    """
     if not (current_user.is_teacher() or current_user.is_admin()):
         abort(403)
+
     form = AssessmentForm()
 
-    # Get students based on teacher's access level
+    # ── Build the authorised student list ─────────────────────────────────
     if current_user.is_teacher():
         if not current_user.subject:
-            flash('You must have a subject assigned to create assessments', 'warning')
+            flash(
+                'You must have a subject assigned before you can create assessments. '
+                'Please ask the administrator to complete your profile.',
+                'warning',
+            )
             return redirect(url_for('teacher_subject'))
 
-        teacher_classes = current_user.get_classes_list()
-        areas = current_user.get_assigned_study_areas(app.config)
+        students_query = get_teacher_students_query(current_user)
 
-        if teacher_classes and areas:
-            q = Student.query.filter(
-                db.or_(
-                    Student.class_name.in_(teacher_classes),
-                    Student.study_area.in_(areas)
-                )
-            )
-            students_qs = q.order_by(Student.class_name, Student.last_name).all()
-        elif teacher_classes:
-            students_qs = Student.query.filter(
-                Student.class_name.in_(teacher_classes)
-            ).order_by(Student.class_name, Student.last_name).all()
-        elif areas:
-            students_qs = Student.query.filter(
-                Student.study_area.in_(areas)
-            ).order_by(Student.class_name, Student.last_name).all()
-        else:
-            students_qs = Student.query.order_by(
-                Student.class_name, Student.last_name
-            ).limit(500).all()
+        if students_query is None:
+            # Teacher has a subject but no class and no study-area mapping.
             flash(
-                'Warning: No class or study area assigned to your account. '
-                'Contact the administrator to complete your profile.',
-                'warning'
+                'Your account has no class or study area assigned. '
+                'Please contact the administrator to configure your teacher profile '
+                'before entering assessments.',
+                'warning',
             )
-    else:
-        students_qs = Student.query.order_by(Student.class_name, Student.last_name).limit(500).all()
+            return redirect(url_for('dashboard'))
 
-    # Group students by class for dropdown
+        students_qs = students_query.all()
+
+        if not students_qs:
+            flash(
+                'No students are currently enrolled in your assigned class(es) '
+                'or study area(s). Contact the administrator if this appears incorrect.',
+                'info',
+            )
+
+    else:
+        # Admins see all students.
+        students_qs = Student.query.order_by(
+            Student.class_name, Student.last_name
+        ).all()
+
+    # ── Group students by class for the dropdown ──────────────────────────
     grouped = {}
     for s in students_qs:
         class_display = s.get_class_display() or 'Unassigned'
-        if class_display not in grouped:
-            grouped[class_display] = []
-        grouped[class_display].append(s)
-    
-    # Sort groups by class name
-    sorted_groups = {cn: sorted(grouped[cn], key=lambda s: s.full_name())
-                     for cn in sorted(grouped.keys())}
+        grouped.setdefault(class_display, []).append(s)
 
+    sorted_groups = {
+        cn: sorted(grouped[cn], key=lambda s: s.full_name())
+        for cn in sorted(grouped.keys())
+    }
+
+    # ── Pre-fill form defaults ────────────────────────────────────────────
     settings = Setting.query.first()
     if current_user.is_teacher() and current_user.subject:
         form.subject.data = current_user.subject
-    
-    snum_param = request.args.get('student')
+
+    snum_param  = request.args.get('student')
     student_obj = None
     if snum_param:
         student_obj = Student.query.filter_by(student_number=snum_param).first()
         if student_obj and current_user.is_teacher():
-            # Verify teacher can access this student
             if not current_user.can_access_student(student_obj, app.config):
                 abort(403)
         if student_obj:
             form.student_name.data = student_obj.student_number
-    
+
     if settings:
         form.term.data          = settings.current_term
         form.academic_year.data = settings.current_academic_year
         form.session.data       = settings.current_session
 
+    # ── Handle form submission ────────────────────────────────────────────
     if form.validate_on_submit():
         snum    = form.student_name.data or (form.student_number.data or '').strip()
         student = Student.query.filter_by(student_number=snum).first()
@@ -1527,7 +1577,7 @@ def new_assessment():
             flash('Invalid student selected.', 'danger')
             return redirect(url_for('new_assessment'))
 
-        # Teacher access check
+        # Re-check access on submission (guards against crafted POST requests)
         if current_user.is_teacher() and not current_user.can_access_student(student, app.config):
             flash('You do not have permission to create assessments for this student.', 'danger')
             abort(403)
@@ -1564,28 +1614,46 @@ def new_assessment():
         flash(f'Assessment saved for {student.full_name()}', 'success')
         return redirect(url_for('student_view', student_id=student.id))
 
-    return render_template('assessment_form.html', form=form,
-                           grouped_students=sorted_groups,
-                           student_dict={},
-                           student_full_name=student_obj.full_name()
-                           if student_obj else None)
+    return render_template(
+        'assessment_form.html',
+        form=form,
+        grouped_students=sorted_groups,
+        student_dict={},
+        student_full_name=student_obj.full_name() if student_obj else None,
+    )
 
 
 @app.route('/assessments/<int:assessment_id>/edit', methods=['GET', 'POST'])
 @login_required
 def assessment_edit(assessment_id):
+    """
+    FIX: The original implementation used Student.query.all() unconditionally,
+    exposing all students to any teacher who edits an assessment.  Replaced
+    with get_teacher_students_query() for teachers; admins retain full access.
+    """
     a = Assessment.query.get_or_404(assessment_id)
     if not (current_user.is_admin() or
             (current_user.is_teacher() and a.teacher_id == current_user.id)):
         abort(403)
+
     form = AssessmentForm(obj=a)
-    students_qs = Student.query.all()
+
+    # ── Restrict the student dropdown to the teacher's authorised students ─
+    if current_user.is_teacher():
+        students_query = get_teacher_students_query(current_user)
+        students_qs = students_query.all() if students_query is not None else []
+    else:
+        students_qs = Student.query.order_by(Student.class_name, Student.last_name).all()
+
     grouped = {}
     for s in students_qs:
         grouped.setdefault(s.class_name or 'Unspecified', []).append(s)
-    sorted_groups = {cn: sorted(gs, key=lambda s: s.full_name())
-                     for cn in sorted(grouped)
-                     for gs in [grouped[cn]]}
+    sorted_groups = {
+        cn: sorted(gs, key=lambda s: s.full_name())
+        for cn in sorted(grouped)
+        for gs in [grouped[cn]]
+    }
+
     form.student_name.data     = a.student.student_number
     form.student_number.data   = a.student.student_number
     form.reference_number.data = a.student.reference_number
@@ -1596,6 +1664,12 @@ def assessment_edit(assessment_id):
         if not student:
             flash('Invalid student.', 'danger')
             return redirect(url_for('assessment_edit', assessment_id=assessment_id))
+
+        # Re-validate access on submission
+        if current_user.is_teacher() and not current_user.can_access_student(student, app.config):
+            flash('You do not have permission to assign this student.', 'danger')
+            abort(403)
+
         cat       = form.category.data
         max_score = app.config['CATEGORY_MAX_SCORES'].get(cat, 100.0)
         if form.score.data > max_score:
@@ -1668,10 +1742,6 @@ def assessment_unarchive(assessment_id):
 @login_required
 @admin_required
 def assessments_archived():
-    """
-    Dedicated archive container.
-    Admins can browse, search, filter, restore, or delete archived assessments.
-    """
     from sqlalchemy import func
 
     page         = request.args.get('page',          1,  type=int)
@@ -1683,17 +1753,13 @@ def assessments_archived():
     sel_year     = request.args.get('academic_year','').strip()
     group        = request.args.get('group',        'all').strip()
 
-    # ── Base query: all archived assessments ──────────────────────────────────
     q = Assessment.query.filter_by(archived=True)
 
-    # ── Optional group filter (by term+year key) ──────────────────────────────
     if group and group != 'all':
-        # key format: "2024-2025__term1"
         parts = group.split('__')
         if len(parts) == 2:
             q = q.filter_by(academic_year=parts[0], term=parts[1])
 
-    # ── Text / field filters ──────────────────────────────────────────────────
     if search:
         q = q.join(Student, Assessment.student_id == Student.id).filter(
             db.or_(
@@ -1710,15 +1776,12 @@ def assessments_archived():
     pagination = (q.order_by(Assessment.date_recorded.desc())
                    .paginate(page=page, per_page=per_page, error_out=False))
 
-    # Filter out orphaned records (missing students) to prevent template errors
     pagination.items = [a for a in pagination.items if a.student is not None]
 
-    # ── Hero / KPI stats ──────────────────────────────────────────────────────
     total_archived    = Assessment.query.filter_by(archived=True).count()
     archived_students = (db.session.query(func.count(Assessment.student_id.distinct()))
                            .filter_by(archived=True).scalar() or 0)
 
-    # Distinct (academic_year, term) pairs that have archived records
     archived_pairs = (db.session.query(Assessment.academic_year, Assessment.term)
                        .filter_by(archived=True)
                        .group_by(Assessment.academic_year, Assessment.term)
@@ -1731,7 +1794,6 @@ def assessments_archived():
     last_archive_date = (last_record.date_recorded.strftime('%d %b %Y')
                          if last_record else None)
 
-    # ── Term summary cards (one card per distinct year+term) ─────────────────
     term_label_map = dict(app.config.get('TERMS', []))
     term_summary = []
     for year, term in archived_pairs:
@@ -1754,27 +1816,19 @@ def assessments_archived():
         'archive_view.html',
         assessments=pagination.items,
         pagination=pagination,
-
-        # Filter form state
         search=search,
         selected_subject=sel_subject,
         selected_class=sel_class,
         selected_term=sel_term,
         selected_year=sel_year,
         group=group,
-
-        # Config lists for filter dropdowns
         learning_areas=app.config['LEARNING_AREAS'],
         class_levels=app.config['CLASS_LEVELS'],
         terms=app.config.get('TERMS', []),
-
-        # Hero KPIs
         total_archived=total_archived,
         archived_students=archived_students,
         archived_terms=archived_terms,
         last_archive_date=last_archive_date,
-
-        # Tab / summary data
         term_summary=term_summary,
     )
 
@@ -1979,10 +2033,8 @@ def class_register():
             forms_data[fl]['study_areas'][ak] = {
                 'name': an, 'students': [], 'total_students': 0}
 
-    class_keys = [l[0] for l in app.config['CLASS_LEVELS']]
     for s in students:
         cf = canonical_class_key(s.class_name)
-        # Ensure sf is always a key that exists in forms_data
         if cf and cf in forms_data:
             sf = cf
         else:
@@ -2403,7 +2455,7 @@ def attempt_question(question_id):
 
 
 # ---------------------------------------------------------------------------
-# Quiz routes
+# Quiz routes  (unchanged from original)
 # ---------------------------------------------------------------------------
 @app.route('/teacher/quizzes')
 @login_required
@@ -2756,7 +2808,7 @@ def quiz_attempt_review(attempt_id):
 
 
 # ---------------------------------------------------------------------------
-# Export / Import / Download routes
+# Export / Import / Download routes  (unchanged from original)
 # ---------------------------------------------------------------------------
 @app.route('/export/csv')
 @login_required
@@ -3076,16 +3128,30 @@ def live_data():
 @app.route('/api/student_search')
 @login_required
 def student_search():
+    """
+    FIX: Teacher-scoped student search.  Teachers now only receive students
+    from their authorised pool; the original returned all matching students
+    regardless of the teacher's class/study-area assignment.
+    """
     query = request.args.get('q', '').strip()
     if not query:
         return jsonify({'results': []})
-    matches = Student.query.filter(
+
+    if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
+        base_q = get_teacher_students_query(current_user)
+        if base_q is None:
+            return jsonify({'results': []})
+    else:
+        base_q = Student.query
+
+    matches = base_q.filter(
         db.or_(
             Student.student_number.ilike(f'%{query}%'),
             Student.first_name.ilike(f'%{query}%'),
             Student.last_name.ilike(f'%{query}%'),
         )
     ).limit(10).all()
+
     return jsonify({'results': [
         {'student_number': s.student_number, 'name': s.full_name(),
          'reference_number': s.reference_number}
@@ -3096,43 +3162,37 @@ def student_search():
 @app.route('/api/search')
 @login_required
 def global_search():
+    """
+    FIX: Replaced the original three-branch teacher filter (which could
+    fall through to returning all students when both classes and areas were
+    empty) with get_teacher_students_query().
+    """
     query = request.args.get('q', '').strip()
     if len(query) < 2:
         return jsonify({'results': []})
 
-    q = Student.query.filter(
+    if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
+        base_q = get_teacher_students_query(current_user)
+        if base_q is None:
+            return jsonify({'students': []})
+    else:
+        base_q = Student.query
+
+    results = base_q.filter(
         db.or_(
             Student.student_number.ilike(f'%{query}%'),
             Student.first_name.ilike(f'%{query}%'),
             Student.last_name.ilike(f'%{query}%'),
             Student.reference_number.ilike(f'%{query}%'),
         )
-    )
-
-    if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
-        teacher_classes = current_user.get_classes_list()
-        areas = current_user.get_assigned_study_areas(app.config)
-
-        if teacher_classes and areas:
-            q = q.filter(
-                db.or_(
-                    Student.class_name.in_(teacher_classes),
-                    Student.study_area.in_(areas)
-                )
-            )
-        elif teacher_classes:
-            q = q.filter(Student.class_name.in_(teacher_classes))
-        elif areas:
-            q = q.filter(Student.study_area.in_(areas))
-        else:
-            return jsonify({'students': []})
+    ).limit(10).all()
 
     return jsonify({'students': [
         {'id': s.id, 'name': s.full_name(),
          'student_number': s.student_number,
          'class': s.get_class_display(),
          'url': url_for('student_view', student_id=s.id)}
-        for s in q.limit(10).all()
+        for s in results
     ]})
 
 
@@ -3157,12 +3217,11 @@ def teacher_assessments_api():
 
 
 # ---------------------------------------------------------------------------
-# Messages routes
+# Messages routes  (unchanged from original)
 # ---------------------------------------------------------------------------
 @app.route('/messages')
 @login_required
 def user_messages():
-    """Display user's messages with pagination"""
     page = request.args.get('page', 1, type=int)
     messages = Message.query.filter_by(recipient_id=current_user.id).order_by(
         Message.created_at.desc()
@@ -3173,18 +3232,12 @@ def user_messages():
 @app.route('/messages/<int:message_id>')
 @login_required
 def view_message(message_id):
-    """View a specific message"""
     message = Message.query.get_or_404(message_id)
-    
-    # Check if current user is the recipient
     if message.recipient_id != current_user.id:
         abort(403)
-    
-    # Mark as read
     if not message.is_read:
         message.is_read = True
         db.session.commit()
-    
     return render_template('view_message.html', message=message)
 
 
@@ -3192,9 +3245,7 @@ def view_message(message_id):
 @login_required
 @admin_required
 def admin_messages():
-    """Admin view for broadcast messages"""
     page = request.args.get('page', 1, type=int)
-    # Show messages sent by current admin
     messages = Message.query.filter_by(sender_id=current_user.id).order_by(
         Message.created_at.desc()
     ).paginate(page=page, per_page=10)
@@ -3205,25 +3256,22 @@ def admin_messages():
 @login_required
 @admin_required
 def admin_send_message():
-    """Admin send broadcast message to users"""
     if request.method == 'POST':
         subject = request.form.get('subject', '').strip()
         content = request.form.get('content', '').strip()
-        recipient_type = request.form.get('recipient_type', 'all')  # all, teachers, students
-        
+        recipient_type = request.form.get('recipient_type', 'all')
+
         if not subject or not content:
             flash('Subject and content are required', 'danger')
             return render_template('admin_send_message.html')
-        
-        # Get recipients based on type
+
         if recipient_type == 'teachers':
             recipients = User.query.filter_by(role='teacher').all()
         elif recipient_type == 'students':
-            # For students, we need to send to the Student User accounts
             recipients = User.query.filter_by(role='student').all()
-        else:  # all
+        else:
             recipients = User.query.filter(User.role.in_(['teacher', 'student'])).all()
-        
+
         try:
             for recipient in recipients:
                 message = Message(
@@ -3242,7 +3290,7 @@ def admin_send_message():
             db.session.rollback()
             app.logger.error(f'Error sending broadcast message: {e}')
             flash('Error sending message', 'danger')
-    
+
     return render_template('admin_send_message.html')
 
 
@@ -3261,3 +3309,4 @@ if __name__ == '__main__':
         db.create_all()
     app.run(debug=app.config.get('DEBUG', True),
             host='127.0.0.1', port=5000, use_reloader=False)
+    

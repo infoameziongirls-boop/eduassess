@@ -315,6 +315,16 @@ with app.app_context():
         log_test("Teacher can access student in their class", can_access or can_access is False, 
                 f"Access: {can_access}")
 
+# Test 8: support blueprint registration
+print("\n[TEST 8] support blueprint registration")
+with app.app_context():
+    registered = 'support.support_home' in app.view_functions
+    log_test(
+        "support_bp stays registered",
+        registered,
+        "Endpoint support.support_home is registered" if registered else "Missing support.support_home"
+    )
+
 # Summary
 print("\n" + "=" * 70)
 print("TEST SUMMARY")

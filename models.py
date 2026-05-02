@@ -88,21 +88,19 @@ class User(UserMixin, db.Model):
             return False
 
         teacher_classes = self.get_classes_list()
-        if teacher_classes and student.class_name in teacher_classes:
-            return True
+        assigned_areas = self.get_assigned_study_areas(config)
 
-        if student.study_area:
-            assigned_areas = self.get_assigned_study_areas(config)
-            if student.study_area in assigned_areas:
-                return True
+        if teacher_classes and assigned_areas:
+            return (student.class_name in teacher_classes or
+                    student.study_area in assigned_areas)
 
-        from models import Assessment
-        existing_assessment = Assessment.query.filter_by(
-            student_id=student.id,
-            teacher_id=self.id,
-            subject=self.subject
-        ).first()
-        return existing_assessment is not None
+        if teacher_classes:
+            return student.class_name in teacher_classes
+
+        if assigned_areas:
+            return student.study_area in assigned_areas
+
+        return False
 
     def __repr__(self):
         return f"<User id={self.id}>"
