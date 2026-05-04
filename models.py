@@ -95,20 +95,28 @@ class User(UserMixin, db.Model):
         if not self.is_teacher() or not self.subject:
             return False
 
+        teacher_subject = (self.subject or '').strip()
         teacher_classes = self.get_classes_list()
-        assigned_areas = self.get_assigned_study_areas(config)
 
-        if teacher_classes and assigned_areas:
-            return (student.class_name in teacher_classes and
-                    student.study_area in assigned_areas)
+        if teacher_classes and student.class_name not in teacher_classes:
+            return False
 
-        if teacher_classes and not assigned_areas:
-            return student.class_name in teacher_classes
+        sas = {}
+        try:
+            sas = SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
+        except Exception:
+            pass
 
-        if assigned_areas and not teacher_classes:
-            return student.study_area in assigned_areas
+        if not sas and isinstance(config, dict):
+            sas = config.get('STUDY_AREA_SUBJECTS', {}) or {}
 
-        return False
+        if sas:
+            area_curriculum = sas.get(student.study_area or '', {})
+            if teacher_subject not in area_curriculum.get('core', []) and \
+                    teacher_subject not in area_curriculum.get('electives', []):
+                return False
+
+        return True
 
     def __repr__(self):
         return f"<User id={self.id}>"
@@ -210,6 +218,35 @@ class Student(UserMixin, db.Model):
                         if assessment.max_score > 0:
                             total_percentage += (assessment.score / assessment.max_score) * 100
                 data["avg_percent"] = total_percentage / data["count"]
+        return summary
+
+    def get_assessment_summary_from_list(self, assessment_list, subject=None, teacher_id=None):
+        """
+        Compute assessment summary from an already-fetched list,
+        avoiding a second database round-trip.
+        """
+        filtered = assessment_list
+        if subject:
+            filtered = [a for a in filtered if a.subject == subject]
+        if teacher_id:
+            filtered = [a for a in filtered if a.teacher_id == teacher_id]
+        summary = {}
+        for assessment in filtered:
+            cat = assessment.category
+            if cat not in summary:
+                summary[cat] = {"count": 0, "total_score": 0.0,
+                                "total_max": 0.0, "avg_percent": 0.0}
+            summary[cat]["count"]       += 1
+            summary[cat]["total_score"] += assessment.score
+            summary[cat]["total_max"]   += assessment.max_score
+        for cat, data in summary.items():
+            if data["count"] > 0:
+                total_pct = sum(
+                    (a.score / a.max_score) * 100
+                    for a in filtered
+                    if a.category == cat and a.max_score > 0
+                )
+                data["avg_percent"] = total_pct / data["count"]
         return summary
 
     def get_subject_summary(self, teacher_id=None):

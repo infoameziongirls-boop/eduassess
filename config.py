@@ -252,38 +252,47 @@ class ProductionConfig(Config):
         SESSION_REDIS = redis_lib.from_url(_redis_url)
     else:
         SESSION_TYPE       = "sqlalchemy"
-        SESSION_SQLALCHEMY = None
+        SESSION_SQLALCHEMY = None   # Corrected later in app.py after db init
         SESSION_REDIS      = None
 
     SESSION_PERMANENT = False
     SESSION_USE_SIGNER = True
 
-    # SQLAlchemy engine options for PostgreSQL in production
+    # -------------------------------------------------------------------
+    # Neon + PgBouncer (transaction-mode) pool configuration.
+    #
+    # IMPORTANT: You MUST use the POOLED connection string from the Neon
+    # dashboard (port 6432, not 5432). Set DATABASE_URL to that string.
+    #
+    # pool_size=1 / max_overflow=0 lets PgBouncer manage all multiplexing.
+    # prepare_threshold=None disables server-side prepared statements,
+    # which are incompatible with PgBouncer in transaction mode.
+    # -------------------------------------------------------------------
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_pre_ping": True,
         "pool_recycle": 60,
-        "pool_size": 3,
-        "max_overflow": 2,
-        "pool_timeout": 30,
+        "pool_size": 1,
+        "max_overflow": 0,
+        "pool_timeout": 20,
         "connect_args": {
             "connect_timeout": 10,
             "keepalives": 1,
             "keepalives_idle": 30,
             "keepalives_interval": 5,
             "keepalives_count": 3,
+            "options": "-c statement_timeout=30000",  # 30-second query hard limit
+            "prepare_threshold": None,                 # Required for PgBouncer transaction mode
         },
     }
 
     @classmethod
     def validate_production_settings(cls):
-        """Validate production settings when config is actually used."""
         if not os.environ.get("DATABASE_URL"):
-            # Fall back to SQLite if no DATABASE_URL (e.g. first deploy)
             import warnings
             warnings.warn(
                 "DATABASE_URL not set; falling back to SQLite. "
-                "Set DATABASE_URL to a PostgreSQL connection string for production.",
-                RuntimeWarning
+                "Set DATABASE_URL to the Neon POOLED connection string (port 6432).",
+                RuntimeWarning,
             )
 
 

@@ -7,6 +7,7 @@ import time
 import json
 from functools import wraps
 from werkzeug.utils import secure_filename
+from werkzeug.middleware.proxy_fix import ProxyFix
 from datetime import datetime
 
 import openpyxl
@@ -25,7 +26,9 @@ from flask_session import Session
 from flask_migrate import Migrate
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from flask_caching import Cache
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import joinedload
 from wtforms import (StringField, PasswordField, FloatField, SelectField,
                      SelectMultipleField, TextAreaField, BooleanField)
 from wtforms.validators import (InputRequired, Length, Optional,
@@ -236,6 +239,7 @@ app = Flask(__name__, static_folder='public')
 
 env = os.environ.get('FLASK_ENV', 'development')
 app.config.from_object(config[env])
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 if env == 'production':
     config[env].validate_production_settings()
@@ -264,12 +268,11 @@ csrf          = CSRFProtect(app)
 
 def get_real_ip():
     """
-    Return the originating client IP from X-Forwarded-For when behind a proxy.
-    Falls back to the request remote address if the header is absent.
+    After ProxyFix is applied, get_remote_address() returns the correct
+    client IP from the last X-Forwarded-For entry appended by Render's proxy.
+    The previous implementation read the FIRST entry, which is trivially
+    spoofable by any client.
     """
-    forwarded_for = request.headers.get('X-Forwarded-For', '')
-    if forwarded_for:
-        return forwarded_for.split(',')[0].strip()
     return get_remote_address()
 
 limiter = Limiter(
@@ -424,7 +427,11 @@ with app.app_context():
     db.create_all()
 
 # Session AFTER db is ready
-app.config['SESSION_SQLALCHEMY'] = db
+# SESSION_SQLALCHEMY must be set to the db object BEFORE Session(app) is called.
+# This cannot be placed in ProductionConfig because db does not exist at import time.
+if app.config.get("SESSION_TYPE") == "sqlalchemy":
+    app.config["SESSION_SQLALCHEMY"] = db
+
 Session(app)
 
 def load_persistent_config():
@@ -454,6 +461,13 @@ app.register_blueprint(promotion_bp)
 app.register_blueprint(support_bp)
 migrate = Migrate(app, db)
 
+# Simple in-process cache with a 5-minute TTL.
+# If you later add Redis, set CACHE_TYPE="RedisCache" and CACHE_REDIS_URL.
+cache = Cache(app, config={
+    "CACHE_TYPE": "SimpleCache",
+    "CACHE_DEFAULT_TIMEOUT": 300,  # 5 minutes
+})
+
 
 # ---------------------------------------------------------------------------
 # Utility functions
@@ -473,12 +487,30 @@ def log_activity(user, action, details=None):
         app.logger.error('Failed to log activity: %s', exc)
 
 
+@cache.cached(timeout=300, key_prefix="incomplete_assessments")
 def get_incomplete_assessments():
-    required = ['ica1', 'ica2', 'icp1', 'icp2', 'gp1', 'gp2',
-                'practical', 'mid_term', 'end_term']
-    rows = db.session.query(
-        Assessment.student_id, Assessment.subject, Assessment.category
-    ).filter(Assessment.archived == False).all()
+    """
+    Returns a list of dicts describing students who are missing one or more
+    required assessment categories for any subject.
+
+    The aggregation is performed inside PostgreSQL rather than in Python to
+    avoid loading up to 18,000 rows on every dashboard request.
+    The result is cached for 5 minutes.
+    """
+    required = {'ica1', 'ica2', 'icp1', 'icp2', 'gp1', 'gp2',
+                'practical', 'mid_term', 'end_term'}
+
+    # Single query: one row per (student, subject, category) — archived excluded.
+    rows = (
+        db.session.query(
+            Assessment.student_id,
+            Assessment.subject,
+            Assessment.category,
+        )
+        .filter(Assessment.archived == False)
+        .group_by(Assessment.student_id, Assessment.subject, Assessment.category)
+        .all()
+    )
 
     ssc = {}
     for sid, subj, cat in rows:
@@ -490,8 +522,11 @@ def get_incomplete_assessments():
         return []
 
     student_ids = {sid for sid, _ in ssc}
-    student_map = {s.id: s for s in
-                   Student.query.filter(Student.id.in_(student_ids)).all()}
+    student_map = {
+        s.id: s
+        for s in Student.query.filter(Student.id.in_(student_ids)).all()
+    }
+
     result = []
     for (sid, subj), cats in ssc.items():
         missing = [c for c in required if c not in cats]
@@ -500,9 +535,12 @@ def get_incomplete_assessments():
         student = student_map.get(sid)
         if not student:
             continue
-        result.append({'student': student, 'subject': subj,
-                       'missing_categories': missing,
-                       'existing_categories': sorted(cats)})
+        result.append({
+            "student":             student,
+            "subject":             subj,
+            "missing_categories":  missing,
+            "existing_categories": sorted(cats),
+        })
     return result
 
 
@@ -967,11 +1005,17 @@ def dashboard():
         assigned = set(current_user.get_assigned_study_areas())
         if assigned:
             incomplete_list = [i for i in incomplete_list if i['subject'] in assigned]
-        recent = Assessment.query.filter_by(teacher_id=current_user.id, archived=False) \
-                                 .order_by(Assessment.date_recorded.desc()).limit(8).all()
+        recent = (Assessment.query
+                  .options(joinedload(Assessment.student))
+                  .filter_by(teacher_id=current_user.id, archived=False)
+                  .order_by(Assessment.date_recorded.desc())
+                  .limit(8).all())
     else:
-        recent = Assessment.query.filter_by(archived=False) \
-                                 .order_by(Assessment.date_recorded.desc()).limit(8).all()
+        recent = (Assessment.query
+                  .options(joinedload(Assessment.student))
+                  .filter_by(archived=False)
+                  .order_by(Assessment.date_recorded.desc())
+                  .limit(8).all())
 
     recent = [a for a in recent if a.student is not None]
 
@@ -1054,7 +1098,7 @@ def student_dashboard():
                 'grade': gr['grade'], 'assessments': alist,
             }
 
-    summary      = student.get_assessment_summary()
+    summary      = student.get_assessment_summary_from_list(assessments)
     final_pct    = student.calculate_final_grade()
     gpa_grade    = student.get_gpa_and_grade()
 
@@ -1515,8 +1559,11 @@ def assessments_list():
     if class_name: q = q.filter_by(class_name=class_name)
     if category:   q = q.filter_by(category=category)
 
-    pagination = q.order_by(Assessment.date_recorded.desc()) \
-                  .paginate(page=page, per_page=per_page, error_out=False)
+    pagination = (
+        q.options(joinedload(Assessment.student))
+         .order_by(Assessment.date_recorded.desc())
+         .paginate(page=page, per_page=per_page, error_out=False)
+    )
 
     pagination.items = [a for a in pagination.items if a.student is not None]
 
@@ -1671,6 +1718,7 @@ def new_assessment():
             teacher_id=current_user.id, comments=form.comments.data,
         )
         db.session.add(a)
+        cache.delete("incomplete_assessments")
         db.session.commit()
         log_activity(current_user, 'create_assessment',
                      f'Created assessment for {student.full_name()}')
@@ -1748,6 +1796,7 @@ def assessment_edit(assessment_id):
         a.session      = form.session.data
         a.assessor     = form.assessor.data
         a.comments     = form.comments.data
+        cache.delete("incomplete_assessments")
         db.session.commit()
         log_activity(current_user, 'edit_assessment',
                      f'Edited assessment for {a.student.full_name()}')
@@ -1769,6 +1818,7 @@ def assessment_delete(assessment_id):
     sid  = a.student_id
     name = a.student.full_name()
     db.session.delete(a)
+    cache.delete("incomplete_assessments")
     db.session.commit()
     log_activity(current_user, 'delete_assessment', f'Deleted assessment for {name}')
     flash('Assessment deleted', 'info')
@@ -1783,6 +1833,7 @@ def assessment_archive(assessment_id):
             (current_user.is_teacher() and a.teacher_id == current_user.id)):
         abort(403)
     a.archived = True
+    cache.delete("incomplete_assessments")
     db.session.commit()
     flash('Assessment archived', 'info')
     return redirect(request.referrer or url_for('assessments_list'))
@@ -1796,6 +1847,7 @@ def assessment_unarchive(assessment_id):
             (current_user.is_teacher() and a.teacher_id == current_user.id)):
         abort(403)
     a.archived = False
+    cache.delete("incomplete_assessments")
     db.session.commit()
     flash('Assessment restored', 'info')
     return redirect(request.referrer or url_for('assessments_list'))
@@ -1836,7 +1888,8 @@ def assessments_archived():
     if sel_term:     q = q.filter_by(term=sel_term)
     if sel_year:     q = q.filter_by(academic_year=sel_year)
 
-    pagination = (q.order_by(Assessment.date_recorded.desc())
+    pagination = (q.options(joinedload(Assessment.student))
+                   .order_by(Assessment.date_recorded.desc())
                    .paginate(page=page, per_page=per_page, error_out=False))
 
     pagination.items = [a for a in pagination.items if a.student is not None]
@@ -1920,6 +1973,7 @@ def assessment_bulk_action():
     else:
         if not current_user.is_admin(): abort(403)
         for a in items: db.session.delete(a)
+    cache.delete("incomplete_assessments")
     db.session.commit()
     log_activity(current_user, f'bulk_{action}',
                  f'{action}d {len(items)} assessments')
@@ -3497,6 +3551,7 @@ def import_excel():
                     ok += 1
                 except Exception as exc:
                     errors.append(str(exc))
+            cache.delete("incomplete_assessments")
             db.session.commit()
             os.remove(filepath)
             flash(f'Imported {ok} assessments', 'success')
