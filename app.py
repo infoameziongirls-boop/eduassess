@@ -239,7 +239,7 @@ app = Flask(__name__, static_folder='public')
 
 env = os.environ.get('FLASK_ENV', 'development')
 app.config.from_object(config[env])
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=2, x_proto=1, x_host=1)
 
 if env == 'production':
     config[env].validate_production_settings()
