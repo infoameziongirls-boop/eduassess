@@ -264,9 +264,10 @@ class ProductionConfig(Config):
     # IMPORTANT: You MUST use the POOLED connection string from the Neon
     # dashboard (port 6432, not 5432). Set DATABASE_URL to that string.
     #
-    # pool_size=1 / max_overflow=0 lets PgBouncer manage all multiplexing.
-    # prepare_threshold=None disables server-side prepared statements,
-    # which are incompatible with PgBouncer in transaction mode.
+    # pool_size=5 / max_overflow=5 gives the application enough pooled
+    # connections while allowing Neon PgBouncer to manage server-side
+    # multiplexing. Do not pass prepare_threshold via connect_args here,
+    # since psycopg2 rejects that connection parameter.
     # -------------------------------------------------------------------
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_pre_ping": True,
@@ -280,7 +281,6 @@ class ProductionConfig(Config):
             "keepalives_idle": 30,
             "keepalives_interval": 5,
             "keepalives_count": 3,
-            "prepare_threshold": 0,
         },
     }
     print("ProductionConfig SQLALCHEMY_ENGINE_OPTIONS loaded")
