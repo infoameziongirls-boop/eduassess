@@ -280,10 +280,10 @@ class ProductionConfig(Config):
             "keepalives_idle": 30,
             "keepalives_interval": 5,
             "keepalives_count": 3,
-            "options": "-c statement_timeout=30000",  # 30-second query hard limit
-            "prepare_threshold": None,                 # Required for PgBouncer transaction mode
+            "prepare_threshold": None,
         },
     }
+    print("ProductionConfig SQLALCHEMY_ENGINE_OPTIONS loaded")
 
     @classmethod
     def validate_production_settings(cls):
