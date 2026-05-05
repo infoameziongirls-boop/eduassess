@@ -456,9 +456,6 @@ app.config['CATEGORY_LABELS']     = CATEGORY_LABELS
 app.config['ASSESSMENTS_PER_PAGE'] = ASSESSMENTS_PER_PAGE
 app.config['CATEGORY_MAX_SCORES'] = CATEGORY_MAX_SCORES
 app.config['ASSESSMENT_WEIGHTS']  = ASSESSMENT_WEIGHTS
-app.register_blueprint(api_bp)
-app.register_blueprint(promotion_bp)
-app.register_blueprint(support_bp)
 migrate = Migrate(app, db)
 
 # Simple in-process cache with a 5-minute TTL.
@@ -467,6 +464,10 @@ cache = Cache(app, config={
     "CACHE_TYPE": "SimpleCache",
     "CACHE_DEFAULT_TIMEOUT": 300,  # 5 minutes
 })
+
+app.register_blueprint(api_bp)
+app.register_blueprint(promotion_bp)
+app.register_blueprint(support_bp)
 
 
 # ---------------------------------------------------------------------------
@@ -2676,6 +2677,7 @@ def archive_term():
     ).filter_by(archived=False).all()
     for a in items:
         a.archived = True
+    cache.delete("incomplete_assessments")
     db.session.commit()
     flash(f'Archived {len(items)} assessments from previous terms', 'success')
     return redirect(url_for('admin_settings'))

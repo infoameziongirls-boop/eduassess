@@ -283,7 +283,6 @@ class ProductionConfig(Config):
             "keepalives_count": 3,
         },
     }
-    print("ProductionConfig SQLALCHEMY_ENGINE_OPTIONS loaded")
 
     @classmethod
     def validate_production_settings(cls):
