@@ -1064,9 +1064,16 @@ def student_dashboard():
     if category_f: q = q.filter_by(category=category_f)
     assessments = q.order_by(Assessment.date_recorded.desc()).all()
 
-    subjects   = sorted({a.subject    for a in student.assessments if a.subject})
-    classes    = sorted({a.class_name for a in student.assessments if a.class_name})
-    categories = sorted({a.category   for a in student.assessments if a.category})
+    unfiltered_rows = (
+        Assessment.query.with_entities(
+            Assessment.subject, Assessment.class_name, Assessment.category
+        )
+        .filter_by(student_id=student.id, archived=False)
+        .all()
+    )
+    subjects = sorted({subj for subj, _, _ in unfiltered_rows if subj})
+    classes = sorted({cls for _, cls, _ in unfiltered_rows if cls})
+    categories = sorted({cat for _, _, cat in unfiltered_rows if cat})
 
     quiz_attempts = QuizAttempt.query.filter_by(student_id=student.id) \
                                      .order_by(QuizAttempt.completed_at.desc()).all()
@@ -1076,9 +1083,7 @@ def student_dashboard():
         if q_obj:
             quiz_details[att.id] = q_obj
 
-    src = student.assessments
-    if subject_f:
-        src = [a for a in src if a.subject == subject_f]
+    src = assessments
     teacher_subjects = {}
     for a in src:
         if a.archived:
@@ -1307,43 +1312,30 @@ def student_view(student_id):
         if not teacher_can_view_student(current_user, student):
             abort(403)
 
-    if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
-        assessments = [
-            a for a in student.assessments
-            if a.teacher_id == current_user.id
-            and not a.archived
-            and (not subject or a.subject == subject)
-        ]
+        q = Assessment.query.filter_by(
+            student_id=student.id, archived=False,
+            teacher_id=current_user.id,
+        )
         if current_user.subject:
-            assessments = [
-                a for a in assessments
-                if a.subject == current_user.subject
-            ]
+            q = q.filter_by(subject=current_user.subject)
+        if subject:
+            q = q.filter_by(subject=subject)
+        assessments = q.order_by(Assessment.date_recorded.desc()).all()
         tid = current_user.id
         effective_subject = current_user.subject
-
-        # FIX: derive all_subjects only from this teacher's assessments
-        all_subjects = sorted({
-            a.subject for a in assessments
-        })
+        all_subjects = sorted({a.subject for a in assessments if a.subject})
     else:
+        q = Assessment.query.filter_by(student_id=student.id, archived=False)
         if subject:
-            assessments = [
-                a for a in student.assessments
-                if a.subject == subject and not a.archived
-            ]
-        else:
-            assessments = [
-                a for a in student.assessments
-                if not a.archived
-            ]
+            q = q.filter_by(subject=subject)
+        assessments = q.order_by(Assessment.date_recorded.desc()).all()
         tid = None
         effective_subject = subject
-
-        # FIX: for admins, derive all_subjects correctly from unarchived assessments
         all_subjects = sorted({
-            a.subject for a in student.assessments
-            if not a.archived
+            row[0] for row in
+            Assessment.query.filter_by(student_id=student.id, archived=False)
+                      .with_entities(Assessment.subject).distinct().all()
+            if row[0]
         })
 
     summary   = student.get_assessment_summary(effective_subject, teacher_id=tid)
@@ -3331,6 +3323,10 @@ def export_csv():
     q = Assessment.query.filter_by(archived=False)
     if current_user.is_teacher():
         q = q.filter_by(teacher_id=current_user.id)
+    q = q.options(
+        joinedload(Assessment.student),
+        joinedload(Assessment.assigned_teacher),
+    )
     assessments = q.order_by(Assessment.date_recorded.desc()).all()
     si = io.StringIO()
     w  = csv.writer(si)
@@ -3366,6 +3362,7 @@ def export_student_csv(student_id):
             q = q.filter_by(subject=current_user.subject)
     if subject:
         q = q.filter_by(subject=subject)
+    q = q.options(joinedload(Assessment.assigned_teacher))
     si = io.StringIO()
     w  = csv.writer(si)
     w.writerow(['category', 'subject', 'class', 'score', 'max_score',
@@ -3475,6 +3472,7 @@ def export_assessments_excel():
     q = (Assessment.query.filter_by(teacher_id=current_user.id, archived=False)
          if current_user.is_teacher()
          else Assessment.query.filter_by(archived=False))
+    q = q.options(joinedload(Assessment.student))
     if subject:    q = q.filter_by(subject=subject)
     if class_name: q = q.filter_by(class_name=class_name)
     if category:   q = q.filter_by(category=category)

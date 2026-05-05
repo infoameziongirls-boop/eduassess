@@ -271,8 +271,8 @@ class ProductionConfig(Config):
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_pre_ping": True,
         "pool_recycle": 60,
-        "pool_size": 1,
-        "max_overflow": 0,
+        "pool_size": 5,
+        "max_overflow": 5,
         "pool_timeout": 20,
         "connect_args": {
             "connect_timeout": 10,
@@ -280,7 +280,7 @@ class ProductionConfig(Config):
             "keepalives_idle": 30,
             "keepalives_interval": 5,
             "keepalives_count": 3,
-            "prepare_threshold": None,
+            "prepare_threshold": 0,
         },
     }
     print("ProductionConfig SQLALCHEMY_ENGINE_OPTIONS loaded")
