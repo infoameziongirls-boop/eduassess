@@ -268,11 +268,12 @@ csrf          = CSRFProtect(app)
 
 def get_real_ip():
     """
-    After ProxyFix is applied, get_remote_address() returns the correct
-    client IP from the last X-Forwarded-For entry appended by Render's proxy.
-    The previous implementation read the FIRST entry, which is trivially
-    spoofable by any client.
+    Cloudflare passes the real client IP in CF-Connecting-IP.
+    Fall back to ProxyFix-resolved remote_addr if the header is absent.
     """
+    cf_ip = request.headers.get('CF-Connecting-IP')
+    if cf_ip:
+        return cf_ip.strip()
     return get_remote_address()
 
 limiter = Limiter(
