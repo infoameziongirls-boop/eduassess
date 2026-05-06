@@ -14,6 +14,14 @@ bcrypt = Bcrypt(app)
 def test_endpoints():
     """Test all endpoints for errors"""
     with app.app_context():
+        ext = app.extensions.get('sqlalchemy')
+        if ext and hasattr(ext, '_app_engines'):
+            ext._app_engines[app].clear()
+            options = {'url': app.config['SQLALCHEMY_DATABASE_URI'], **ext._engine_options}
+            engine = ext._make_engine(None, options, app)
+            ext._app_engines[app][None] = engine
+            db.create_all()
+        
         # Create test admin user
         admin = User(
             username='test_admin',

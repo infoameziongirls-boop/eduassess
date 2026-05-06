@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import time
 import math
@@ -6,6 +6,9 @@ from db import db
 from flask_login import UserMixin
 from sqlalchemy.exc import OperationalError
 import json
+
+def utcnow():
+    return datetime.now(timezone.utc)
 
 
 class SubjectArea:
@@ -25,7 +28,7 @@ class User(UserMixin, db.Model):
     subject = db.Column(db.String(100), nullable=True)
     class_name = db.Column(db.String(50), nullable=True)
     classes = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
     last_login = db.Column(db.DateTime, nullable=True)
 
     assessments = db.relationship(
@@ -134,7 +137,7 @@ class Student(UserMixin, db.Model):
     reference_number = db.Column(db.String(50), unique=True, nullable=True, index=True)
     date_of_birth = db.Column(db.Date, nullable=True)
     study_area = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
     assessments = db.relationship(
         "Assessment",
@@ -374,7 +377,7 @@ class Assessment(db.Model):
     assessor = db.Column(db.String(120), nullable=True)
     teacher_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
     comments = db.Column(db.Text, nullable=True)
-    date_recorded = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    date_recorded = db.Column(db.DateTime, default=utcnow, index=True)
     archived = db.Column(db.Boolean, default=False, index=True)
 
     def get_percentage(self):
@@ -433,7 +436,7 @@ class ActivityLog(db.Model):
     action = db.Column(db.String(100), nullable=False, index=True)
     details = db.Column(db.Text, nullable=True)
     ip_address = db.Column(db.String(45), nullable=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    timestamp = db.Column(db.DateTime, default=utcnow, index=True)
 
     user = db.relationship(
         "User",
@@ -463,8 +466,8 @@ class Question(db.Model):
     approved_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
     status = db.Column(db.String(20), nullable=False, default="pending")
     rejection_reason = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
     creator = db.relationship("User", foreign_keys=[created_by], backref="created_questions")
     approver = db.relationship("User", foreign_keys=[approved_by], backref="approved_questions")
@@ -509,7 +512,7 @@ class QuestionAttempt(db.Model):
     student_answer = db.Column(db.String(500), nullable=False)
     is_correct = db.Column(db.Boolean, nullable=False)
     score = db.Column(db.Float, nullable=False, default=0.0)
-    attempted_at = db.Column(db.DateTime, default=datetime.utcnow)
+    attempted_at = db.Column(db.DateTime, default=utcnow)
     time_taken = db.Column(db.Integer, nullable=True)
 
     question = db.relationship("Question", backref="attempts")
@@ -529,7 +532,7 @@ class Quiz(db.Model):
     time_limit = db.Column(db.Integer, nullable=True)
     created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     is_active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
     creator = db.relationship("User", foreign_keys=[created_by], backref="created_quizzes")
 
@@ -549,7 +552,7 @@ class QuizAttempt(db.Model):
     score = db.Column(db.Float, nullable=False)
     total_questions = db.Column(db.Integer, nullable=False)
     correct_answers = db.Column(db.Integer, nullable=False)
-    started_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, default=utcnow)
     completed_at = db.Column(db.DateTime, nullable=True)
     time_taken = db.Column(db.Integer, nullable=True)
     status = db.Column(db.String(20), default="in_progress")
@@ -572,7 +575,7 @@ class SystemConfig(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     config_key = db.Column(db.String(100), unique=True, nullable=False)
     config_value = db.Column(db.Text, nullable=False)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
     @staticmethod
     def get_config(key, default=None):
@@ -640,8 +643,8 @@ class Message(db.Model):
     message_type = db.Column(db.String(20), default="notification")  # notification, update, alert
     is_read = db.Column(db.Boolean, default=False)
     is_broadcast = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
 
     sender = db.relationship("User", foreign_keys=[sender_id], backref="sent_messages")
     recipient = db.relationship("User", foreign_keys=[recipient_id], backref="received_messages")
@@ -664,8 +667,8 @@ class SupportTicket(db.Model):
     assigned_to   = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
     browser_info  = db.Column(db.String(300), nullable=True)
     page_url      = db.Column(db.String(500), nullable=True)
-    created_at    = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-    updated_at    = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at    = db.Column(db.DateTime, default=utcnow, index=True)
+    updated_at    = db.Column(db.DateTime, default=utcnow, onupdate=utcnow)
     resolved_at   = db.Column(db.DateTime, nullable=True)
 
     submitter    = db.relationship("User", foreign_keys=[user_id],  backref="submitted_tickets")
@@ -720,7 +723,7 @@ class TicketReply(db.Model):
     user_id    = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     message    = db.Column(db.Text, nullable=False)
     is_internal = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
     author = db.relationship("User", foreign_keys=[user_id], backref="ticket_replies")
 

@@ -10,7 +10,7 @@ Register in app.py:
 
 import random
 import string
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import (Blueprint, render_template, redirect, url_for,
                    flash, request, abort, jsonify)
@@ -21,6 +21,10 @@ from db import db
 from models import User, SupportTicket, TicketReply, ActivityLog
 
 support_bp = Blueprint("support", __name__, url_prefix="/support")
+
+
+def utcnow():
+    return datetime.now(timezone.utc)
 
 
 # ─────────────────────────────────────────────
@@ -34,7 +38,7 @@ def _generate_ticket_number():
         num = f"TKT-{suffix}"
         if not SupportTicket.query.filter_by(ticket_number=num).first():
             return num
-    return f"TKT-{int(datetime.utcnow().timestamp())}"
+    return f"TKT-{int(utcnow().timestamp())}"
 
 
 def _log(action, details=None):
@@ -182,7 +186,7 @@ def reply_ticket(ticket_number):
         if new_status and new_status in valid:
             ticket.status = new_status
             if new_status == "resolved":
-                ticket.resolved_at = datetime.utcnow()
+                ticket.resolved_at = utcnow()
             else:
                 ticket.resolved_at = None
         elif ticket.status == "open":
@@ -192,7 +196,7 @@ def reply_ticket(ticket_number):
         if ticket.status == "waiting":
             ticket.status = "open"
 
-    ticket.updated_at = datetime.utcnow()
+    ticket.updated_at = utcnow()
     db.session.commit()
     _log("ticket_reply", f"Replied to {ticket_number}")
     flash("Reply added.", "success")
@@ -266,7 +270,7 @@ def assign_ticket(ticket_number):
         assignee = User.query.filter_by(id=assignee_id, role="admin").first()
         if assignee:
             ticket.assigned_to = assignee.id
-            ticket.updated_at = datetime.utcnow()
+            ticket.updated_at = utcnow()
             db.session.commit()
             flash("Ticket assigned.", "success")
         else:
@@ -284,7 +288,7 @@ def close_ticket(ticket_number):
     ticket = SupportTicket.query.filter_by(
         ticket_number=ticket_number).first_or_404()
     ticket.status     = "closed"
-    ticket.updated_at = datetime.utcnow()
+    ticket.updated_at = utcnow()
     db.session.commit()
     _log("close_ticket", ticket_number)
     flash("Ticket closed.", "info")

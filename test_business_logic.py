@@ -15,16 +15,32 @@ class TestGradeCalculation:
 
     @pytest.fixture
     def app_context(self):
-        """Create a test app context with in-memory database"""
+        """Create a test app context with a temporary SQLite file database"""
         app.config['TESTING'] = True
-        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+        temp_db = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        temp_db.close()
+        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{temp_db.name}'
         app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
         with app.app_context():
+            ext = app.extensions.get('sqlalchemy')
+            if ext and hasattr(ext, '_app_engines'):
+                ext._app_engines[app].clear()
+                options = {'url': app.config['SQLALCHEMY_DATABASE_URI'], **ext._engine_options}
+                engine = ext._make_engine(None, options, app)
+                ext._app_engines[app][None] = engine
             db.create_all()
             yield app
             db.session.remove()
             db.drop_all()
+            db.engine.dispose()
+            if ext and hasattr(ext, '_app_engines'):
+                ext._app_engines[app].clear()
+
+        try:
+            os.unlink(temp_db.name)
+        except OSError:
+            pass
 
     @pytest.fixture
     def sample_student(self, app_context):
@@ -116,24 +132,24 @@ class TestGradeCalculation:
         # Add one more to exceed 500
         self.create_assessment(sample_student, 'extra_cat', 30)  # Total would be 510, but only class cats count
 
-        # Class total points = min(500, 480) = 480
-        # Class percentage = 480/500 × 100 = 96%
-        # Class score = min(50, round(96/2)) = min(50, 48) = 48
+        # Class total points = 420 after capping six 50-point categories and keeping 60 for practical and mid_term
+        # Class percentage = 420/500 × 100 = 84%
+        # Class score = min(50, round(84/2)) = 42
 
         # No exam score = 0
 
-        # Final grade = min(100, 48 + 0) = 48
+        # Final grade = 42
 
         final_grade = sample_student.calculate_final_grade()
-        assert final_grade == 48.0
+        assert final_grade == 42.0
 
     def test_calculate_final_grade_exam_score_cap(self, sample_student):
         """Test that exam score is capped at 100 points"""
-        # Create high exam score that should be capped
-        self.create_assessment(sample_student, 'end_term', 120)  # 120/2 = 60, not capped
+        # Create high exam score that should be capped at 100
+        self.create_assessment(sample_student, 'end_term', 120)  # capped to 100
 
         final_grade = sample_student.calculate_final_grade()
-        assert final_grade == 60.0
+        assert final_grade == 50.0
 
     def test_calculate_final_grade_subject_filter(self, sample_student):
         """Test final grade calculation with subject filtering"""
@@ -143,10 +159,10 @@ class TestGradeCalculation:
         self.create_assessment(sample_student, 'end_term', 80, subject="Mathematics")
 
         final_grade = sample_student.calculate_final_grade(subject="Mathematics")
-        # Class: 80/500 × 100 = 16%, score = min(50, round(16/2)) = 8
+        # Class: 80 capped to 50 -> 50/500 × 100 = 10%, score = 5
         # Exam: min(50, round(80/2)) = 40
-        # Final: min(100, 8 + 40) = 48
-        assert final_grade == 48.0
+        # Final: 45
+        assert final_grade == 45.0
 
     def test_calculate_final_grade_teacher_filter(self, sample_student):
         """Test final grade calculation with teacher filtering"""
@@ -156,10 +172,10 @@ class TestGradeCalculation:
         self.create_assessment(sample_student, 'end_term', 80, teacher_id=1)
 
         final_grade = sample_student.calculate_final_grade(teacher_id=1)
-        # Class: 80/500 × 100 = 16%, score = min(50, round(16/2)) = 8
+        # Class: 80 capped to 50 -> 50/500 × 100 = 10%, score = 5
         # Exam: min(50, round(80/2)) = 40
-        # Final: min(100, 8 + 40) = 48
-        assert final_grade == 48.0
+        # Final: 45
+        assert final_grade == 45.0
 
     def test_calculate_final_grade_rounding(self, sample_student):
         """Test that final grade is rounded to 2 decimal places"""
@@ -174,83 +190,93 @@ class TestGradeCalculation:
 
     def test_get_gpa_and_grade_a1(self, sample_student):
         """Test GPA and grade mapping for A1 (80-100%)"""
-        # Create assessment that results in 85% final grade
-        self.create_assessment(sample_student, 'end_term', 170)  # 170/2 = 85, not capped
+        # Create enough class and exam scores to reach A1
+        class_categories = ['ica1', 'ica2', 'icp1', 'icp2', 'gp1', 'gp2']
+        for category in class_categories:
+            self.create_assessment(sample_student, category, 50)
+        self.create_assessment(sample_student, 'practical', 100)
+        self.create_assessment(sample_student, 'mid_term', 100)
+        self.create_assessment(sample_student, 'end_term', 100)
 
         result = sample_student.get_gpa_and_grade()
-        assert result["gpa"] == "4.0"
+        assert result["gpa"] == 4.0
         assert result["grade"] == "A1"
 
     def test_get_gpa_and_grade_b2(self, sample_student):
         """Test GPA and grade mapping for B2 (70-79%)"""
-        # Create assessment that results in 75% final grade
-        self.create_assessment(sample_student, 'end_term', 150)  # 150/2 = 75, capped at 50
+        # Create enough raw scores to produce a 75 final grade
+        for category in ['ica1', 'ica2', 'icp1', 'icp2', 'gp1']:
+            self.create_assessment(sample_student, category, 50)
+        self.create_assessment(sample_student, 'end_term', 100)
 
         result = sample_student.get_gpa_and_grade()
-        assert result["gpa"] == "3.5"
+        assert result["gpa"] == 3.5
         assert result["grade"] == "B2"
 
     def test_get_gpa_and_grade_b3(self, sample_student):
         """Test GPA and grade mapping for B3 (65-69%)"""
-        # Create assessment that results in 67.5% final grade
-        self.create_assessment(sample_student, 'end_term', 135)  # 135/2 = 67.5, capped at 50
+        # Create enough raw scores to produce a 68 final grade
+        for category in ['ica1', 'ica2', 'icp1', 'icp2', 'gp1', 'gp2']:
+            self.create_assessment(sample_student, category, 50)
+        self.create_assessment(sample_student, 'end_term', 70)
 
         result = sample_student.get_gpa_and_grade()
-        assert result["gpa"] == "3.0"
+        assert result["gpa"] == 3.0
         assert result["grade"] == "B3"
 
     def test_get_gpa_and_grade_c4(self, sample_student):
         """Test GPA and grade mapping for C4 (60-64%)"""
-        # Create assessment that results in 62.5% final grade
-        self.create_assessment(sample_student, 'end_term', 125)  # 125/2 = 62.5, capped at 50
+        # Create enough raw scores to produce a 62 final grade
+        for category in ['ica1', 'ica2', 'icp1', 'icp2']:
+            self.create_assessment(sample_student, category, 25)
+        self.create_assessment(sample_student, 'end_term', 100)
 
         result = sample_student.get_gpa_and_grade()
-        assert result["gpa"] == "2.5"
+        assert result["gpa"] == 2.5
         assert result["grade"] == "C4"
 
     def test_get_gpa_and_grade_c5(self, sample_student):
         """Test GPA and grade mapping for C5 (55-59%)"""
-        # Create assessment that results in 57.5% final grade
-        self.create_assessment(sample_student, 'end_term', 115)  # 115/2 = 57.5, capped at 50
+        # Create enough raw scores to produce a 58 final grade
+        for category in ['ica1', 'ica2', 'icp1']:
+            self.create_assessment(sample_student, category, 25)
+        self.create_assessment(sample_student, 'end_term', 100)
 
         result = sample_student.get_gpa_and_grade()
-        assert result["gpa"] == "2.0"
+        assert result["gpa"] == 2.0
         assert result["grade"] == "C5"
 
     def test_get_gpa_and_grade_c6(self, sample_student):
         """Test GPA and grade mapping for C6 (50-54%)"""
-        # Create assessment that results in 52.5% final grade
-        self.create_assessment(sample_student, 'end_term', 105)  # 105/2 = 52.5, capped at 50
+        # Only exam score is enough for C6 when exam is full
+        self.create_assessment(sample_student, 'end_term', 100)
 
         result = sample_student.get_gpa_and_grade()
-        assert result["gpa"] == "1.5"
+        assert result["gpa"] == 1.5
         assert result["grade"] == "C6"
 
     def test_get_gpa_and_grade_d7(self, sample_student):
         """Test GPA and grade mapping for D7 (45-49%)"""
-        # Create assessment that results in 47.5% final grade
-        self.create_assessment(sample_student, 'end_term', 95)  # 95/2 = 47.5, capped at 50
+        self.create_assessment(sample_student, 'end_term', 95)
 
         result = sample_student.get_gpa_and_grade()
-        assert result["gpa"] == "1.0"
+        assert result["gpa"] == 1.0
         assert result["grade"] == "D7"
 
     def test_get_gpa_and_grade_e8(self, sample_student):
         """Test GPA and grade mapping for E8 (40-44%)"""
-        # Create assessment that results in 42.5% final grade
-        self.create_assessment(sample_student, 'end_term', 85)  # 85/2 = 42.5, capped at 50
+        self.create_assessment(sample_student, 'end_term', 85)
 
         result = sample_student.get_gpa_and_grade()
-        assert result["gpa"] == "0.5"
+        assert result["gpa"] == 0.5
         assert result["grade"] == "E8"
 
     def test_get_gpa_and_grade_f9(self, sample_student):
         """Test GPA and grade mapping for F9 (0-39%)"""
-        # Create assessment that results in 37.5% final grade
-        self.create_assessment(sample_student, 'end_term', 75)  # 75/2 = 37.5, capped at 50
+        self.create_assessment(sample_student, 'end_term', 75)
 
         result = sample_student.get_gpa_and_grade()
-        assert result["gpa"] == "0.0"
+        assert result["gpa"] == 0.0
         assert result["grade"] == "F9"
 
     def test_get_gpa_and_grade_no_assessments(self, sample_student):
@@ -314,15 +340,31 @@ class TestGradeCalculation:
 class TestStudentLoginAndQuizAttempt:
     @pytest.fixture
     def app_context(self):
+        temp_db = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        temp_db.close()
         app.config['TESTING'] = True
-        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{temp_db.name}'
         app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
         with app.app_context():
+            ext = app.extensions.get('sqlalchemy')
+            if ext and hasattr(ext, '_app_engines'):
+                ext._app_engines[app].clear()
+                options = {'url': app.config['SQLALCHEMY_DATABASE_URI'], **ext._engine_options}
+                engine = ext._make_engine(None, options, app)
+                ext._app_engines[app][None] = engine
             db.create_all()
             yield app
             db.session.remove()
             db.drop_all()
+            db.engine.dispose()
+            if ext and hasattr(ext, '_app_engines'):
+                ext._app_engines[app].clear()
+
+        try:
+            os.unlink(temp_db.name)
+        except OSError:
+            pass
 
     @pytest.fixture
     def client(self, app_context):
@@ -386,8 +428,7 @@ class TestStudentLoginAndQuizAttempt:
         response = client.post(
             '/student/login',
             data={
-                'username': 'Jane Doe',
-                'password': 'STU999'
+                'identifier': 'STU999'
             },
             follow_redirects=False
         )
@@ -413,8 +454,7 @@ class TestStudentLoginAndQuizAttempt:
         login_response = client.post(
             '/student/login',
             data={
-                'username': 'John Smith',
-                'password': 'STU888'
+                'identifier': 'STU888'
             },
             follow_redirects=False
         )

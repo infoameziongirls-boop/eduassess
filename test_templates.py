@@ -6,7 +6,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from app import app, db
-from models import User, Student, Admin
+from models import User, Student
 from flask_login import login_user
 from flask_bcrypt import Bcrypt
 
@@ -15,6 +15,14 @@ bcrypt = Bcrypt(app)
 def test_all_templates():
     """Test all templates for undefined variables and methods"""
     with app.app_context():
+        ext = app.extensions.get('sqlalchemy')
+        if ext and hasattr(ext, '_app_engines'):
+            ext._app_engines[app].clear()
+            options = {'url': app.config['SQLALCHEMY_DATABASE_URI'], **ext._engine_options}
+            engine = ext._make_engine(None, options, app)
+            ext._app_engines[app][None] = engine
+            db.create_all()
+        
         # Clean up test users
         User.query.filter_by(username='test_admin').delete()
         db.session.commit()

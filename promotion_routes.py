@@ -27,12 +27,16 @@ INSTALLATION (3 steps in app.py):
 """
 
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import (Blueprint, render_template, redirect, url_for,
                    flash, request, abort, current_app)
 from flask_login import login_required, current_user
 
 promotion_bp = Blueprint('promotion', __name__)
+
+
+def utcnow():
+    return datetime.now(timezone.utc)
 
 CLASS_SEQUENCE = ['Form 1', 'Form 2', 'Form 3']
 
@@ -52,7 +56,7 @@ def _next_class(current_class: str):
 def _graduation_label(academic_year: str) -> str:
     if academic_year and '-' in academic_year:
         return f"Graduated {academic_year.split('-')[-1].strip()}"
-    return f"Graduated {datetime.utcnow().year}"
+    return f"Graduated {utcnow().year}"
 
 
 def _gpa_float(gpa_val) -> float:
@@ -228,7 +232,7 @@ def promote_class_view():
         next_academic_year=next_academic_year,
         terms=current_app.config.get('TERMS', []),
         promotion_history=promotion_history,
-        now=datetime.utcnow(),
+        now=utcnow(),
     )
 
 
@@ -341,7 +345,7 @@ def order_of_merit():
         selected_class_label=selected_class_label,
         current_academic_year=current_ay,
         subjects=_all_subjects(),
-        now=datetime.utcnow(),
+        now=utcnow(),
     )
 
 
@@ -390,5 +394,5 @@ def order_of_merit_print():
         selected_class_label=selected_class_label,
         current_academic_year=current_ay,
         subjects=_all_subjects(),
-        now=datetime.utcnow(),
+        now=utcnow(),
     )

@@ -8,7 +8,7 @@ import json
 from functools import wraps
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
-from datetime import datetime
+from datetime import datetime, timezone
 
 import openpyxl
 from openpyxl.styles import PatternFill, Border, Side, Alignment, Font
@@ -67,6 +67,10 @@ ASSESSMENT_WEIGHTS = {
 }
 
 ASSESSMENTS_PER_PAGE = 20
+
+
+def utcnow():
+    return datetime.now(timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -846,7 +850,7 @@ def inject_config():
         'ASSESSMENT_WEIGHTS': app.config['ASSESSMENT_WEIGHTS'],
         'LEARNING_AREAS':     app.config['LEARNING_AREAS'],
         'CLASS_LEVELS':       app.config['CLASS_LEVELS'],
-        'now':                datetime.utcnow(),
+        'now':                utcnow(),
     }
 
 
@@ -894,7 +898,7 @@ def health_check():
     return jsonify({
         'status': 'ok' if db_status == 'healthy' else 'error',
         'database': db_status,
-        'timestamp': datetime.utcnow().isoformat(),
+        'timestamp': utcnow().isoformat(),
     })
 
 
@@ -1809,12 +1813,50 @@ def assessment_delete(assessment_id):
     if not (current_user.is_admin() or
             (current_user.is_teacher() and a.teacher_id == current_user.id)):
         abort(403)
-    sid  = a.student_id
-    name = a.student.full_name()
-    db.session.delete(a)
-    cache.delete("incomplete_assessments")
-    db.session.commit()
-    log_activity(current_user, 'delete_assessment', f'Deleted assessment for {name}')
+
+    wants_json = (
+        request.headers.get('Accept', '').find('application/json') != -1 or
+        request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    )
+
+    try:
+        sid = a.student_id
+        student = a.student
+        student_name = student.full_name() if student else f'student #{sid}'
+    except Exception:
+        sid = a.student_id
+        student_name = f'student #{sid}'
+
+    try:
+        db.session.delete(a)
+        db.session.commit()
+        cache.delete("incomplete_assessments")
+        log_activity(current_user, 'delete_assessment',
+                     f'Deleted assessment for {student_name}')
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        app.logger.error('assessment_delete(%d): %s', assessment_id, exc)
+        msg = 'Database error — assessment could not be deleted. Please try again.'
+        if wants_json:
+            return jsonify({'success': False, 'message': msg}), 500
+        flash(msg, 'danger')
+        return redirect(request.referrer or url_for('assessments_list'))
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.error('assessment_delete(%d) unexpected: %s', assessment_id, exc)
+        msg = 'Unexpected error — assessment could not be deleted.'
+        if wants_json:
+            return jsonify({'success': False, 'message': msg}), 500
+        flash(msg, 'danger')
+        return redirect(request.referrer or url_for('assessments_list'))
+
+    if wants_json:
+        return jsonify({
+            'success': True,
+            'message': f'Assessment deleted for {student_name}.',
+            'redirect': url_for('student_view', student_id=sid),
+        })
+
     flash('Assessment deleted', 'info')
     return redirect(url_for('student_view', student_id=sid))
 
@@ -1960,18 +2002,34 @@ def assessment_bulk_action():
     if current_user.is_teacher():
         q = q.filter_by(teacher_id=current_user.id)
     items = q.all()
-    if action == 'archive':
-        for a in items: a.archived = True
-    elif action == 'unarchive':
-        for a in items: a.archived = False
-    else:
-        if not current_user.is_admin(): abort(403)
-        for a in items: db.session.delete(a)
-    cache.delete("incomplete_assessments")
-    db.session.commit()
-    log_activity(current_user, f'bulk_{action}',
-                 f'{action}d {len(items)} assessments')
-    flash(f'Successfully {action}d {len(items)} assessments.', 'success')
+
+    try:
+        if action == 'archive':
+            for a in items:
+                a.archived = True
+        elif action == 'unarchive':
+            for a in items:
+                a.archived = False
+        else:
+            if not current_user.is_admin():
+                abort(403)
+            for a in items:
+                db.session.delete(a)
+
+        db.session.commit()
+        cache.delete("incomplete_assessments")
+        log_activity(current_user, f'bulk_{action}',
+                     f'{action}d {len(items)} assessments')
+        flash(f'Successfully {action}d {len(items)} assessments.', 'success')
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        app.logger.error('assessment_bulk_action(%s): %s', action, exc)
+        flash('Database error during bulk action. Please try again.', 'danger')
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.error('assessment_bulk_action(%s) unexpected: %s', action, exc)
+        flash('Unexpected error during bulk action.', 'danger')
+
     return redirect(request.referrer or url_for('assessments_list'))
 
 
@@ -2796,7 +2854,7 @@ def edit_question(question_id):
                                    if form.question_type.data == 'short_answer' else None)
         question.difficulty     = form.difficulty.data
         question.explanation    = form.explanation.data
-        question.updated_at     = datetime.utcnow()
+        question.updated_at     = utcnow()
         db.session.commit()
         flash('Question updated', 'success')
         return redirect(url_for('teacher_question_bank'))
@@ -3184,7 +3242,7 @@ def take_quiz(quiz_id):
             score=0.0, total_questions=len(quiz.questions),
             correct_answers=0,
             remaining_time=quiz.time_limit * 60 if quiz.time_limit else None,
-            started_at=datetime.utcnow(),
+            started_at=utcnow(),
         )
         db.session.add(attempt)
         db.session.commit()
@@ -3222,7 +3280,7 @@ def take_quiz(quiz_id):
             ))
         attempt.score          = total_score
         attempt.correct_answers = sum(1 for r in qr.values() if r['score'] > 0)
-        attempt.completed_at   = datetime.utcnow()
+        attempt.completed_at   = utcnow()
         attempt.time_taken     = (int((attempt.completed_at -
                                        attempt.started_at).total_seconds())
                                   if attempt.started_at else 0)
@@ -3234,7 +3292,7 @@ def take_quiz(quiz_id):
             'score': total_score, 'total_marks': total_marks,
             'percentage': round((total_score / total_marks) * 100, 1)
                           if total_marks else 0,
-            'completed_at': datetime.utcnow().timestamp(),
+            'completed_at': utcnow().timestamp(),
             'question_results': qr,
         }
         session.modified = True

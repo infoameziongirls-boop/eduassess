@@ -6,7 +6,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app import app, db, canonical_class_key, canonical_study_area_key
-from models import Student, User
+from models import Student, User, Assessment
 
 
 @pytest.fixture(scope="function")
@@ -17,10 +17,18 @@ def app_context():
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     with app.app_context():
+        ext = app.extensions.get('sqlalchemy')
+        if ext and hasattr(ext, '_app_engines'):
+            ext._app_engines[app].clear()
+            options = {'url': app.config['SQLALCHEMY_DATABASE_URI'], **ext._engine_options}
+            engine = ext._make_engine(None, options, app)
+            ext._app_engines[app][None] = engine
         db.create_all()
         yield app
         db.session.remove()
         db.drop_all()
+        if ext and hasattr(ext, '_app_engines'):
+            ext._app_engines[app].clear()
 
 
 @pytest.fixture(scope="function")
@@ -53,6 +61,43 @@ def login_as(client, user):
     with client.session_transaction() as sess:
         sess['_user_id'] = str(user.id)
         sess['_fresh'] = True
+
+
+def test_teacher_can_delete_assessment(client):
+    teacher = User(username='teacher_test', password_hash='x', role='teacher', subject='Mathematics')
+    db.session.add(teacher)
+    student = Student(
+        student_number='STU_DEL',
+        first_name='Delete',
+        last_name='Tester',
+        reference_number='REFDEL',
+        class_name='Form 1',
+        study_area='Mathematics'
+    )
+    db.session.add(student)
+    db.session.commit()
+
+    assessment = Assessment(
+        student_id=student.id,
+        category='ica1',
+        subject='Mathematics',
+        class_name='Form 1',
+        score=45.0,
+        max_score=50.0,
+        teacher_id=teacher.id
+    )
+    db.session.add(assessment)
+    db.session.commit()
+
+    login_as(client, teacher)
+    response = client.post(
+        f'/assessments/{assessment.id}/delete',
+        follow_redirects=False
+    )
+
+    assert response.status_code == 302
+    assert response.headers['Location'].endswith(f'/students/{student.id}')
+    assert Assessment.query.get(assessment.id) is None
 
 
 def test_student_login_get_shows_form(client):
