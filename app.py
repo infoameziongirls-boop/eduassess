@@ -1005,12 +1005,16 @@ def dashboard():
     student_count    = Student.query.count()
     assessment_count = Assessment.query.filter_by(archived=False).count()
     users_count      = User.query.count()
-    incomplete_list  = get_incomplete_assessments()
 
-    if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
+    if current_user.is_teacher():
+        incomplete_list = get_incomplete_assessments()
         assigned = set(current_user.get_assigned_study_areas())
         if assigned:
             incomplete_list = [i for i in incomplete_list if i['subject'] in assigned]
+    else:
+        incomplete_list = []   # Admin sees full picture on tracker dashboard
+
+    if current_user.is_teacher():
         recent = (Assessment.query
                   .options(joinedload(Assessment.student))
                   .filter_by(teacher_id=current_user.id, archived=False)
@@ -3787,6 +3791,284 @@ def teacher_assessments_api():
          'date': a.date_recorded.strftime('%Y-%m-%d')}
         for a in assessments
     ]})
+
+
+# ---------------------------------------------------------------------------
+# Admin: Teacher Assessment Tracking Dashboard
+# ---------------------------------------------------------------------------
+@app.route('/admin/teacher-tracking')
+@login_required
+@admin_required
+def admin_teacher_tracking():
+    """
+    Admin dashboard showing, per teacher:
+      • Overall completion % (progress bar)
+      • Per-category filled / total students
+      • Per-student breakdown (expandable)
+      • Aggregated KPIs across all teachers
+      • "Prompt teacher" button that pre-fills a reminder message
+    """
+    from sqlalchemy import func
+
+    # ── Query params / filters ────────────────────────────────────────────
+    selected_subject = request.args.get('subject', '').strip()
+    selected_class   = request.args.get('class_filter', '').strip()
+    selected_status  = request.args.get('status', '').strip()
+    search_query     = request.args.get('search', '').strip()
+
+    # ── Required categories (same set used in get_incomplete_assessments) ─
+    REQUIRED_CATS = [
+        'ica1', 'ica2', 'icp1', 'icp2',
+        'gp1', 'gp2', 'practical', 'mid_term', 'end_term',
+    ]
+    n_required = len(REQUIRED_CATS)  # 9
+
+    # ── Avatar colours (rotate by teacher id) ────────────────────────────
+    AVATAR_COLORS = [
+        '#4f8ef7', '#34d399', '#f59e0b', '#f87171',
+        '#a78bfa', '#38bdf8', '#fb923c', '#e879f9',
+    ]
+
+    # ── Fetch all teachers ────────────────────────────────────────────────
+    teacher_q = User.query.filter_by(role='teacher').order_by(User.username)
+    if search_query:
+        teacher_q = teacher_q.filter(User.username.ilike(f'%{search_query}%'))
+    if selected_subject:
+        teacher_q = teacher_q.filter_by(subject=selected_subject)
+    teachers = teacher_q.all()
+
+    # ── Build subject label map ───────────────────────────────────────────
+    subject_label_map = dict(app.config.get('LEARNING_AREAS', []))
+
+    # ── Prefetch ALL non-archived assessments in one query ────────────────
+    # (avoids N+1 queries — we'll slice per teacher below)
+    teacher_ids = [t.id for t in teachers]
+    all_assessments = (
+        Assessment.query
+        .filter(
+            Assessment.teacher_id.in_(teacher_ids),
+            Assessment.archived == False,
+        )
+        .with_entities(
+            Assessment.teacher_id,
+            Assessment.student_id,
+            Assessment.subject,
+            Assessment.category,
+            Assessment.date_recorded,
+        )
+        .all()
+    )
+
+    # Index: teacher_id → list of assessment rows
+    from collections import defaultdict
+    assess_by_teacher = defaultdict(list)
+    for row in all_assessments:
+        assess_by_teacher[row.teacher_id].append(row)
+
+    # ── Prefetch students visible to each teacher ─────────────────────────
+    # We call get_teacher_students_query() per teacher but batch-cache students
+    all_student_ids = set()
+    teacher_student_ids = {}  # teacher_id → set of student ids
+    for teacher in teachers:
+        q = get_teacher_students_query(teacher)
+        if q is None:
+            teacher_student_ids[teacher.id] = set()
+            continue
+        if selected_class:
+            q = q.filter_by(class_name=selected_class)
+        sids = {s.id for s in q.with_entities(Student.id).all()}
+        teacher_student_ids[teacher.id] = sids
+        all_student_ids.update(sids)
+
+    student_map = {
+        s.id: s
+        for s in Student.query.filter(Student.id.in_(all_student_ids)).all()
+    } if all_student_ids else {}
+
+    # ── Build per-teacher data rows ───────────────────────────────────────
+    teacher_rows = []
+    agg_filed      = 0
+    agg_missing    = 0
+    agg_full       = 0
+    agg_partial    = 0
+    agg_none       = 0
+
+    for teacher in teachers:
+        sids        = teacher_student_ids.get(teacher.id, set())
+        student_count = len(sids)
+
+        # Filter assessments to this teacher + optionally a subject
+        rows = assess_by_teacher.get(teacher.id, [])
+        if selected_subject:
+            rows = [r for r in rows if r.subject == selected_subject]
+        # Only keep rows for students in this teacher's scope
+        rows = [r for r in rows if r.student_id in sids]
+
+        # Build: { student_id: { category: True } }
+        stu_cats = defaultdict(set)
+        for r in rows:
+            stu_cats[r.student_id].add(r.category)
+
+        # Category stats: { cat_key: { filled, total } }
+        category_stats = {}
+        for cat in REQUIRED_CATS:
+            filled = sum(1 for sid in sids if cat in stu_cats[sid])
+            category_stats[cat] = {'filled': filled, 'total': student_count}
+
+        # Overall completion %
+        total_slots  = student_count * n_required
+        filled_slots = sum(len(stu_cats[sid] & set(REQUIRED_CATS)) for sid in sids)
+        completion_pct = round((filled_slots / total_slots) * 100) if total_slots else 0
+
+        # Per-student breakdown
+        student_breakdown = []
+        for sid in sorted(sids):
+            s = student_map.get(sid)
+            if not s:
+                continue
+            fc  = stu_cats[sid] & set(REQUIRED_CATS)
+            pct = round((len(fc) / n_required) * 100)
+            student_breakdown.append({
+                'student': {
+                    'id': s.id,
+                    'full_name': s.full_name(),
+                    'student_number': s.student_number,
+                },
+                'filled_cats': list(fc),
+                'pct': pct,
+            })
+        # sort: incomplete first
+        student_breakdown.sort(key=lambda x: x['pct'])
+
+        # Missing categories (at least one student hasn't filled them)
+        missing_cats = [
+            cat for cat in REQUIRED_CATS
+            if category_stats[cat]['filled'] < student_count
+        ]
+
+        # Student-level counts
+        fully_complete_students = sum(
+            1 for sid in sids
+            if len(stu_cats[sid] & set(REQUIRED_CATS)) == n_required
+        )
+        incomplete_students = student_count - fully_complete_students
+
+        # Last assessment date for this teacher
+        dated = [r.date_recorded for r in rows if r.date_recorded]
+        last_activity = max(dated) if dated else None
+
+        agg_filed   += filled_slots
+        agg_missing += (total_slots - filled_slots)
+        if completion_pct == 100:
+            agg_full += 1
+        elif completion_pct > 0:
+            agg_partial += 1
+        else:
+            agg_none += 1
+
+        teacher_rows.append({
+            'teacher': {
+                'id': teacher.id,
+                'username': teacher.username,
+                'subject': teacher.subject,
+            },
+            'subject_label':           subject_label_map.get(teacher.subject or '', teacher.subject or '—'),
+            'classes':                 teacher.get_classes_list(),
+            'student_count':           student_count,
+            'completion_pct':          completion_pct,
+            'category_stats':          category_stats,
+            'student_breakdown':       student_breakdown,
+            'missing_categories':      missing_cats,
+            'fully_complete_students': fully_complete_students,
+            'incomplete_students':     incomplete_students,
+            'last_activity':           last_activity.strftime('%Y-%m-%d %H:%M') if last_activity else None,
+            'avatar_color':            AVATAR_COLORS[teacher.id % len(AVATAR_COLORS)],
+        })
+
+    # ── Apply completion-status filter ────────────────────────────────────
+    if selected_status == 'complete':
+        teacher_rows = [r for r in teacher_rows if r['completion_pct'] == 100]
+    elif selected_status == 'partial':
+        teacher_rows = [r for r in teacher_rows if 0 < r['completion_pct'] < 100]
+    elif selected_status == 'not_started':
+        teacher_rows = [r for r in teacher_rows if r['completion_pct'] == 0]
+
+    # Sort: least complete first (most urgent at the top)
+    teacher_rows.sort(key=lambda r: r['completion_pct'])
+
+    stats = {
+        'total_teachers':         len(teachers),
+        'fully_complete':         agg_full,
+        'partially_done':         agg_partial,
+        'not_started':            agg_none,
+        'total_assessments_filed': agg_filed,
+        'total_missing_slots':    agg_missing,
+    }
+
+    # Friendly category labels for the template (ordered)
+    category_labels = {k: v for k, v in CATEGORY_LABELS.items() if k in REQUIRED_CATS}
+
+    return render_template(
+        'teacher_assessment_tracker_dashboard.html',
+        teacher_rows=teacher_rows,
+        stats=stats,
+        category_labels=category_labels,
+        learning_areas=app.config.get('LEARNING_AREAS', []),
+        class_levels=app.config.get('CLASS_LEVELS', []),
+        selected_subject=selected_subject,
+        selected_class=selected_class,
+        selected_status=selected_status,
+        search_query=search_query,
+        REQUIRED_CATS=REQUIRED_CATS,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Admin: Send a prompt / reminder message to a teacher (from tracking board)
+# ---------------------------------------------------------------------------
+@app.route('/admin/send-prompt', methods=['POST'])
+@login_required
+@admin_required
+def admin_send_prompt():
+    """
+    Sends a pre-filled reminder message from the Teacher Tracking dashboard
+    directly to the teacher's inbox (re-uses the existing Message model).
+    """
+    teacher_id = request.form.get('teacher_id', type=int)
+    message_text = (request.form.get('message') or '').strip()
+
+    if not teacher_id or not message_text:
+        flash('Invalid prompt request.', 'danger')
+        return redirect(url_for('admin_teacher_tracking'))
+
+    teacher = User.query.get(teacher_id)
+    if not teacher or not teacher.is_teacher():
+        flash('Teacher not found.', 'danger')
+        return redirect(url_for('admin_teacher_tracking'))
+
+    try:
+        msg = Message(
+            sender_id=current_user.id,
+            recipient_id=teacher.id,
+            subject='📋 Assessment Reminder — Action Required',
+            content=message_text,
+            message_type='alert',
+            is_broadcast=False,
+        )
+        db.session.add(msg)
+        db.session.commit()
+        log_activity(
+            current_user,
+            'prompt_teacher',
+            f'Sent assessment reminder to {teacher.username}',
+        )
+        flash(f'Reminder sent to {teacher.username}.', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.error('admin_send_prompt: %s', exc)
+        flash('Could not send message. Please try again.', 'danger')
+
+    return redirect(url_for('admin_teacher_tracking'))
 
 
 # ---------------------------------------------------------------------------

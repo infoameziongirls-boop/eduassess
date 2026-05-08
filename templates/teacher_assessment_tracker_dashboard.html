@@ -1,0 +1,310 @@
+﻿{% extends "base.html" %}
+{% block title %}Teacher Assessment Tracker{% endblock %}
+{% block page_title %}Teacher Assessment Tracker{% endblock %}
+
+{% block content %}
+<style>
+.tracker-shell{animation:fadeInUp .35s ease both;padding:1rem 0 2rem}
+.tracker-topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:1.5rem}
+.eyebrow{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.18em;color:#378ADD;margin-bottom:8px}
+.tracker-title{font-size:26px;font-weight:700;line-height:1.05;color:var(--color-text-primary);max-width:680px}
+.tracker-copy{font-size:14px;color:var(--color-text-secondary);max-width:640px;line-height:1.7;margin-top:6px}
+.tracker-actions{display:flex;gap:10px;flex-wrap:wrap}
+.view-btn{font-size:13px;padding:10px 18px;border-radius:999px;border:1px solid var(--color-border-tertiary);background:var(--color-background-primary);color:var(--color-text-primary);cursor:pointer;transition:all .2s}
+.view-btn.active{background:#378ADD;color:#fff;border-color:#378ADD}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:1.5rem}
+.stat-card{background:var(--color-background-primary);border:1px solid transparent;border-radius:1rem;padding:18px 20px;box-shadow:0 16px 40px rgba(0,0,0,.05);transition:transform .25s,border-color .25s}
+.stat-card:hover{transform:translateY(-2px);border-color:rgba(55,138,221,.16)}
+.stat-value{font-size:28px;font-weight:700;display:block;margin-bottom:6px}
+.stat-label{font-size:12px;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.08em}
+.stat-note{display:block;margin-top:10px;font-size:12px;color:var(--color-text-secondary)}
+.controls-panel{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:1.5rem}
+.filters-row{display:grid;grid-template-columns:1fr repeat(3,220px);gap:12px;align-items:end}
+@media(max-width:960px){.filters-row{grid-template-columns:1fr;}}
+.filter-block{display:flex;flex-direction:column;gap:6px}
+.filter-block label{font-size:11px;color:var(--color-text-secondary);font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+.filter-block input,.filter-block select{font-size:13px;padding:12px 14px;border:1px solid var(--color-border-tertiary);border-radius:14px;background:var(--color-background-primary);color:var(--color-text-primary)}
+.board-wrap{display:grid;gap:16px}
+.cards-view{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+.card-empty{padding:3rem 1.5rem;text-align:center;color:var(--color-text-secondary);border:1px dashed var(--color-border-tertiary);border-radius:1rem;background:var(--color-background-primary)}
+.t-card{background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:1.25rem;overflow:hidden;box-shadow:0 18px 45px rgba(0,0,0,.06);transition:transform .25s,border-color .25s}
+.t-card:hover{transform:translateY(-2px);border-color:rgba(55,138,221,.18)}
+.top-accent{height:4px;width:100%;background:#378ADD;transition:all .3s}
+.t-card-inner{padding:1.35rem 1.4rem}
+.t-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:14px}
+.avatar{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0}
+.t-meta{flex:1;min-width:0}
+.t-name{font-size:16px;font-weight:700;line-height:1.1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.t-subject{font-size:12px;color:var(--color-text-secondary);margin-top:6px;line-height:1.5}
+.t-pct-wrap{text-align:right;flex-shrink:0}
+.t-pct{font-size:22px;font-weight:700;line-height:1}
+.t-pct-lbl{font-size:11px;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.08em}
+.prog-bar-bg{height:8px;background:var(--color-background-secondary);border-radius:999px;overflow:hidden;margin-bottom:12px}
+.prog-bar-fill{height:100%;border-radius:999px;width:0;transition:width .9s ease}
+.students-row{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--color-text-secondary);gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.cats-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}
+.cat-chip{border-radius:14px;padding:10px 12px;font-size:11px;text-align:center;border:1px solid}
+.cat-chip-name{display:block;font-weight:700;margin-bottom:4px}
+.cat-chip-val{font-size:11px;opacity:.85}
+.cat-done{background:#EAF3DE;border-color:#C0DD97;color:#3B6D11}
+.cat-partial{background:#FAEEDA;border-color:#FAC775;color:#854F0B}
+.cat-empty{background:#FCEBEB;border-color:#F7C1C1;color:#A32D2D}
+.t-footer{display:flex;align-items:center;justify-content:space-between;padding:14px 1.35rem 14px;border-top:1px solid var(--color-border-tertiary);background:var(--color-background-secondary);gap:12px;flex-wrap:wrap}
+.t-footer-lbl{font-size:11px;color:var(--color-text-secondary)}
+.prompt-btn{font-size:12px;padding:10px 16px;border-radius:999px;border:none;background:#378ADD;color:#fff;cursor:pointer;transition:all .2s;box-shadow:0 14px 25px rgba(55,138,221,.18)}
+.prompt-btn:hover{transform:translateY(-1px);background:#2d6fb5}
+.expand-btn{width:100%;font-size:12px;padding:12px;border:none;border-top:1px solid var(--color-border-tertiary);background:var(--color-background-primary);color:var(--color-text-secondary);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:background .2s}
+.expand-btn:hover{background:var(--color-background-secondary)}
+.expand-btn .ti{transition:transform .25s}
+.expand-btn.open .ti{transform:rotate(180deg)}
+.breakdown{display:none;padding:1rem 1.35rem 1.2rem;border-top:1px solid var(--color-border-tertiary);animation:slideDown .2s ease}
+.breakdown.open{display:block}
+@keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+.bd-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--color-border-tertiary);flex-wrap:wrap}
+.bd-row:last-child{border-bottom:none}
+.bd-name{flex:1;font-size:12px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--color-text-primary)}
+.bd-num{font-size:11px;color:var(--color-text-secondary);width:40px;text-align:right;flex-shrink:0}
+.mini-dots{display:flex;gap:4px;flex-shrink:0}
+.dot{width:8px;height:8px;border-radius:50%}
+.dot-done{background:#639922}.dot-missing{background:#A32D2D}
+.heatmap-view{background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:1.25rem;padding:1.4rem}
+.heatmap-panel .section-label{margin-bottom:14px}
+.hm-table{width:100%;border-collapse:collapse;font-size:12px}
+.hm-table th,.hm-table td{border:1px solid var(--color-border-tertiary);padding:10px;text-align:center}
+.hm-table th{background:var(--color-background-secondary);color:var(--color-text-secondary);font-size:11px;line-height:1.3}
+.hm-row-label{text-align:left;color:var(--color-text-primary)}
+.hm-status{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-top:18px;font-size:12px;color:var(--color-text-secondary)}
+.hm-legend{display:flex;align-items:center;gap:8px}
+.hm-dot{width:12px;height:12px;border-radius:3px;display:inline-block}
+.modal-wrap{display:none;position:fixed;inset:0;background:rgba(0,0,0,.32);z-index:100;align-items:center;justify-content:center;padding:16px}
+.modal-wrap.open{display:flex}
+.modal{background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:1rem;max-width:520px;width:100%;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.18)}
+.modal-header{padding:20px 24px;border-bottom:1px solid var(--color-border-tertiary)}
+.modal-header h3{font-size:18px;font-weight:700;color:var(--color-text-primary)}
+.modal-body{padding:18px 24px}
+.modal-body p{margin-bottom:16px;font-size:13px;color:var(--color-text-secondary);line-height:1.7}
+.modal-body textarea{width:100%;min-height:150px;padding:14px;border:1px solid var(--color-border-tertiary);border-radius:16px;background:var(--color-background-secondary);color:var(--color-text-primary);font-size:13px;line-height:1.6;resize:vertical}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;padding:18px 24px;border-top:1px solid var(--color-border-tertiary);background:var(--color-background-primary)}
+.button-secondary,.button-primary{font-size:13px;padding:10px 16px;border-radius:999px;cursor:pointer;border:none}
+.button-secondary{background:var(--color-background-secondary);color:var(--color-text-secondary)}
+.button-primary{background:#378ADD;color:#fff;box-shadow:0 14px 35px rgba(55,138,221,.18)}
+.button-primary:hover{background:#2d6fb5}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--color-text-primary);color:var(--color-background-primary);padding:12px 18px;border-radius:16px;font-size:13px;opacity:0;transform:translateY(12px);transition:all .25s;pointer-events:none;z-index:999}
+.toast.show{opacity:1;transform:none}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+</style>
+
+<div class="tracker-shell">
+  <section class="tracker-topbar">
+    <div>
+      <div class="eyebrow">Admin Dashboard</div>
+      <h1 class="tracker-title">Teacher Assessment Tracker</h1>
+      <p class="tracker-copy">Monitor teacher progress, send reminders, and track assessment completion across all subjects and classes.</p>
+    </div>
+    <div class="tracker-actions">
+      <a href="{{ url_for('export_csv') }}" class="view-btn">
+        <i class="bi bi-file-earmark-text me-2"></i>Export CSV
+      </a>
+    </div>
+  </section>
+
+  <!-- Stats Overview -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <span class="stat-value">{{ stats.total_teachers }}</span>
+      <span class="stat-label">Total Teachers</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ stats.fully_complete }}</span>
+      <span class="stat-label">Fully Complete</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ stats.partially_done }}</span>
+      <span class="stat-label">Partially Done</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">{{ stats.not_started }}</span>
+      <span class="stat-label">Not Started</span>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="controls-panel">
+    <form method="GET" action="{{ url_for('admin_teacher_tracking') }}" class="filters-row">
+      <div class="filter-block">
+        <label>Subject</label>
+        <select name="subject">
+          <option value="">All Subjects</option>
+          {% for area in learning_areas %}
+          <option value="{{ area[0] }}" {% if selected_subject == area[0] %}selected{% endif %}>{{ area[1] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="filter-block">
+        <label>Class</label>
+        <select name="class_filter">
+          <option value="">All Classes</option>
+          {% for level in class_levels %}
+          <option value="{{ level }}" {% if selected_class == level %}selected{% endif %}>{{ level }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="filter-block">
+        <label>Status</label>
+        <select name="status">
+          <option value="">All Status</option>
+          <option value="complete" {% if selected_status == 'complete' %}selected{% endif %}>Complete</option>
+          <option value="partial" {% if selected_status == 'partial' %}selected{% endif %}>Partial</option>
+          <option value="not_started" {% if selected_status == 'not_started' %}selected{% endif %}>Not Started</option>
+        </select>
+      </div>
+      <div class="filter-block">
+        <label>Search</label>
+        <input type="text" name="search" value="{{ search_query }}" placeholder="Teacher name...">
+      </div>
+      <div class="filter-block" style="justify-content:flex-end">
+        <button type="submit" class="view-btn active">Apply Filters</button>
+        <a href="{{ url_for('admin_teacher_tracking') }}" class="view-btn" style="margin-left:8px">Reset</a>
+      </div>
+    </form>
+  </div>
+
+  <!-- Teacher Cards -->
+  <div class="board-wrap">
+    <div class="cards-view">
+      {% for teacher_row in teacher_rows %}
+      <div class="t-card">
+        <div class="top-accent" style="background:{{ teacher_row.avatar_color }}"></div>
+        <div class="t-card-inner">
+          <div class="t-head">
+            <div class="avatar" style="background:{{ teacher_row.avatar_color }}">{{ teacher_row.teacher.username[0].upper() }}</div>
+            <div class="t-meta">
+              <div class="t-name">{{ teacher_row.teacher.username }}</div>
+              <div class="t-subject">{{ teacher_row.subject_label }}</div>
+            </div>
+            <div class="t-pct-wrap">
+              <div class="t-pct">{{ teacher_row.completion_pct }}%</div>
+              <div class="t-pct-lbl">Complete</div>
+            </div>
+          </div>
+
+          <div class="prog-bar-bg">
+            <div class="prog-bar-fill" style="width:{{ teacher_row.completion_pct }}%;background:{{ teacher_row.avatar_color }}"></div>
+          </div>
+
+          <div class="students-row">
+            <span>{{ teacher_row.student_count }} students</span>
+            <span>{{ teacher_row.fully_complete_students }} complete • {{ teacher_row.incomplete_students }} incomplete</span>
+          </div>
+
+          <!-- Category Breakdown -->
+          <div class="cats-grid">
+            {% for cat_key, cat_data in teacher_row.category_stats.items() %}
+            <div class="cat-chip {% if cat_data.filled == cat_data.total %}cat-done{% elif cat_data.filled > 0 %}cat-partial{% else %}cat-empty{% endif %}">
+              <span class="cat-chip-name">{{ category_labels.get(cat_key, cat_key) }}</span>
+              <span class="cat-chip-val">{{ cat_data.filled }}/{{ cat_data.total }}</span>
+            </div>
+            {% endfor %}
+          </div>
+
+          {% if teacher_row.missing_categories %}
+          <div style="background:#FCEBEB;border:1px solid #F7C1C1;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:11px;color:#A32D2D">
+            Missing: {{ teacher_row.missing_categories|join(', ') }}
+          </div>
+          {% endif %}
+
+          {% if teacher_row.last_activity %}
+          <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:12px">
+            Last activity: {{ teacher_row.last_activity }}
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="t-footer">
+          <span class="t-footer-lbl">{{ teacher_row.classes|join(', ') }}</span>
+          <div>
+            <button class="prompt-btn" onclick="openModal({{ teacher_row.teacher.id }}, '{{ teacher_row.teacher.username }}')">
+              Send Reminder
+            </button>
+            <button class="expand-btn" onclick="toggleBreakdown(this)">
+              <span>View Students</span>
+              <span class="ti">▼</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Student Breakdown -->
+        <div class="breakdown">
+          {% for student_data in teacher_row.student_breakdown %}
+          <div class="bd-row">
+            <span class="bd-name">{{ student_data.student.full_name }}</span>
+            <span class="bd-num">{{ student_data.pct }}%</span>
+            <div class="mini-dots">
+              {% for cat in REQUIRED_CATS %}
+              <div class="dot {% if cat in student_data.filled_cats %}dot-done{% else %}dot-missing{% endif %}"></div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if not teacher_rows %}
+    <div class="card-empty">
+      <h3>No teachers found</h3>
+      <p>Try adjusting the filters above or <a href="{{ url_for('admin_teacher_tracking') }}">reset all filters</a>.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Prompt Modal -->
+<div class="modal-wrap" id="promptModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Send Assessment Reminder</h3>
+      <button onclick="closeModal()" style="background:none;border:none;font-size:20px;cursor:pointer">×</button>
+    </div>
+    <form method="POST" action="{{ url_for('admin_send_prompt') }}">
+      <div class="modal-body">
+        <input type="hidden" name="teacher_id" id="modalTeacherId">
+        <p>Send a reminder to <strong id="modalTeacherName"></strong> about completing assessments.</p>
+        <textarea name="message" placeholder="Please complete the outstanding assessments for your students..." required></textarea>
+      </div>
+      <div class="modal-actions">
+        <button type="button" onclick="closeModal()" class="button-secondary">Cancel</button>
+        <button type="submit" class="button-primary">Send Reminder</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openModal(teacherId, teacherName) {
+  document.getElementById('modalTeacherId').value = teacherId;
+  document.getElementById('modalTeacherName').textContent = teacherName;
+  document.getElementById('promptModal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('promptModal').classList.remove('open');
+}
+
+function toggleBreakdown(button) {
+  const card = button.closest('.t-card');
+  const breakdown = card.querySelector('.breakdown');
+  breakdown.classList.toggle('open');
+  button.classList.toggle('open');
+}
+
+// Close modal when clicking outside
+document.getElementById('promptModal').addEventListener('click', function(e) {
+  if (e.target === this) {
+    closeModal();
+  }
+});
+</script>
+
+{% endblock %}

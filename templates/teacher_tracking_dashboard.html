@@ -1,0 +1,1380 @@
+{% extends "base.html" %}
+{% block title %}Teacher Assessment Tracker{% endblock %}
+
+{% block head %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   TEACHER TRACKING DASHBOARD — Full Professional UI
+   Integrates with your existing base.html / Bootstrap stack
+   ============================================================ */
+
+:root {
+  --tk-green:   #16a34a;
+  --tk-green-bg:#dcfce7;
+  --tk-amber:   #d97706;
+  --tk-amber-bg:#fef3c7;
+  --tk-red:     #dc2626;
+  --tk-red-bg:  #fee2e2;
+  --tk-blue:    #2563eb;
+  --tk-blue-bg: #dbeafe;
+  --tk-purple:  #7c3aed;
+  --tk-surface: #f8fafc;
+  --tk-border:  #e2e8f0;
+  --tk-text:    #0f172a;
+  --tk-muted:   #64748b;
+  --tk-radius:  12px;
+  --tk-card-shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.04);
+  --tk-card-shadow-hover: 0 4px 12px rgba(0,0,0,.08), 0 12px 32px rgba(0,0,0,.06);
+}
+
+/* Page wrapper */
+.tk-wrap {
+  max-width: 1340px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+  font-family: 'Inter', -apple-system, sans-serif;
+  color: var(--tk-text);
+}
+
+/* ── Page header ──────────────────────────────── */
+.tk-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+.tk-header-left .tk-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  margin: 0 0 4px;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.tk-header-left .tk-title span.tk-badge-term {
+  font-size: .75rem;
+  font-weight: 500;
+  background: var(--tk-blue-bg);
+  color: var(--tk-blue);
+  border-radius: 20px;
+  padding: 2px 10px;
+  letter-spacing: 0;
+}
+.tk-header-left .tk-sub {
+  font-size: .875rem;
+  color: var(--tk-muted);
+  margin: 0;
+}
+.tk-header-right {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.tk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: .8125rem;
+  font-weight: 500;
+  padding: .45rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--tk-border);
+  background: #fff;
+  color: var(--tk-text);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background .15s, border-color .15s, box-shadow .15s;
+}
+.tk-btn:hover { background: var(--tk-surface); border-color: #cbd5e1; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.tk-btn-primary {
+  background: var(--tk-blue);
+  border-color: var(--tk-blue);
+  color: #fff;
+}
+.tk-btn-primary:hover { background: #1d4ed8; border-color: #1d4ed8; }
+.tk-btn svg { width: 15px; height: 15px; }
+
+/* ── Overview banner ─────────────────────────── */
+.tk-overview {
+  background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 60%, #1d4ed8 100%);
+  border-radius: var(--tk-radius);
+  padding: 1.5rem 2rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  position: relative;
+  overflow: hidden;
+}
+.tk-overview::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+.tk-overview-text h2 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #fff;
+  margin: 0 0 4px;
+}
+.tk-overview-text p {
+  font-size: .8125rem;
+  color: rgba(255,255,255,.7);
+  margin: 0;
+}
+.tk-overview-stats {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+.tk-ov-stat {
+  text-align: center;
+}
+.tk-ov-stat .val {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+}
+.tk-ov-stat .lbl {
+  font-size: .7rem;
+  color: rgba(255,255,255,.6);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-top: 3px;
+}
+.tk-overview-ring {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  flex-shrink: 0;
+}
+.tk-overview-ring svg { transform: rotate(-90deg); }
+.tk-overview-ring .ring-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+.tk-overview-ring .ring-label .pct { font-size: 1.25rem; font-weight: 700; line-height: 1; }
+.tk-overview-ring .ring-label .sub { font-size: .6rem; opacity: .7; letter-spacing: .04em; }
+
+/* ── KPI grid ────────────────────────────────── */
+.tk-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: .875rem;
+  margin-bottom: 1.5rem;
+}
+.tk-kpi {
+  background: #fff;
+  border: 1px solid var(--tk-border);
+  border-radius: var(--tk-radius);
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: .875rem;
+  box-shadow: var(--tk-card-shadow);
+  transition: transform .2s, box-shadow .2s;
+  animation: fadeUp .4s ease both;
+}
+.tk-kpi:hover { transform: translateY(-2px); box-shadow: var(--tk-card-shadow-hover); }
+.tk-kpi-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.tk-kpi-icon svg { width: 20px; height: 20px; }
+.ki-blue   { background: var(--tk-blue-bg);  color: var(--tk-blue); }
+.ki-green  { background: var(--tk-green-bg); color: var(--tk-green); }
+.ki-amber  { background: var(--tk-amber-bg); color: var(--tk-amber); }
+.ki-red    { background: var(--tk-red-bg);   color: var(--tk-red); }
+.ki-purple { background: #ede9fe;            color: var(--tk-purple); }
+.ki-teal   { background: #ccfbf1;            color: #0f766e; }
+.tk-kpi-body .val {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -.03em;
+}
+.tk-kpi-body .lbl {
+  font-size: .75rem;
+  color: var(--tk-muted);
+  margin-top: 3px;
+}
+
+/* ── Filter bar ──────────────────────────────── */
+.tk-filters {
+  background: #fff;
+  border: 1px solid var(--tk-border);
+  border-radius: var(--tk-radius);
+  padding: .875rem 1.25rem;
+  display: flex;
+  gap: .75rem;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--tk-card-shadow);
+}
+.tk-filters .fgroup { display: flex; flex-direction: column; gap: 4px; }
+.tk-filters label { font-size: .7rem; font-weight: 600; color: var(--tk-muted); text-transform: uppercase; letter-spacing: .05em; }
+.tk-filters select,
+.tk-filters input[type=text] {
+  font-size: .8125rem;
+  padding: .4rem .75rem;
+  border: 1px solid var(--tk-border);
+  border-radius: 8px;
+  background: var(--tk-surface);
+  color: var(--tk-text);
+  outline: none;
+  min-width: 150px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.tk-filters select:focus,
+.tk-filters input:focus { border-color: var(--tk-blue); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+.tk-filters .fgroup-actions { display: flex; gap: .5rem; align-items: flex-end; }
+
+/* ── Section label ───────────────────────────── */
+.tk-section-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+.tk-section-hd h3 {
+  font-size: .9375rem;
+  font-weight: 600;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+}
+.tk-count-pill {
+  font-size: .7rem;
+  font-weight: 600;
+  background: var(--tk-surface);
+  border: 1px solid var(--tk-border);
+  border-radius: 20px;
+  padding: 2px 9px;
+  color: var(--tk-muted);
+}
+
+/* ── Teacher card grid ───────────────────────── */
+.tk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(370px, 1fr));
+  gap: 1.1rem;
+}
+@media (max-width: 560px) { .tk-grid { grid-template-columns: 1fr; } }
+
+/* ── Teacher card ────────────────────────────── */
+.tk-card {
+  background: #fff;
+  border: 1px solid var(--tk-border);
+  border-radius: var(--tk-radius);
+  overflow: hidden;
+  box-shadow: var(--tk-card-shadow);
+  transition: transform .2s, box-shadow .2s, border-color .2s;
+  display: flex;
+  flex-direction: column;
+  animation: fadeUp .35s ease both;
+}
+.tk-card:hover { transform: translateY(-3px); box-shadow: var(--tk-card-shadow-hover); border-color: #cbd5e1; }
+
+/* Coloured status stripe at top */
+.tk-card-stripe { height: 4px; width: 100%; }
+
+/* Card header */
+.tk-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: .875rem;
+  padding: 1.1rem 1.25rem .875rem;
+}
+.tk-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .875rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  color: #fff;
+  letter-spacing: .02em;
+}
+.tk-card-meta { flex: 1; min-width: 0; }
+.tk-card-name {
+  font-size: .9375rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+.tk-subject-tag {
+  display: inline-block;
+  font-size: .7rem;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 20px;
+  background: var(--tk-blue-bg);
+  color: var(--tk-blue);
+}
+.tk-subject-tag.no-subject { background: var(--tk-red-bg); color: var(--tk-red); }
+.tk-classes-label {
+  font-size: .7rem;
+  color: var(--tk-muted);
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tk-pct-block { text-align: right; flex-shrink: 0; }
+.tk-pct-num { font-size: 1.5rem; font-weight: 700; line-height: 1; letter-spacing: -.03em; }
+.tk-pct-lbl { font-size: .67rem; color: var(--tk-muted); letter-spacing: .02em; }
+
+/* Master progress bar */
+.tk-master-bar-wrap { padding: 0 1.25rem .875rem; }
+.tk-master-bar-track {
+  height: 7px;
+  background: var(--tk-surface);
+  border-radius: 99px;
+  overflow: hidden;
+  border: 1px solid var(--tk-border);
+}
+.tk-master-bar-fill {
+  height: 100%;
+  border-radius: 99px;
+  width: 0;
+  transition: width 1.1s cubic-bezier(.22, 1, .36, 1);
+}
+
+/* Stats row */
+.tk-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 1.25rem .875rem;
+  flex-wrap: wrap;
+}
+.tk-stat-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .72rem;
+  font-weight: 500;
+  color: var(--tk-muted);
+}
+.tk-stat-chip strong { color: var(--tk-text); }
+.tk-stat-chip svg { width: 13px; height: 13px; }
+
+/* Category grid inside card */
+.tk-cat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  padding: 0 1.25rem .875rem;
+}
+.tk-cat-chip {
+  border-radius: 7px;
+  padding: .35rem .5rem;
+  font-size: .67rem;
+  font-weight: 600;
+  text-align: center;
+  border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: default;
+  transition: transform .1s;
+}
+.tk-cat-chip:hover { transform: scale(1.04); }
+.tk-cat-chip .cat-counts { font-size: .72rem; }
+.tk-cat-chip .cat-name { font-size: .6rem; font-weight: 400; opacity: .8; }
+.tk-chip-done    { background: var(--tk-green-bg); color: var(--tk-green); border-color: #bbf7d0; }
+.tk-chip-partial { background: var(--tk-amber-bg); color: var(--tk-amber); border-color: #fde68a; }
+.tk-chip-empty   { background: var(--tk-red-bg);   color: var(--tk-red);   border-color: #fecaca; }
+.tk-chip-na      { background: var(--tk-surface);  color: var(--tk-muted); border-color: var(--tk-border); }
+
+/* Expand button */
+.tk-expand-btn {
+  width: 100%;
+  background: var(--tk-surface);
+  border: none;
+  border-top: 1px solid var(--tk-border);
+  padding: .5rem 1.25rem;
+  font-size: .7875rem;
+  color: var(--tk-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: background .15s, color .15s;
+}
+.tk-expand-btn:hover { background: #f1f5f9; color: var(--tk-text); }
+.tk-expand-btn .chev {
+  width: 16px; height: 16px;
+  transition: transform .25s;
+  flex-shrink: 0;
+}
+.tk-expand-btn.open .chev { transform: rotate(180deg); }
+
+/* Student breakdown panel */
+.tk-breakdown {
+  display: none;
+  border-top: 1px solid var(--tk-border);
+  background: var(--tk-surface);
+  animation: slideDown .2s ease;
+}
+.tk-breakdown.open { display: block; }
+.tk-breakdown-inner { padding: .75rem 1.25rem 1rem; }
+.tk-bd-hd {
+  font-size: .68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--tk-muted);
+  display: grid;
+  grid-template-columns: 1fr 70px 90px;
+  gap: .5rem;
+  padding-bottom: .4rem;
+  border-bottom: 1px solid var(--tk-border);
+  margin-bottom: .35rem;
+}
+.tk-bd-row {
+  display: grid;
+  grid-template-columns: 1fr 70px 90px;
+  gap: .5rem;
+  align-items: center;
+  padding: .3rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+.tk-bd-row:last-child { border-bottom: none; }
+.tk-bd-name {
+  font-size: .75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tk-bd-name a { color: var(--tk-blue); text-decoration: none; }
+.tk-bd-name a:hover { text-decoration: underline; }
+.tk-bd-name .snum { font-size: .62rem; color: var(--tk-muted); display: block; }
+.tk-mini-bar-track {
+  height: 5px;
+  background: var(--tk-border);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-bottom: 2px;
+}
+.tk-mini-bar-fill { height: 100%; border-radius: 99px; width: 0; transition: width 1s ease .2s; }
+.tk-mini-pct { font-size: .6rem; color: var(--tk-muted); }
+.tk-dots { display: flex; gap: 2px; flex-wrap: wrap; }
+.tk-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  transition: transform .1s;
+}
+.tk-dot:hover { transform: scale(1.4); }
+.tk-dot-done    { background: var(--tk-green); }
+.tk-dot-missing { background: #e2e8f0; border: 1px solid #cbd5e1; }
+
+/* Card footer */
+.tk-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .6rem 1.25rem;
+  border-top: 1px solid var(--tk-border);
+  background: var(--tk-surface);
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-top: auto;
+}
+.tk-last-entry { font-size: .7rem; color: var(--tk-muted); display: flex; align-items: center; gap: 4px; }
+.tk-last-entry svg { width: 12px; height: 12px; }
+.tk-footer-actions { display: flex; gap: .4rem; align-items: center; }
+.tk-prompt-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .72rem;
+  font-weight: 600;
+  padding: .3rem .7rem;
+  border-radius: 7px;
+  border: 1px solid #fde68a;
+  background: var(--tk-amber-bg);
+  color: var(--tk-amber);
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.tk-prompt-btn:hover { background: #fef9c3; border-color: #fbbf24; }
+.tk-prompt-btn svg { width: 12px; height: 12px; }
+.tk-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .72rem;
+  padding: .3rem .7rem;
+  border-radius: 7px;
+  border: 1px solid var(--tk-border);
+  background: #fff;
+  color: var(--tk-muted);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background .15s;
+}
+.tk-edit-btn:hover { background: var(--tk-surface); color: var(--tk-text); }
+.tk-edit-btn svg { width: 12px; height: 12px; }
+
+/* Heatmap */
+.tk-heatmap-wrap {
+  background: #fff;
+  border: 1px solid var(--tk-border);
+  border-radius: var(--tk-radius);
+  padding: 1.25rem;
+  box-shadow: var(--tk-card-shadow);
+  overflow-x: auto;
+}
+.tk-heatmap {
+  display: grid;
+  gap: 3px;
+  min-width: max-content;
+}
+.tk-hm-cell {
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .68rem;
+  font-weight: 600;
+  height: 28px;
+  min-width: 48px;
+  cursor: default;
+  transition: opacity .15s, transform .1s;
+}
+.tk-hm-cell:hover { opacity: .8; transform: scale(1.05); }
+.tk-hm-label {
+  font-size: .7rem;
+  color: var(--tk-muted);
+  display: flex;
+  align-items: center;
+  padding-right: .5rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 130px;
+  height: 28px;
+}
+.tk-hm-col-head {
+  font-size: .62rem;
+  font-weight: 600;
+  color: var(--tk-muted);
+  text-align: center;
+  padding: 2px 4px 6px;
+  height: 28px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 48px;
+}
+.hm-green  { background: #bbf7d0; color: #15803d; }
+.hm-lime   { background: #d9f99d; color: #4d7c0f; }
+.hm-amber  { background: #fde68a; color: #92400e; }
+.hm-orange { background: #fed7aa; color: #9a3412; }
+.hm-red    { background: #fecaca; color: #991b1b; }
+.hm-empty  { background: var(--tk-surface); color: var(--tk-muted); border: 1px solid var(--tk-border); }
+
+/* Heatmap legend */
+.hm-legend { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; align-items: center; }
+.hm-legend-item { display: flex; align-items: center; gap: 5px; font-size: .72rem; color: var(--tk-muted); }
+.hm-legend-swatch { width: 12px; height: 12px; border-radius: 3px; }
+
+/* View toggle pills */
+.tk-view-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--tk-surface);
+  border: 1px solid var(--tk-border);
+  border-radius: 9px;
+  padding: 3px;
+}
+.tk-view-toggle button {
+  font-size: .75rem;
+  font-weight: 500;
+  padding: .3rem .8rem;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tk-muted);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.tk-view-toggle button.active { background: #fff; color: var(--tk-text); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+
+/* Empty state */
+.tk-empty {
+  text-align: center;
+  padding: 3.5rem 2rem;
+  color: var(--tk-muted);
+}
+.tk-empty svg { width: 48px; height: 48px; margin-bottom: 1rem; opacity: .4; }
+.tk-empty h4 { font-size: 1rem; font-weight: 600; color: var(--tk-text); margin-bottom: .35rem; }
+.tk-empty p  { font-size: .875rem; }
+
+/* Toast */
+.tk-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  background: #1e293b;
+  color: #f1f5f9;
+  border-radius: 10px;
+  padding: .75rem 1.25rem;
+  font-size: .8125rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity .25s, transform .25s;
+  pointer-events: none;
+  z-index: 9999;
+  max-width: 320px;
+}
+.tk-toast.show { opacity: 1; transform: translateY(0); }
+.tk-toast svg { width: 16px; height: 16px; color: #34d399; flex-shrink: 0; }
+
+/* Modal backdrop */
+.tk-modal-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15,23,42,.45);
+  z-index: 1050;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(2px);
+}
+.tk-modal-backdrop.open { display: flex; }
+.tk-modal {
+  background: #fff;
+  border-radius: 14px;
+  padding: 1.75rem;
+  width: min(480px, 92vw);
+  box-shadow: 0 20px 60px rgba(0,0,0,.2);
+  animation: modalIn .22s ease;
+}
+.tk-modal h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0 0 .35rem;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+}
+.tk-modal h3 svg { width: 18px; height: 18px; color: var(--tk-amber); }
+.tk-modal p { font-size: .8125rem; color: var(--tk-muted); margin: 0 0 1rem; }
+.tk-modal .modal-missing-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 1rem;
+  padding: .75rem;
+  background: var(--tk-amber-bg);
+  border-radius: 8px;
+  border: 1px solid #fde68a;
+}
+.tk-modal .modal-missing-tags span {
+  font-size: .7rem;
+  font-weight: 600;
+  background: #fff;
+  border: 1px solid #fde68a;
+  border-radius: 20px;
+  padding: 2px 9px;
+  color: var(--tk-amber);
+}
+.tk-modal textarea {
+  width: 100%;
+  font-size: .8125rem;
+  padding: .75rem 1rem;
+  border: 1px solid var(--tk-border);
+  border-radius: 8px;
+  background: var(--tk-surface);
+  color: var(--tk-text);
+  resize: vertical;
+  min-height: 130px;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+  box-sizing: border-box;
+}
+.tk-modal textarea:focus { border-color: var(--tk-blue); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+.tk-modal-actions {
+  display: flex;
+  gap: .5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+.tk-modal-cancel {
+  font-size: .8125rem;
+  padding: .5rem 1.1rem;
+  border-radius: 8px;
+  border: 1px solid var(--tk-border);
+  background: #fff;
+  color: var(--tk-muted);
+  cursor: pointer;
+}
+.tk-modal-send {
+  font-size: .8125rem;
+  font-weight: 600;
+  padding: .5rem 1.25rem;
+  border-radius: 8px;
+  border: none;
+  background: var(--tk-blue);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  transition: background .15s;
+}
+.tk-modal-send:hover { background: #1d4ed8; }
+.tk-modal-send svg { width: 14px; height: 14px; }
+
+/* Animations */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(.96) translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Stagger card animations */
+.tk-card:nth-child(1)  { animation-delay: .03s; }
+.tk-card:nth-child(2)  { animation-delay: .06s; }
+.tk-card:nth-child(3)  { animation-delay: .09s; }
+.tk-card:nth-child(4)  { animation-delay: .12s; }
+.tk-card:nth-child(5)  { animation-delay: .15s; }
+.tk-card:nth-child(6)  { animation-delay: .18s; }
+.tk-card:nth-child(7)  { animation-delay: .21s; }
+.tk-card:nth-child(8)  { animation-delay: .24s; }
+.tk-kpi:nth-child(1)   { animation-delay: .04s; }
+.tk-kpi:nth-child(2)   { animation-delay: .08s; }
+.tk-kpi:nth-child(3)   { animation-delay: .12s; }
+.tk-kpi:nth-child(4)   { animation-delay: .16s; }
+.tk-kpi:nth-child(5)   { animation-delay: .20s; }
+.tk-kpi:nth-child(6)   { animation-delay: .24s; }
+
+/* Colour helpers */
+.c-green { color: var(--tk-green); }
+.c-amber { color: var(--tk-amber); }
+.c-red   { color: var(--tk-red); }
+.c-blue  { color: var(--tk-blue); }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── Pass teacher data to JS ─────────────────────────────────────── #}
+<script>
+  const TEACHER_ROWS   = {{ teacher_rows | tojson }};
+  const CATEGORY_LABELS = {{ category_labels | tojson }};
+  const STATS          = {{ stats | tojson }};
+</script>
+
+<div class="tk-wrap">
+
+  {# ── Page header ───────────────────────────────────────────────── #}
+  <div class="tk-header">
+    <div class="tk-header-left">
+      <h1 class="tk-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px;color:var(--tk-blue)" aria-hidden="true"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        Teacher Assessment Tracker
+        <span class="tk-badge-term">Term 1 · 2024–2025</span>
+      </h1>
+      <p class="tk-sub">Real-time completion overview across all teachers and subjects</p>
+    </div>
+    <div class="tk-header-right">
+      <a href="{{ url_for('dashboard') }}" class="tk-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+        Dashboard
+      </a>
+      <a href="{{ url_for('export_csv') }}" class="tk-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+        Export CSV
+      </a>
+    </div>
+  </div>
+
+  {# ── Overview banner ───────────────────────────────────────────── #}
+  <div class="tk-overview">
+    <div class="tk-overview-text">
+      <h2>Assessment completion at a glance</h2>
+      <p>{{ stats.total_teachers }} teachers · {{ stats.total_assessments_filed + stats.total_missing_slots }} total assessment slots tracked</p>
+    </div>
+    <div class="tk-overview-stats">
+      <div class="tk-ov-stat">
+        <div class="val">{{ stats.fully_complete }}</div>
+        <div class="lbl">Complete</div>
+      </div>
+      <div class="tk-ov-stat">
+        <div class="val">{{ stats.partially_done }}</div>
+        <div class="lbl">In Progress</div>
+      </div>
+      <div class="tk-ov-stat">
+        <div class="val">{{ stats.not_started }}</div>
+        <div class="lbl">Not Started</div>
+      </div>
+      <div class="tk-ov-stat">
+        <div class="val">{{ stats.total_missing_slots }}</div>
+        <div class="lbl">Missing Slots</div>
+      </div>
+    </div>
+    {% set total_slots = stats.total_assessments_filed + stats.total_missing_slots %}
+    {% set overall_pct = ((stats.total_assessments_filed / total_slots) * 100) | round | int if total_slots > 0 else 0 %}
+    <div class="tk-overview-ring" aria-label="Overall {{ overall_pct }}% complete">
+      <svg width="80" height="80" viewBox="0 0 80 80">
+        <circle cx="40" cy="40" r="33" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="7"/>
+        <circle cx="40" cy="40" r="33" fill="none" stroke="#34d399" stroke-width="7"
+                stroke-dasharray="{{ (overall_pct / 100 * 207.3) | round(1) }} 207.3"
+                stroke-linecap="round"/>
+      </svg>
+      <div class="ring-label">
+        <span class="pct">{{ overall_pct }}%</span>
+        <span class="sub">OVERALL</span>
+      </div>
+    </div>
+  </div>
+
+  {# ── KPI cards ─────────────────────────────────────────────────── #}
+  <div class="tk-kpis">
+    <div class="tk-kpi">
+      <div class="tk-kpi-icon ki-blue">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      </div>
+      <div class="tk-kpi-body">
+        <div class="val c-blue" id="kpi-total">{{ stats.total_teachers }}</div>
+        <div class="lbl">Total Teachers</div>
+      </div>
+    </div>
+    <div class="tk-kpi">
+      <div class="tk-kpi-icon ki-green">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </div>
+      <div class="tk-kpi-body">
+        <div class="val c-green" id="kpi-full">{{ stats.fully_complete }}</div>
+        <div class="lbl">Fully Complete</div>
+      </div>
+    </div>
+    <div class="tk-kpi">
+      <div class="tk-kpi-icon ki-amber">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>
+      <div class="tk-kpi-body">
+        <div class="val c-amber" id="kpi-partial">{{ stats.partially_done }}</div>
+        <div class="lbl">In Progress</div>
+      </div>
+    </div>
+    <div class="tk-kpi">
+      <div class="tk-kpi-icon ki-red">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+      </div>
+      <div class="tk-kpi-body">
+        <div class="val c-red" id="kpi-none">{{ stats.not_started }}</div>
+        <div class="lbl">Not Started</div>
+      </div>
+    </div>
+    <div class="tk-kpi">
+      <div class="tk-kpi-icon ki-teal">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+      </div>
+      <div class="tk-kpi-body">
+        <div class="val" id="kpi-filed">{{ stats.total_assessments_filed }}</div>
+        <div class="lbl">Slots Filled</div>
+      </div>
+    </div>
+    <div class="tk-kpi">
+      <div class="tk-kpi-icon ki-red">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M10 12h4M12 10v4"/></svg>
+      </div>
+      <div class="tk-kpi-body">
+        <div class="val c-red" id="kpi-missing">{{ stats.total_missing_slots }}</div>
+        <div class="lbl">Still Missing</div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Filter bar ────────────────────────────────────────────────── #}
+  <form class="tk-filters" method="get" action="{{ url_for('admin_teacher_tracking') }}">
+    <div class="fgroup">
+      <label for="f-subject">Subject</label>
+      <select id="f-subject" name="subject">
+        <option value="">All subjects</option>
+        {% for key, label in learning_areas %}
+          <option value="{{ key }}" {% if selected_subject == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="fgroup">
+      <label for="f-class">Class</label>
+      <select id="f-class" name="class_filter">
+        <option value="">All classes</option>
+        {% for key, label in class_levels %}
+          <option value="{{ key }}" {% if selected_class == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="fgroup">
+      <label for="f-status">Completion</label>
+      <select id="f-status" name="status">
+        <option value="">All statuses</option>
+        <option value="complete"    {% if selected_status == 'complete'    %}selected{% endif %}>Complete (100%)</option>
+        <option value="partial"     {% if selected_status == 'partial'     %}selected{% endif %}>In Progress</option>
+        <option value="not_started" {% if selected_status == 'not_started' %}selected{% endif %}>Not Started</option>
+      </select>
+    </div>
+    <div class="fgroup">
+      <label for="f-search">Search teacher</label>
+      <input type="text" id="f-search" name="search" placeholder="Name or username…" value="{{ search_query }}">
+    </div>
+    <div class="fgroup-actions">
+      <button type="submit" class="tk-btn tk-btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        Apply
+      </button>
+      <a href="{{ url_for('admin_teacher_tracking') }}" class="tk-btn">Reset</a>
+    </div>
+  </form>
+
+  {# ── View toggle + section heading ─────────────────────────────── #}
+  <div class="tk-section-hd">
+    <h3>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--tk-muted)" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Teachers
+      <span class="tk-count-pill">{{ teacher_rows | length }}</span>
+    </h3>
+    <div class="tk-view-toggle" role="group" aria-label="View mode">
+      <button class="active" id="btn-cards" onclick="switchView('cards')">Cards</button>
+      <button id="btn-heatmap" onclick="switchView('heatmap')">Heatmap</button>
+    </div>
+  </div>
+
+  {# ── Cards view ────────────────────────────────────────────────── #}
+  <div id="view-cards">
+    {% if teacher_rows %}
+    <div class="tk-grid">
+      {% for row in teacher_rows %}
+      {% set pct = row.completion_pct %}
+      {% if pct >= 80 %}{% set stripe = '#16a34a' %}{% set pct_col = 'c-green' %}
+      {% elif pct >= 40 %}{% set stripe = '#d97706' %}{% set pct_col = 'c-amber' %}
+      {% else %}{% set stripe = '#dc2626' %}{% set pct_col = 'c-red' %}{% endif %}
+
+      {% set tid   = row.teacher.id %}
+      {% set uname = row.teacher.username %}
+      {% set subj  = row.teacher.subject or '' %}
+      {% set init  = (uname[:2]) | upper %}
+
+      <div class="tk-card" id="card-{{ tid }}">
+        <div class="tk-card-stripe" style="background:{{ stripe }}"></div>
+
+        <div class="tk-card-header">
+          <div class="tk-avatar" style="background:{{ row.avatar_color }}">{{ init }}</div>
+          <div class="tk-card-meta">
+            <div class="tk-card-name" title="{{ uname }}">{{ uname }}</div>
+            {% if subj %}
+              <span class="tk-subject-tag">{{ row.subject_label }}</span>
+            {% else %}
+              <span class="tk-subject-tag no-subject">No subject assigned</span>
+            {% endif %}
+            <div class="tk-classes-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="width:11px;height:11px"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+              {% if row.classes %}{{ row.classes | join(', ') }}{% else %}<em>No classes</em>{% endif %}
+            </div>
+          </div>
+          <div class="tk-pct-block">
+            <div class="tk-pct-num {{ pct_col }}">{{ pct }}%</div>
+            <div class="tk-pct-lbl">complete</div>
+          </div>
+        </div>
+
+        <div class="tk-master-bar-wrap">
+          <div class="tk-master-bar-track">
+            <div class="tk-master-bar-fill" data-width="{{ pct }}" style="background:{{ stripe }}"></div>
+          </div>
+        </div>
+
+        <div class="tk-stats-row">
+          <div class="tk-stat-chip">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            <strong>{{ row.student_count }}</strong> students
+          </div>
+          <div class="tk-stat-chip" style="color:var(--tk-green)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <strong>{{ row.fully_complete_students }}</strong> done
+          </div>
+          <div class="tk-stat-chip" style="color:var(--tk-amber)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <strong>{{ row.incomplete_students }}</strong> pending
+          </div>
+        </div>
+
+        {# Category chips #}
+        <div class="tk-cat-grid">
+          {% for cat_key, cat_label in category_labels.items() %}
+          {% set cs     = row.category_stats.get(cat_key, {}) %}
+          {% set filled = cs.get('filled', 0) %}
+          {% set total  = cs.get('total',  0) %}
+          {% if total == 0 %}
+            {% set chip_cls = 'tk-chip-na' %}{% set icon = '—' %}
+          {% elif filled == total %}
+            {% set chip_cls = 'tk-chip-done' %}{% set icon = '✓' %}
+          {% elif filled > 0 %}
+            {% set chip_cls = 'tk-chip-partial' %}{% set icon = '½' %}
+          {% else %}
+            {% set chip_cls = 'tk-chip-empty' %}{% set icon = '✗' %}
+          {% endif %}
+          <div class="tk-cat-chip {{ chip_cls }}" title="{{ cat_label }}: {{ filled }}/{{ total }}">
+            <span class="cat-counts">{{ icon }} {{ filled }}/{{ total }}</span>
+            <span class="cat-name">{{ cat_label | truncate(12, True, '') }}</span>
+          </div>
+          {% endfor %}
+        </div>
+
+        {# Expand toggle #}
+        <button class="tk-expand-btn" id="eb-{{ tid }}"
+                onclick="toggleBreakdown({{ tid }})"
+                aria-expanded="false"
+                aria-controls="bd-{{ tid }}">
+          <span>Per-student breakdown ({{ row.student_count }} students)</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+
+        {# Student breakdown #}
+        <div class="tk-breakdown" id="bd-{{ tid }}" role="region" aria-label="Student breakdown for {{ uname }}">
+          <div class="tk-breakdown-inner">
+            {% if row.student_breakdown %}
+            <div class="tk-bd-hd" aria-hidden="true">
+              <span>Student</span><span>Progress</span><span>Categories</span>
+            </div>
+            {% for sb in row.student_breakdown %}
+            {% set sp = sb.pct %}
+            {% if sp >= 80 %}{% set sc = '#16a34a' %}{% elif sp >= 40 %}{% set sc = '#d97706' %}{% else %}{% set sc = '#dc2626' %}{% endif %}
+            <div class="tk-bd-row">
+              <div class="tk-bd-name">
+                <a href="{{ url_for('student_view', student_id=sb.student.id) }}">
+                  {{ sb.student.full_name | truncate(24) }}
+                </a>
+                <span class="snum">{{ sb.student.student_number }}</span>
+              </div>
+              <div>
+                <div class="tk-mini-bar-track">
+                  <div class="tk-mini-bar-fill" data-width="{{ sp }}" style="background:{{ sc }}"></div>
+                </div>
+                <div class="tk-mini-pct">{{ sp }}%</div>
+              </div>
+              <div class="tk-dots">
+                {% for cat_key in category_labels.keys() %}
+                <span class="tk-dot {% if cat_key in sb.filled_cats %}tk-dot-done{% else %}tk-dot-missing{% endif %}"
+                      title="{{ category_labels[cat_key] }}{% if cat_key not in sb.filled_cats %} — MISSING{% endif %}">
+                </span>
+                {% endfor %}
+              </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p style="font-size:.8rem;color:var(--tk-muted);text-align:center;padding:.5rem 0;margin:0">
+              No students in this teacher's scope.
+            </p>
+            {% endif %}
+          </div>
+        </div>
+
+        {# Card footer #}
+        <div class="tk-card-footer">
+          <span class="tk-last-entry">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            {% if row.last_activity %}
+              Last entry: {{ row.last_activity.strftime('%d %b %Y, %H:%M') }}
+            {% else %}
+              No assessments recorded yet
+            {% endif %}
+          </span>
+          <div class="tk-footer-actions">
+            {% if row.missing_categories %}
+            <button class="tk-prompt-btn"
+                    onclick="openPromptModal({{ tid }}, '{{ uname | e }}', {{ row.missing_categories | tojson }})">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+              Prompt
+            </button>
+            {% endif %}
+            <a href="{{ url_for('edit_user', user_id=tid) }}" class="tk-edit-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+              Edit
+            </a>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% else %}
+    <div class="tk-empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+      <h4>No teachers match your filters</h4>
+      <p>Try adjusting the filters above or <a href="{{ url_for('admin_teacher_tracking') }}" style="color:var(--tk-blue)">reset all filters</a>.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Heatmap view ──────────────────────────────────────────────── #}
+  <div id="view-heatmap" style="display:none">
+    <div class="tk-heatmap-wrap">
+      <div id="heatmapGrid"></div>
+      <div class="hm-legend">
+        <strong style="font-size:.75rem;color:var(--tk-muted);margin-right:.5rem">Legend:</strong>
+        <div class="hm-legend-item"><div class="hm-legend-swatch" style="background:#bbf7d0"></div>100% filled</div>
+        <div class="hm-legend-item"><div class="hm-legend-swatch" style="background:#d9f99d"></div>75–99%</div>
+        <div class="hm-legend-item"><div class="hm-legend-swatch" style="background:#fde68a"></div>50–74%</div>
+        <div class="hm-legend-item"><div class="hm-legend-swatch" style="background:#fed7aa"></div>1–49%</div>
+        <div class="hm-legend-item"><div class="hm-legend-swatch" style="background:#fecaca"></div>0% (missing)</div>
+        <div class="hm-legend-item"><div class="hm-legend-swatch" style="background:#f1f5f9;border:1px solid #e2e8f0"></div>No students</div>
+      </div>
+    </div>
+  </div>
+
+</div>{# /tk-wrap #}
+
+{# ── Prompt modal ──────────────────────────────────────────────────── #}
+<div class="tk-modal-backdrop" id="promptModal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="tk-modal">
+    <h3 id="modal-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+      Send reminder to <span id="modal-teacher-name"></span>
+    </h3>
+    <p>The message below is pre-filled with the outstanding categories. Customise before sending.</p>
+    <div class="modal-missing-tags" id="modal-missing-tags" aria-label="Missing categories"></div>
+    <textarea id="modal-message" rows="7" aria-label="Reminder message"></textarea>
+    <div class="tk-modal-actions">
+      <button class="tk-modal-cancel" onclick="closePromptModal()">Cancel</button>
+      <button class="tk-modal-send" onclick="submitPrompt()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        Send Message
+      </button>
+    </div>
+  </div>
+</div>
+
+{# Hidden form for prompt POST #}
+<form id="promptForm" method="POST" action="{{ url_for('admin_send_prompt') }}" style="display:none">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="teacher_id" id="prompt-teacher-id">
+  <input type="hidden" name="message"    id="prompt-message-val">
+</form>
+
+{# Toast #}
+<div class="tk-toast" id="tkToast" role="alert" aria-live="polite">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+  <span id="tkToastMsg"></span>
+</div>
+
+<script>
+/* ── View switching ──────────────────────────────────────────── */
+function switchView(v) {
+  document.getElementById('view-cards').style.display    = v === 'cards'   ? '' : 'none';
+  document.getElementById('view-heatmap').style.display  = v === 'heatmap' ? '' : 'none';
+  document.getElementById('btn-cards').classList.toggle('active',   v === 'cards');
+  document.getElementById('btn-heatmap').classList.toggle('active', v === 'heatmap');
+  if (v === 'heatmap') buildHeatmap();
+}
+
+/* ── Animate progress bars on load ───────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  // Master bars
+  document.querySelectorAll('.tk-master-bar-fill').forEach(el => {
+    const w = el.dataset.width;
+    el.style.width = '0';
+    requestAnimationFrame(() => requestAnimationFrame(() => { el.style.width = w + '%'; }));
+  });
+  // Mini bars (deferred slightly so they stagger after card animation)
+  setTimeout(() => {
+    document.querySelectorAll('.tk-mini-bar-fill').forEach(el => {
+      const w = el.dataset.width;
+      el.style.width = '0';
+      requestAnimationFrame(() => requestAnimationFrame(() => { el.style.width = w + '%'; }));
+    });
+  }, 300);
+});
+
+/* ── Breakdown toggle ────────────────────────────────────────── */
+function toggleBreakdown(tid) {
+  const bd  = document.getElementById('bd-' + tid);
+  const btn = document.getElementById('eb-' + tid);
+  const open = bd.classList.toggle('open');
+  btn.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', open);
+  if (open) {
+    // Animate mini-bars inside newly opened panel
+    bd.querySelectorAll('.tk-mini-bar-fill').forEach(el => {
+      const w = el.dataset.width;
+      el.style.width = '0';
+      requestAnimationFrame(() => requestAnimationFrame(() => { el.style.width = w + '%'; }));
+    });
+  }
+}
+
+/* ── Heatmap builder ─────────────────────────────────────────── */
+function buildHeatmap() {
+  const grid = document.getElementById('heatmapGrid');
+  if (!grid || grid.dataset.built) return;
+  grid.dataset.built = '1';
+
+  const cats   = Object.keys(CATEGORY_LABELS);
+  const labels = Object.values(CATEGORY_LABELS);
+  const cols   = cats.length + 1; // +1 for row label column
+
+  grid.style.gridTemplateColumns = '130px ' + cats.map(() => '1fr').join(' ');
+  grid.className = 'tk-heatmap';
+
+  // Header row
+  const corner = document.createElement('div');
+  corner.className = 'tk-hm-label';
+  grid.appendChild(corner);
+
+  labels.forEach(lbl => {
+    const h = document.createElement('div');
+    h.className = 'tk-hm-col-head';
+    h.textContent = lbl.length > 10 ? lbl.slice(0,9) + '…' : lbl;
+    h.title = lbl;
+    grid.appendChild(h);
+  });
+
+  // Data rows
+  TEACHER_ROWS.forEach(row => {
+    const rl = document.createElement('div');
+    rl.className = 'tk-hm-label';
+    rl.textContent = row.teacher.username.length > 16
+      ? row.teacher.username.slice(0,15) + '…'
+      : row.teacher.username;
+    rl.title = row.teacher.username;
+    grid.appendChild(rl);
+
+    cats.forEach(cat => {
+      const cs     = (row.category_stats || {})[cat] || {};
+      const filled = cs.filled || 0;
+      const total  = cs.total  || 0;
+      const cell   = document.createElement('div');
+      cell.className = 'tk-hm-cell';
+
+      if (total === 0) {
+        cell.classList.add('hm-empty');
+        cell.textContent = '—';
+      } else {
+        const p = filled / total;
+        if      (p === 1)   cell.classList.add('hm-green');
+        else if (p >= .75)  cell.classList.add('hm-lime');
+        else if (p >= .5)   cell.classList.add('hm-amber');
+        else if (p > 0)     cell.classList.add('hm-orange');
+        else                cell.classList.add('hm-red');
+        cell.textContent = filled + '/' + total;
+      }
+      cell.title = row.teacher.username + ' · ' + CATEGORY_LABELS[cat] + ': ' + filled + '/' + total;
+      grid.appendChild(cell);
+    });
+  });
+}
+
+/* ── Prompt modal ────────────────────────────────────────────── */
+let _promptTid = null;
+
+function openPromptModal(tid, name, missingCats) {
+  _promptTid = tid;
+  document.getElementById('modal-teacher-name').textContent = name;
+  const first = name.split(' ')[0] || name;
+
+  // Build tags
+  const tagsEl = document.getElementById('modal-missing-tags');
+  tagsEl.innerHTML = missingCats.map(c => {
+    const lbl = CATEGORY_LABELS[c] || c;
+    return '<span>' + lbl + '</span>';
+  }).join('');
+
+  // Build message
+  const catList = missingCats.map(c => '  • ' + (CATEGORY_LABELS[c] || c)).join('\n');
+  document.getElementById('modal-message').value =
+    'Hi ' + first + ',\n\n' +
+    'This is a reminder that the following assessment categories are still outstanding for your students:\n\n' +
+    catList + '\n\n' +
+    'Please enter the scores at your earliest convenience so that student reports can be finalised.\n\n' +
+    'Thank you,\nAdmin';
+
+  document.getElementById('promptModal').classList.add('open');
+  document.getElementById('modal-message').focus();
+}
+
+function closePromptModal() {
+  document.getElementById('promptModal').classList.remove('open');
+  _promptTid = null;
+}
+
+function submitPrompt() {
+  const msg = document.getElementById('modal-message').value.trim();
+  if (!msg) { alert('Please enter a message.'); return; }
+  document.getElementById('prompt-teacher-id').value  = _promptTid;
+  document.getElementById('prompt-message-val').value = msg;
+  closePromptModal();
+  document.getElementById('promptForm').submit();
+}
+
+// Close on backdrop click
+document.getElementById('promptModal').addEventListener('click', function(e) {
+  if (e.target === this) closePromptModal();
+});
+// Close on Escape
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePromptModal(); });
+
+/* ── Toast helper ────────────────────────────────────────────── */
+function showToast(msg) {
+  const t = document.getElementById('tkToast');
+  document.getElementById('tkToastMsg').textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+    {% if cat == 'success' %}
+    document.addEventListener('DOMContentLoaded', () => showToast('{{ msg | e }}'));
+    {% endif %}
+  {% endfor %}
+{% endwith %}
+</script>
+{% endblock %}

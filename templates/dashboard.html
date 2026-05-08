@@ -214,6 +214,14 @@
                                 </a>
                             </div>
                             <div class="col-6 col-md-4">
+                                <a href="{{ url_for('admin_teacher_tracking') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border);border-radius:var(--radius);text-decoration:none;transition:all .2s;background:var(--surface-2);" onmouseover="this.style.borderColor='var(--blue)';this.style.background='var(--blue-dim)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
+                                    <div style="width:36px;height:36px;background:var(--blue-dim);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--blue);font-size:16px;">
+                                        📊
+                                    </div>
+                                    <span style="font-size:.72rem;font-weight:600;color:var(--ink-2);text-align:center;">Teacher Tracker</span>
+                                </a>
+                            </div>
+                            <div class="col-6 col-md-4">
                                 <a href="{{ url_for('export_all_students_excel') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border);border-radius:var(--radius);text-decoration:none;transition:all .2s;background:var(--surface-2);" onmouseover="this.style.borderColor='var(--green)';this.style.background='var(--green-dim)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
                                     <div style="width:36px;height:36px;background:var(--green-dim);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--green);font-size:16px;">
                                         <i class="bi bi-file-earmark-excel-fill"></i>
