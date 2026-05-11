@@ -1031,6 +1031,22 @@ def dashboard():
 
     students_by_class, students_by_area = get_student_groups(current_user, app.config)
 
+    archive_total = Assessment.query.filter_by(archived=True).count()
+    archive_terms = (
+        db.session.query(
+            db.func.count(
+                db.func.distinct(
+                    db.func.concat(Assessment.academic_year, '|', Assessment.term)
+                )
+            )
+        ).filter(Assessment.archived == True).scalar() or 0
+    )
+    archive_students = (
+        db.session.query(
+            db.func.count(Assessment.student_id.distinct())
+        ).filter(Assessment.archived == True).scalar() or 0
+    )
+
     return render_template(
         'dashboard.html',
         student_count=student_count,
@@ -1043,6 +1059,9 @@ def dashboard():
         grouped_students=None,
         students_by_class=students_by_class,
         students_by_area=students_by_area,
+        archive_total=archive_total,
+        archive_terms=archive_terms,
+        archive_students=archive_students,
     )
 
 

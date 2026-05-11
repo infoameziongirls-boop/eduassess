@@ -277,6 +277,7 @@
                                     </a>
                                     {% if archived %}
                                     <form method="POST" action="{{ url_for('assessment_unarchive', assessment_id=a.id) }}" class="d-inline">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                         <button type="submit" class="btn btn-outline-success" 
                                                 title="Unarchive Assessment">
                                             <i class="bi bi-archive-fill"></i>
@@ -284,6 +285,7 @@
                                     </form>
                                     {% else %}
                                     <form method="POST" action="{{ url_for('assessment_archive', assessment_id=a.id) }}" class="d-inline">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                         <button type="submit" class="btn btn-outline-secondary" 
                                                 title="Archive Assessment">
                                             <i class="bi bi-archive"></i>
