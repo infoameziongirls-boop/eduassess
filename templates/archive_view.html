@@ -1,5 +1,4 @@
-
-<style>
+﻿<style>
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
 
 *{box-sizing:border-box;margin:0;padding:0}
@@ -51,13 +50,13 @@ body{background:var(--page);font-family:'DM Sans',sans-serif;color:var(--ink);pa
 .sc:hover::after{opacity:1}
 .sc-gold::after{background:var(--gold)}
 .sc-green::after{background:#166a3f}
-.sc-blue::after{background:#185fa5}
+.sc-blue::after{background:#185fa5f}
 .sc-amber::after{background:#9a6200}
 .sc-ico{font-size:22px;margin-bottom:8px}
 .sc-v{font-family:'Syne',sans-serif;font-size:1.7rem;font-weight:700;color:var(--ink);line-height:1;margin-bottom:3px}
 .sc-gold .sc-v{color:#7a5010}
 .sc-green .sc-v{color:var(--green)}
-.sc-blue .sc-v{color:#185fa5}
+.sc-blue .sc-v{color:#185fa5f}
 .sc-amber .sc-v{color:var(--amber)}
 .sc-l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;font-family:'DM Mono',monospace}
 .sc-sub{font-size:12px;color:var(--green);font-family:'DM Mono',monospace;margin-top:5px}
@@ -95,7 +94,7 @@ body{background:var(--page);font-family:'DM Sans',sans-serif;color:var(--ink);pa
 .btn-del:hover{background:var(--red);color:#fff;border-color:var(--red)}
 
 /* BULK BAR */
-.bulk{background:var(--ink2);border:1px solid rgba(201,165,62,.2);border-radius:var(--rl);padding:12px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;opacity:0;transform:translateY(-8px);pointer-events:none;transition:all .28s var(--ease)}
+.bulk{background:var(--ink2);border:1.5px solid rgba(201,165,62,.2);border-radius:var(--rl);padding:12px 18px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;opacity:0;transform:translateY(-8px);pointer-events:none;transition:all .28s var(--ease)}
 .bulk.on{opacity:1;transform:none;pointer-events:all}
 .bulk-n{font-family:'DM Mono',monospace;font-size:13px;color:var(--gold2);font-weight:500}
 .bulk-l{font-size:12.5px;color:rgba(255,255,255,.45)}
@@ -118,19 +117,19 @@ table.at{width:100%;border-collapse:separate;border-spacing:0;min-width:800px}
 .at tbody tr:hover{background:#faf7f2}
 .at tbody tr:last-child td{border-bottom:none}
 .at tbody td{padding:10px 12px;font-size:13px;color:var(--ink);vertical-align:middle}
-.stu-wrap{display:flex;align-items:center;gap:8px}
+.stu-wrap{display:flex;flex-direction:column;gap:4px}
 .av{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#1e3a5f,#0b1828);display:flex;align-items:center;justify-content:center;color:var(--gold2);font-family:'Syne',sans-serif;font-size:11px;font-weight:700;flex-shrink:0}
 .sname{font-weight:600;font-size:13px;line-height:1.25}
 .sid{font-family:'DM Mono',monospace;font-size:10.5px;color:var(--muted)}
 .cat-badge{display:inline-block;padding:3px 7px;border-radius:5px;font-family:'DM Mono',monospace;font-size:10.5px;background:var(--goldpale);color:#7a5010;white-space:nowrap}
 .score-v{font-family:'DM Mono',monospace;font-size:13px;font-weight:500}
-.hi{color:var(--green)}.mid{color:#8a5800}.lo{color:var(--red)}
+.hi{color:var(--green)}.mid{color:#8a5800}.lo{color:#f00}
 .score-pct{font-size:10.5px;color:var(--muted);font-family:'DM Mono',monospace}
 .bar-t{height:3px;background:rgba(11,24,40,.07);border-radius:2px;margin-top:4px;width:60px;overflow:hidden}
 .bar-f{height:100%;border-radius:2px;width:var(--w);animation:barIn .9s var(--ease) .6s both}
 .grade{font-family:'Syne',sans-serif;font-size:13.5px;font-weight:700}
 .dt{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted)}
-.actions-cell{display:flex;gap:5px;flex-wrap:nowrap}
+.actions-cell{display:flex;gap:5px;flex-wrap:wrap}
 
 /* PAGER */
 .pager{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-top:1px solid rgba(11,24,40,.05);flex-wrap:wrap;gap:8px}
@@ -177,19 +176,19 @@ table.at{width:100%;border-collapse:separate;border-spacing:0;min-width:800px}
       </div>
       <div class="kpi-row">
         <div class="kpi">
-          <div class="kpi-v">0</div>
+          <div class="kpi-v">{{ total_archived or 0 }}</div>
           <div class="kpi-l">Total</div>
         </div>
         <div class="kpi">
-          <div class="kpi-v">0</div>
+          <div class="kpi-v">{{ archived_students or 0 }}</div>
           <div class="kpi-l">Students</div>
         </div>
         <div class="kpi">
-          <div class="kpi-v">0</div>
+          <div class="kpi-v">{{ archived_terms or 0 }}</div>
           <div class="kpi-l">Terms</div>
         </div>
         <div class="kpi">
-          <div class="kpi-v" style="font-size:1.1rem">—</div>
+          <div class="kpi-v" style="font-size:1.1rem">{{ last_archive_date or '—' }}</div>
           <div class="kpi-l">Last Archive</div>
         </div>
       </div>
@@ -201,214 +200,245 @@ table.at{width:100%;border-collapse:separate;border-spacing:0;min-width:800px}
   <div class="sh">
     <span class="sh-t"><i class="ti ti-folders" aria-hidden="true" style="margin-right:5px"></i>Archived Terms</span>
     <span class="sh-line"></span>
-    <span class="sh-badge">0 terms</span>
+    <span class="sh-badge">{{ archived_terms or 0 }} terms</span>
   </div>
   <div class="scards">
     <div class="sc sc-gold">
       <div class="sc-ico">📁</div>
-      <div class="sc-v">0</div>
+      <div class="sc-v">{{ total_archived or 0 }}</div>
       <div class="sc-l">Total Records</div>
-      <div class="sc-sub">0 students</div>
+      <div class="sc-sub">{{ archived_students or 0 }} students</div>
     </div>
     <div class="sc sc-green">
       <div class="sc-ico">📅</div>
-      <div class="sc-v">0</div>
-      <div class="sc-l">Active Terms</div>
-      <div class="sc-sub">this cycle</div>
+      <div class="sc-v">{{ archived_terms or 0 }}</div>
+      <div class="sc-l">Archived Terms</div>
+      <div class="sc-sub">Track term groups</div>
     </div>
     <div class="sc sc-blue">
       <div class="sc-ico">🎓</div>
-      <div class="sc-v">0</div>
+      <div class="sc-v">{{ archived_students or 0 }}</div>
       <div class="sc-l">Students Affected</div>
-      <div class="sc-sub">across all terms</div>
+      <div class="sc-sub">Across all archived terms</div>
     </div>
     <div class="sc sc-amber">
       <div class="sc-ico">📊</div>
-      <div class="sc-v">—</div>
+      <div class="sc-v">{{ last_archive_date or '—' }}</div>
       <div class="sc-l">Last Archive Date</div>
-      <div class="sc-sub">no archives yet</div>
+      <div class="sc-sub">Most recent archive event</div>
     </div>
   </div>
 </div>
 
 <div class="a3">
   <div class="tabs" id="tabsRow">
-    <div class="tab active" onclick="setTab(this,'all')">
+    <a href="{{ url_for('assessments_archived', group='all', search=search, subject=selected_subject, class_name=selected_class, term=selected_term, academic_year=selected_year) }}" class="tab {{ 'active' if group == 'all' else '' }}">
       <i class="ti ti-archive" aria-hidden="true" style="font-size:14px"></i>
       All Records
-      <span class="tab-pip">0</span>
-    </div>
-    <div class="tab" onclick="setTab(this,'2024-term1')">
+      <span class="tab-pip">{{ total_archived or 0 }}</span>
+    </a>
+    {% for item in term_summary %}
+    <a href="{{ url_for('assessments_archived', group=item.key, search=search, subject=selected_subject, class_name=selected_class, term=selected_term, academic_year=selected_year) }}" class="tab {{ 'active' if group == item.key else '' }}">
       <i class="ti ti-calendar" aria-hidden="true" style="font-size:14px"></i>
-      2024–2025 · Term 1
-      <span class="tab-pip">0</span>
-    </div>
-    <div class="tab" onclick="setTab(this,'2024-term2')">
-      <i class="ti ti-calendar" aria-hidden="true" style="font-size:14px"></i>
-      2024–2025 · Term 2
-      <span class="tab-pip">0</span>
-    </div>
+      {{ item.term_label }} · {{ item.academic_year }}
+      <span class="tab-pip">{{ item.count }}</span>
+    </a>
+    {% endfor %}
   </div>
 </div>
 
 <div class="a3">
-  <div class="filter-wrap">
+  <form method="get" action="{{ url_for('assessments_archived') }}" class="filter-wrap">
     <div class="filter-grid">
       <div class="field">
         <label>Search Student</label>
-        <input type="text" placeholder="Name or student number…">
+        <input type="text" name="search" placeholder="Name or student number…" value="{{ search or '' }}">
       </div>
       <div class="field">
         <label>Subject</label>
         <div class="sel-wrap">
-          <select>
-            <option>All Subjects</option>
-            <option>Mathematics</option>
-            <option>Social Studies</option>
-            <option>General Science</option>
-            <option>English Language</option>
-            <option>ICT</option>
-            <option>Physical Education and Health</option>
-            <option>Music</option>
-            <option>Additional Mathematics</option>
-            <option>Biology</option>
-            <option>Chemistry</option>
-            <option>Physics</option>
-            <option>Geography</option>
-            <option>Economics</option>
-            <option>French</option>
-            <option>Arts and Design Studio</option>
-            <option>Arts and Design Foundation</option>
-            <option>Design and Communication Technology</option>
-            <option>Clothing and Textile</option>
-            <option>Management in Living</option>
-            <option>Food and Nutrition</option>
-            <option>Lit in English</option>
-            <option>Christian Religious Studies</option>
-            <option>History</option>
-            <option>Ghanaian Language</option>
-            <option>Religious and Moral Education</option>
-            <option>Government</option>
-            <option>Business Management</option>
-            <option>Accounting</option>
-            <option>Computing in Business</option>
+          <select name="subject">
+            <option value="">All Subjects</option>
+            {% for subject in learning_areas %}
+              {% if subject is string %}
+                <option value="{{ subject }}" {{ 'selected' if selected_subject == subject else '' }}>{{ subject }}</option>
+              {% else %}
+                <option value="{{ subject[0] }}" {{ 'selected' if selected_subject == subject[0] else '' }}>{{ subject[1] if subject[1] else subject[0] }}</option>
+              {% endif %}
+            {% endfor %}
           </select>
         </div>
       </div>
       <div class="field">
         <label>Class</label>
         <div class="sel-wrap">
-          <select>
-            <option>All Classes</option>
-            <option>Form 1</option>
-            <option>Form 2</option>
-            <option>Form 3</option>
+          <select name="class_name">
+            <option value="">All Classes</option>
+            {% for cls in class_levels %}
+              <option value="{{ cls }}" {{ 'selected' if selected_class == cls else '' }}>{{ cls }}</option>
+            {% endfor %}
           </select>
         </div>
       </div>
       <div class="field">
         <label>Term</label>
         <div class="sel-wrap">
-          <select>
-            <option>All Terms</option>
-            <option>Term 1</option>
-            <option>Term 2</option>
-            <option>Term 3</option>
+          <select name="term">
+            <option value="">All Terms</option>
+            {% for term in terms %}
+              {% if term is string %}
+                <option value="{{ term }}" {{ 'selected' if selected_term == term else '' }}>{{ term }}</option>
+              {% else %}
+                <option value="{{ term[0] }}" {{ 'selected' if selected_term == term[0] else '' }}>{{ term[1] if term[1] else term[0] }}</option>
+              {% endif %}
+            {% endfor %}
           </select>
         </div>
       </div>
       <div class="field">
         <label>Academic Year</label>
-        <input type="text" placeholder="e.g. 2024-2025">
+        <input type="text" name="academic_year" placeholder="e.g. 2024-2025" value="{{ selected_year or '' }}">
+      </div>
+      <div class="field">
+        <label>Filter Group</label>
+        <div class="sel-wrap">
+          <select name="group">
+            <option value="all" {{ 'selected' if group == 'all' else '' }}>All Terms</option>
+            {% for item in term_summary %}
+              <option value="{{ item.key }}" {{ 'selected' if group == item.key else '' }}>{{ item.term_label }} · {{ item.academic_year }}</option>
+            {% endfor %}
+          </select>
+        </div>
       </div>
       <div class="filter-btns">
-        <button class="btn btn-gold"><i class="ti ti-search" aria-hidden="true" style="font-size:14px"></i> Search</button>
-        <button class="btn btn-ghost"><i class="ti ti-refresh" aria-hidden="true" style="font-size:14px"></i></button>
+        <button type="submit" class="btn btn-gold"><i class="ti ti-search" aria-hidden="true" style="font-size:14px"></i> Search</button>
+        <a href="{{ url_for('assessments_archived') }}" class="btn btn-ghost"><i class="ti ti-refresh" aria-hidden="true" style="font-size:14px"></i> Reset</a>
+      </div>
+    </div>
+  </form>
+</div>
+
+<form id="bulkForm" method="post" action="{{ url_for('assessment_bulk_action') }}">
+  {{ csrf_token() }}
+  <input type="hidden" name="action" id="bulkAction" value="">
+
+  <div class="bulk a4" id="bulkBar">
+    <span class="bulk-n" id="bulkN">0</span>
+    <span class="bulk-l">records selected</span>
+    <div class="bulk-sp"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button type="button" class="btn btn-restore" onclick="submitBulk('unarchive')"><i class="ti ti-restore" aria-hidden="true" style="font-size:13px"></i> Restore</button>
+      <button type="button" class="btn btn-del" onclick="submitBulk('delete')"><i class="ti ti-trash" aria-hidden="true" style="font-size:13px"></i> Delete</button>
+      <button type="button" class="btn btn-ghost" onclick="clearSel()" style="padding:5px 10px;font-size:12px;border-radius:7px">Cancel</button>
+    </div>
+  </div>
+
+  <div class="tbl-card a4">
+    <div class="tbl-hd">
+      <div>
+        <div class="tbl-hd-t"><i class="ti ti-archive" aria-hidden="true" style="font-size:15px;margin-right:6px"></i>Archive Records</div>
+        <div class="tbl-hd-m" id="recCount">{{ pagination.total if pagination and pagination.total is not none else 0 }} records</div>
+      </div>
+      <div class="tbl-hd-r">
+        <a class="btn btn-ghost" href="{{ url_for('export_csv') }}" style="color:#e8c46a;border-color:rgba(201,165,62,.3);font-size:12px;padding:6px 12px">
+          <i class="ti ti-download" aria-hidden="true" style="font-size:13px"></i> Export CSV
+        </a>
+      </div>
+    </div>
+
+    <div class="tbl-scroll">
+      <table class="at" id="archTable">
+        <thead>
+          <tr>
+            <th style="width:36px;padding-left:14px">
+              <input type="checkbox" id="selAll" onchange="toggleAll(this)" style="cursor:pointer;accent-color:var(--gold);width:14px;height:14px">
+            </th>
+            <th onclick="srt(1)">Student</th>
+            <th onclick="srt(2)">Subject</th>
+            <th onclick="srt(3)">Category</th>
+            <th>Class</th>
+            <th onclick="srt(5)">Score</th>
+            <th>Grade</th>
+            <th>Term</th>
+            <th onclick="srt(8)">Year</th>
+            <th>Assessor</th>
+            <th onclick="srt(10)">Archived</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+        {% if assessments %}
+          {% for assessment in assessments %}
+          <tr>
+            <td style="padding-left:14px"><input class="rchk" type="checkbox" name="assessment_ids" value="{{ assessment.id }}" data-id="{{ assessment.id }}" onchange="updateSelection(this)"></td>
+            <td>
+              <div class="stu-wrap">
+                <div class="sname">{{ assessment.student.full_name() }}</div>
+                <div class="sid">{{ assessment.student.student_number }}</div>
+              </div>
+            </td>
+            <td>{{ assessment.subject }}</td>
+            <td><span class="cat-badge">{{ assessment.category }}</span></td>
+            <td>{{ assessment.class_name }}</td>
+            <td><div class="score-v">{{ assessment.score }}</div><div class="score-pct">{{ '%.1f'|format(assessment.get_percentage()) }}%</div></td>
+            <td class="grade">{{ assessment.get_grade_letter() }}</td>
+            <td>{{ assessment.term }}</td>
+            <td>{{ assessment.academic_year }}</td>
+            <td>{{ assessment.assessor or 'N/A' }}</td>
+            <td class="dt">{{ assessment.date_recorded.strftime('%d %b %Y') }}</td>
+            <td class="actions-cell">
+              <form method="post" action="{{ url_for('assessment_unarchive', assessment_id=assessment.id) }}">
+                {{ csrf_token() }}
+                <button type="submit" class="btn btn-restore" style="padding:5px 10px;font-size:12px">Restore</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="12">
+              <div class="empty">
+                <div class="empty-ico">🗄</div>
+                <div class="empty-t">No Archived Records Found</div>
+                <p class="empty-s">The archive is empty. Archived assessments appear here after you archive a term from <a href="{{ url_for('admin_settings') }}">Settings</a>.</p>
+              </div>
+            </td>
+          </tr>
+        {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pager">
+      <span class="pager-i">Showing {{ pagination.page }} of {{ pagination.pages }} pages</span>
+      <div class="pager-links">
+        <a class="pg {{ 'off' if not pagination.has_prev else '' }}" href="{{ url_for('assessments_archived', page=pagination.page-1, search=search, subject=selected_subject, class_name=selected_class, term=selected_term, academic_year=selected_year, group=group) }}">‹</a>
+        {% for p in range(1, pagination.pages + 1) %}
+          <a class="pg {{ 'active' if p == pagination.page else '' }}" href="{{ url_for('assessments_archived', page=p, search=search, subject=selected_subject, class_name=selected_class, term=selected_term, academic_year=selected_year, group=group) }}">{{ p }}</a>
+        {% endfor %}
+        <a class="pg {{ 'off' if not pagination.has_next else '' }}" href="{{ url_for('assessments_archived', page=pagination.page+1, search=search, subject=selected_subject, class_name=selected_class, term=selected_term, academic_year=selected_year, group=group) }}">›</a>
       </div>
     </div>
   </div>
-</div>
-
-<div class="bulk a4" id="bulkBar">
-  <span class="bulk-n" id="bulkN">0</span>
-  <span class="bulk-l">records selected</span>
-  <div class="bulk-sp"></div>
-  <div style="display:flex;gap:6px;flex-wrap:wrap">
-    <button class="btn btn-restore"><i class="ti ti-restore" aria-hidden="true" style="font-size:13px"></i> Restore</button>
-    <button class="btn btn-del"><i class="ti ti-trash" aria-hidden="true" style="font-size:13px"></i> Delete</button>
-    <button class="btn btn-ghost" onclick="clearSel()" style="padding:5px 10px;font-size:12px;border-radius:7px">Cancel</button>
-  </div>
-</div>
-
-<div class="tbl-card a4">
-  <div class="tbl-hd">
-    <div>
-      <div class="tbl-hd-t"><i class="ti ti-archive" aria-hidden="true" style="font-size:15px;margin-right:6px"></i>Archive Records</div>
-      <div class="tbl-hd-m" id="recCount">0 records</div>
-    </div>
-    <div class="tbl-hd-r">
-      <button class="btn btn-ghost" style="color:#e8c46a;border-color:rgba(201,165,62,.3);font-size:12px;padding:6px 12px">
-        <i class="ti ti-download" aria-hidden="true" style="font-size:13px"></i> Export CSV
-      </button>
-    </div>
-  </div>
-
-  <div class="tbl-scroll">
-    <table class="at" id="archTable">
-      <thead>
-        <tr>
-          <th style="width:36px;padding-left:14px">
-            <input type="checkbox" id="selAll" onchange="toggleAll(this)" style="cursor:pointer;accent-color:var(--gold);width:14px;height:14px">
-          </th>
-          <th onclick="srt(1)">Student</th>
-          <th onclick="srt(2)">Subject</th>
-          <th onclick="srt(3)">Category</th>
-          <th>Class</th>
-          <th onclick="srt(5)">Score</th>
-          <th>Grade</th>
-          <th>Term</th>
-          <th onclick="srt(8)">Year</th>
-          <th>Assessor</th>
-          <th onclick="srt(10)">Archived</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody id="tbody">
-        <tr>
-          <td colspan="12">
-            <div class="empty">
-              <div class="empty-ico">🗄</div>
-              <div class="empty-t">No Archived Records Found</div>
-              <p class="empty-s">The archive is empty. Archived assessments appear here after you archive a term from <a href="#">Settings</a>.</p>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <div class="pager">
-    <span class="pager-i">Showing 0–0 of 0 records</span>
-    <div class="pager-links">
-      <span class="pg off">‹</span>
-      <span class="pg active">1</span>
-      <span class="pg off">›</span>
-    </div>
-  </div>
-</div>
+</form>
 
 <div class="qa a5">
   <span class="qa-lbl">Quick Actions</span>
   <div class="qa-btns">
-    <button class="btn btn-ghost" style="font-size:12px;padding:7px 13px"><i class="ti ti-settings" aria-hidden="true" style="font-size:13px"></i> Archive Settings</button>
-    <button class="btn btn-ghost" style="font-size:12px;padding:7px 13px"><i class="ti ti-clipboard-list" aria-hidden="true" style="font-size:13px"></i> Activity Log</button>
-    <button class="btn btn-ghost" style="font-size:12px;padding:7px 13px"><i class="ti ti-arrow-left" aria-hidden="true" style="font-size:13px"></i> Live Assessments</button>
-    <button class="btn btn-gold" style="font-size:12px;padding:7px 13px"><i class="ti ti-home" aria-hidden="true" style="font-size:13px"></i> Dashboard</button>
+    <a href="{{ url_for('admin_settings') }}" class="btn btn-ghost" style="font-size:12px;padding:7px 13px"><i class="ti ti-settings" aria-hidden="true" style="font-size:13px"></i> Archive Settings</a>
+    <a href="{{ url_for('admin_settings') }}" class="btn btn-ghost" style="font-size:12px;padding:7px 13px"><i class="ti ti-clipboard-list" aria-hidden="true" style="font-size:13px"></i> Activity Log</a>
+    <a href="{{ url_for('assessments_list') }}" class="btn btn-ghost" style="font-size:12px;padding:7px 13px"><i class="ti ti-arrow-left" aria-hidden="true" style="font-size:13px"></i> Live Assessments</a>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-gold" style="font-size:12px;padding:7px 13px"><i class="ti ti-home" aria-hidden="true" style="font-size:13px"></i> Dashboard</a>
   </div>
 </div>
 
 <script>
 const sel = new Set();
+function updateSelection(input){
+  const id = input.value;
+  if(input.checked){ sel.add(id); } else { sel.delete(id); }
+  updateBulk();
+}
 function updateBulk(){
   const bar = document.getElementById('bulkBar');
   document.getElementById('bulkN').textContent = sel.size;
@@ -417,7 +447,7 @@ function updateBulk(){
 function toggleAll(m){
   document.querySelectorAll('.rchk').forEach(c=>{
     c.checked = m.checked;
-    m.checked ? sel.add(c.dataset.id) : sel.delete(c.dataset.id);
+    if(m.checked) sel.add(c.value); else sel.delete(c.value);
   });
   updateBulk();
 }
@@ -428,9 +458,14 @@ function clearSel(){
   sel.clear();
   updateBulk();
 }
-function setTab(el, key){
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  el.classList.add('active');
+function submitBulk(action){
+  const selected = document.querySelectorAll('.rchk:checked');
+  if(!selected.length){
+    alert('Select at least one record first.');
+    return;
+  }
+  document.getElementById('bulkAction').value = action;
+  document.getElementById('bulkForm').submit();
 }
 let sc=-1, sd=1;
 function srt(col){
@@ -438,15 +473,13 @@ function srt(col){
   const ths = tbl.querySelectorAll('thead th');
   const tbody = tbl.querySelector('tbody');
   const rows = Array.from(tbody.querySelectorAll('tr'));
-  if(sc===col) sd*=-1; else{sd=1;sc=col;}
-  ths.forEach((th,i)=>{
-    th.classList.remove('sa','sd');
-    if(i===col) th.classList.add(sd===1?'sa':'sd');
-  });
+  if(sc===col) sd*=-1; else{sd=1;}
+  sc = col;
+  ths.forEach((th,i)=>{ th.classList.remove('sa','sd'); if(i===col) th.classList.add(sd===1?'sa':'sd'); });
   rows.sort((a,b)=>{
     const ta=a.cells[col]?.textContent.trim()||'';
     const tb=b.cells[col]?.textContent.trim()||'';
-    const na=parseFloat(ta),nb=parseFloat(tb);
+    const na=parseFloat(ta), nb=parseFloat(tb);
     if(!isNaN(na)&&!isNaN(nb)) return (na-nb)*sd;
     return ta.localeCompare(tb)*sd;
   });
