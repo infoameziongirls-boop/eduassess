@@ -283,7 +283,7 @@ class Student(UserMixin, db.Model):
         if not raw_scores:
             return None
         result = calculate_scores_from_template(raw_scores)
-        return result['final_score']
+        return float(result['final_score'])
 
     def get_gpa_and_grade(self, subject=None, teacher_id=None):
         summary = self.get_overall_summary(subject=subject, teacher_id=teacher_id)
