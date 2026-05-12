@@ -159,10 +159,10 @@ class TestGradeCalculation:
         self.create_assessment(sample_student, 'end_term', 80, subject="Mathematics")
 
         final_grade = sample_student.calculate_final_grade(subject="Mathematics")
-        # Class: 80 capped to 50 -> 50/500 × 100 = 10%, score = 5
-        # Exam: min(50, round(80/2)) = 40
-        # Final: 45
-        assert final_grade == 45.0
+        # Class: 80/500 × 100 = 16%, score = roundup(16/2, 0) = 8
+        # Exam: min(50, roundup(80/2, 0)) = 40
+        # Final: 48
+        assert final_grade == 48.0
 
     def test_calculate_final_grade_teacher_filter(self, sample_student):
         """Test final grade calculation with teacher filtering"""
@@ -172,10 +172,10 @@ class TestGradeCalculation:
         self.create_assessment(sample_student, 'end_term', 80, teacher_id=1)
 
         final_grade = sample_student.calculate_final_grade(teacher_id=1)
-        # Class: 80 capped to 50 -> 50/500 × 100 = 10%, score = 5
-        # Exam: min(50, round(80/2)) = 40
-        # Final: 45
-        assert final_grade == 45.0
+        # Class: 80/500 × 100 = 16%, score = roundup(16/2, 0) = 8
+        # Exam: min(50, roundup(80/2, 0)) = 40
+        # Final: 48
+        assert final_grade == 48.0
 
     def test_calculate_final_grade_rounding(self, sample_student):
         """Test that final grade is rounded to 2 decimal places"""

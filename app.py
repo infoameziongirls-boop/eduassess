@@ -1087,76 +1087,101 @@ def student_dashboard():
     class_f    = request.args.get('class', '')
     category_f = request.args.get('category', '')
 
-    q = Assessment.query.filter_by(student_id=student.id, archived=False)
-    if subject_f:  q = q.filter_by(subject=subject_f)
-    if class_f:    q = q.filter_by(class_name=class_f)
-    if category_f: q = q.filter_by(category=category_f)
-    assessments = q.order_by(Assessment.date_recorded.desc()).all()
-
-    unfiltered_rows = (
-        Assessment.query.with_entities(
-            Assessment.subject, Assessment.class_name, Assessment.category
-        )
+    # ── Always load the FULL unfiltered assessment list first ──────────────
+    # This is the source of truth for dropdowns and teacher_results.
+    all_assessments = (
+        Assessment.query
         .filter_by(student_id=student.id, archived=False)
+        .order_by(Assessment.date_recorded.desc())
         .all()
     )
-    subjects = sorted({subj for subj, _, _ in unfiltered_rows if subj})
-    classes = sorted({cls for _, cls, _ in unfiltered_rows if cls})
-    categories = sorted({cat for _, _, cat in unfiltered_rows if cat})
 
-    quiz_attempts = QuizAttempt.query.filter_by(student_id=student.id) \
-                                     .order_by(QuizAttempt.completed_at.desc()).all()
-    quiz_details  = {}
-    for att in quiz_attempts:
-        q_obj = Quiz.query.get(att.quiz_id)
-        if q_obj:
-            quiz_details[att.id] = q_obj
+    # ── Build filter dropdown options from the FULL list ───────────────────
+    subjects   = sorted({a.subject    for a in all_assessments if a.subject})
+    classes    = sorted({a.class_name for a in all_assessments if a.class_name})
+    categories = sorted({a.category   for a in all_assessments if a.category})
 
-    src = assessments
-    teacher_subjects = {}
-    for a in src:
+    # ── Apply filters to produce the visible table rows ────────────────────
+    assessments = all_assessments
+    if subject_f:   assessments = [a for a in assessments if a.subject    == subject_f]
+    if class_f:     assessments = [a for a in assessments if a.class_name == class_f]
+    if category_f:  assessments = [a for a in assessments if a.category   == category_f]
+
+    # ── Build teacher_results from the FULL list (not the filtered one) ────
+    # Also batch-load teachers to avoid N+1 queries.
+    teacher_ids = {a.teacher_id for a in all_assessments if a.teacher_id is not None}
+    teacher_map = {t.id: t for t in User.query.filter(User.id.in_(teacher_ids)).all()} if teacher_ids else {}
+
+    teacher_subjects_raw = {}
+    for a in all_assessments:
         if a.archived:
             continue
-        teacher_subjects.setdefault(a.teacher_id, {}).setdefault(a.subject, []).append(a)
+        tid = a.teacher_id
+        teacher_subjects_raw.setdefault(tid, {}).setdefault(a.subject, []).append(a)
 
     teacher_results = {}
-    for tid, subj_data in teacher_subjects.items():
-        teacher = User.query.get(tid)
-        tname = teacher.username if teacher else f'Teacher {tid}'
+    for tid, subj_data in teacher_subjects_raw.items():
+        teacher = teacher_map.get(tid) if tid is not None else None
+        tname = teacher.username if teacher else 'Unassigned'
         teacher_results[tname] = {}
         for sname, alist in subj_data.items():
             fp = student.calculate_final_grade(subject=sname, teacher_id=tid)
             gr = calculate_gpa_and_grade(fp)
             teacher_results[tname][sname] = {
-                'final_percent': fp, 'gpa': gr['gpa'],
-                'grade': gr['grade'], 'assessments': alist,
+                'final_percent': fp or 0.0,
+                'gpa':   gr['gpa'],
+                'grade': gr['grade'],
+                'assessments': alist,
             }
 
-    summary      = student.get_assessment_summary_from_list(assessments)
-    final_pct    = student.calculate_final_grade()
-    gpa_grade    = student.get_gpa_and_grade()
+    # ── Summary and overall grades (always from full list) ─────────────────
+    summary   = student.get_assessment_summary_from_list(all_assessments)
+    final_pct = student.calculate_final_grade()
+    gpa_grade = student.get_gpa_and_grade()
 
+    # ── Average score over the VISIBLE rows ────────────────────────────────
     if assessments:
         total_max = sum(a.max_score for a in assessments if a.max_score)
-        total_got = sum(a.score     for a in assessments if a.score)
+        total_got = sum(a.score     for a in assessments if a.score is not None)
         avg_score = (total_got / total_max * 100) if total_max else 0.0
     else:
         avg_score = 0.0
 
-    filt_res   = calculate_gpa_and_grade(avg_score)
-    comment    = _get_comment(gpa_grade['gpa']) if gpa_grade['gpa'] != 'N/A' else None
+    filt_res = calculate_gpa_and_grade(avg_score)
+    comment  = _get_comment(gpa_grade['gpa']) if gpa_grade['gpa'] != 'N/A' else None
+
+    # ── Quiz attempts ──────────────────────────────────────────────────────
+    quiz_attempts = (
+        QuizAttempt.query
+        .filter_by(student_id=student.id)
+        .order_by(QuizAttempt.completed_at.desc())
+        .all()
+    )
+    quiz_ids    = [a.quiz_id for a in quiz_attempts]
+    quiz_objs   = {q.id: q for q in Quiz.query.filter(Quiz.id.in_(quiz_ids)).all()} if quiz_ids else {}
+    quiz_details = {a.id: quiz_objs[a.quiz_id] for a in quiz_attempts if a.quiz_id in quiz_objs}
 
     return render_template(
         'student_dashboard.html',
-        student=student, assessments=assessments,
-        teacher_results=teacher_results, summary=summary,
-        final_percent=final_pct, gpa_grade=gpa_grade, comment=comment,
-        subjects=subjects, classes=classes, categories=categories,
-        selected_subject=subject_f, selected_class=class_f,
+        student=student,
+        assessments=assessments,
+        teacher_results=teacher_results,
+        summary=summary,
+        final_percent=final_pct,
+        gpa_grade=gpa_grade,
+        comment=comment,
+        subjects=subjects,
+        classes=classes,
+        categories=categories,
+        selected_subject=subject_f,
+        selected_class=class_f,
         selected_category=category_f,
         average_score=avg_score,
-        filtered_gpa=filt_res['gpa'], filtered_grade=filt_res['grade'],
-        quiz_attempts=quiz_attempts, quiz_details=quiz_details,
+        filtered_gpa=filt_res['gpa'],
+        filtered_grade=filt_res['grade'],
+        quiz_attempts=quiz_attempts,
+        quiz_details=quiz_details,
+        CATEGORY_LABELS=CATEGORY_LABELS,
     )
 
 
@@ -3471,28 +3496,32 @@ def export_student_csv(student_id):
 @app.route('/export/excel/student/<int:student_id>')
 @login_required
 def export_student_excel(student_id):
+    """Export one student's assessment record using the school template."""
     if not (current_user.is_admin() or current_user.is_teacher()):
         abort(403)
     student = Student.query.get_or_404(student_id)
     subject = request.args.get('subject')
     tpl_path = os.path.join(app.config['TEMPLATE_FOLDER'], 'student_template.xlsx')
     if not os.path.exists(tpl_path):
-        create_default_template(tpl_path)
+        flash('School template (student_template.xlsx) not found in templates_excel/. '
+              'Please upload it via Admin → Settings.', 'danger')
+        return redirect(url_for('student_view', student_id=student_id))
+
     sub_s = f'_{subject}' if subject else ''
     out_name = f'{student.student_number}_{student.last_name}_report{sub_s}.xlsx'
     out_path = os.path.join(app.config['UPLOAD_FOLDER'], out_name)
     try:
         settings = Setting.query.first()
+        exp_subj = (subject
+                    or (current_user.subject if current_user.is_teacher() else None)
+                    or student.study_area)
         upd = AssessmentTemplateUpdater(tpl_path)
         upd.load_template()
-        if settings:
-            exp_subj = (subject or
-                        (current_user.subject if current_user.is_teacher() else None) or
-                        student.study_area)
-            upd.update_school_info(
-                subject=exp_subj,
-                term_year=f'{settings.current_term} {settings.current_academic_year}',
-                form=student.class_name)
+        upd.update_school_info(
+            subject=exp_subj,
+            term_year=(f'{settings.current_term} {settings.current_academic_year}'
+                       if settings else ''),
+            form=student.class_name)
         upd.add_student(10, student.to_template_dict(subject))
         upd.save_workbook(out_path)
         return send_file(out_path, as_attachment=True,
@@ -3506,21 +3535,26 @@ def export_student_excel(student_id):
 @app.route('/export/excel/all-students')
 @login_required
 def export_all_students_excel():
+    """Export all students via one sheet per subject/class using the school template."""
     if not (current_user.is_admin() or current_user.is_teacher()):
         abort(403)
     subject    = request.args.get('subject')
     class_name = request.args.get('class')
     q = Student.query
     if subject:
-        subq = db.session.query(Assessment.student_id) \
-                         .filter(Assessment.subject == subject).distinct()
+        subq = (db.session.query(Assessment.student_id)
+                .filter(Assessment.subject == subject).distinct())
         q = q.filter(Student.id.in_(subq))
     if class_name:
         q = q.filter_by(class_name=class_name)
     students_list = q.order_by(Student.last_name, Student.first_name).all()
+
     tpl_path = os.path.join(app.config['TEMPLATE_FOLDER'], 'student_template.xlsx')
     if not os.path.exists(tpl_path):
-        create_default_template(tpl_path)
+        flash('School template (student_template.xlsx) not found in templates_excel/. '
+              'Please upload it via Admin → Settings.', 'danger')
+        return redirect(url_for('students'))
+
     sub_s = subject or 'all_subjects'
     cls_s = class_name or 'all_classes'
     out_name = f'students_{sub_s}_{cls_s}_{datetime.now().strftime("%Y%m%d")}.xlsx'
@@ -3529,12 +3563,11 @@ def export_all_students_excel():
         settings = Setting.query.first()
         upd = AssessmentTemplateUpdater(tpl_path)
         upd.load_template()
-        if settings:
-            upd.update_school_info(
-                subject=subject or 'All Subjects',
-                term_year=f'{settings.current_term} {settings.current_academic_year}',
-                form=class_name or 'All Classes')
-        upd.add_students_batch([s.to_template_dict() for s in students_list])
+        upd.export_by_subject_class(
+            students_list,
+            settings=settings,
+            subject_filter=subject,
+            class_filter=class_name)
         upd.save_workbook(out_path)
         return send_file(out_path, as_attachment=True,
                          download_name=out_name,
@@ -3547,9 +3580,9 @@ def export_all_students_excel():
 @app.route('/export/assessments/excel')
 @login_required
 def export_assessments_excel():
+    """Export filtered assessment records using the school template."""
     if not (current_user.is_admin() or current_user.is_teacher()):
         abort(403)
-    from openpyxl import Workbook
     subject    = request.args.get('subject', '').strip()
     class_name = request.args.get('class',   '').strip()
     category   = request.args.get('category','').strip()
@@ -3561,27 +3594,22 @@ def export_assessments_excel():
     if class_name: q = q.filter_by(class_name=class_name)
     if category:   q = q.filter_by(category=category)
     assessments = q.order_by(Assessment.date_recorded.desc()).all()
-    filters     = [f for f in [subject, class_name, category] if f]
-    filter_str  = '_'.join(filters) if filters else 'all'
-    out_name    = f'assessments_{filter_str}_{datetime.now().strftime("%Y%m%d")}.xlsx'
-    out_path    = os.path.join(app.config['UPLOAD_FOLDER'], out_name)
+
+    filters    = [f for f in [subject, class_name, category] if f]
+    filter_str = '_'.join(filters) if filters else 'all'
+    out_name   = f'assessments_{filter_str}_{datetime.now().strftime("%Y%m%d")}.xlsx'
+    out_path   = os.path.join(app.config['UPLOAD_FOLDER'], out_name)
+
+    tpl_path = os.path.join(app.config['TEMPLATE_FOLDER'], 'student_template.xlsx')
+    if not os.path.exists(tpl_path):
+        flash('School template (student_template.xlsx) not found in templates_excel/. '
+              'Please upload it via Admin → Settings.', 'danger')
+        return redirect(url_for('assessments_list'))
     try:
-        wb = Workbook(); ws = wb.active; ws.title = 'Assessments'
-        headers = ['Student Number', 'Student Name', 'Subject', 'Category',
-                   'Score', 'Max Score', 'Percentage', 'Grade', 'Class',
-                   'Term', 'Academic Year', 'Session', 'Assessor', 'Date Recorded']
-        for col, h in enumerate(headers, 1):
-            ws.cell(row=1, column=col, value=h)
-        for row, a in enumerate(assessments, 2):
-            for col, val in enumerate([
-                a.student.student_number, a.student.full_name(),
-                a.subject, a.category, a.score, a.max_score,
-                round(a.get_percentage(), 2), a.get_grade_letter(),
-                a.class_name, a.term, a.academic_year, a.session,
-                a.assessor, a.date_recorded.strftime('%Y-%m-%d %H:%M:%S'),
-            ], 1):
-                ws.cell(row=row, column=col, value=val)
-        wb.save(out_path)
+        settings = Setting.query.first()
+        upd = AssessmentTemplateUpdater(tpl_path)
+        upd.load_template()
+        upd.export_assessments_raw(assessments, out_path, settings=settings)
         return send_file(out_path, as_attachment=True,
                          download_name=out_name,
                          mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -3651,12 +3679,18 @@ def import_excel():
 @login_required
 def download_template(template_type):
     mapping = {
-        'student':      ('student_template.xlsx',        'student_assessment_template.xlsx',       create_default_template),
-        'student_import': ('student_import_template.xlsx', 'student_bulk_import_template.xlsx',    create_student_import_template),
-        'user_import':  ('user_import_template.xlsx',    'teacher_bulk_import_template.xlsx',      create_teacher_import_template),
+        'student_import': ('student_import_template.xlsx', 'student_bulk_import_template.xlsx', create_student_import_template),
+        'user_import':  ('user_import_template.xlsx',    'teacher_bulk_import_template.xlsx', create_teacher_import_template),
     }
-    if template_type not in mapping and template_type != 'import':
-        abort(404)
+    if template_type == 'student':
+        tpl_path = os.path.join(app.config['TEMPLATE_FOLDER'], 'student_template.xlsx')
+        if not os.path.exists(tpl_path):
+            flash('School assessment template not found. Please upload student_template.xlsx via Admin → Settings.', 'danger')
+            return redirect(url_for('admin_settings'))
+        return send_file(tpl_path, as_attachment=True,
+                         download_name='student_assessment_template.xlsx',
+                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
     if template_type == 'import':
         tpl_path = os.path.join(app.config['TEMPLATE_FOLDER'], 'import_template.xlsx')
         if not os.path.exists(tpl_path):
@@ -3665,6 +3699,10 @@ def download_template(template_type):
         return send_file(tpl_path, as_attachment=True,
                          download_name='bulk_import_template.xlsx',
                          mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    if template_type not in mapping:
+        abort(404)
+
     fname, dname, creator = mapping[template_type]
     tpl_path = os.path.join(app.config['TEMPLATE_FOLDER'], fname)
     if not os.path.exists(tpl_path):
