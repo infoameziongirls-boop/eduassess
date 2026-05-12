@@ -424,7 +424,11 @@ from analytics import get_class_performance_summary, get_grade_distribution
 from api_v1 import api_bp
 from promotion_routes import promotion_bp
 from support_routes import support_bp
-from template_updater import AssessmentTemplateUpdater
+from template_updater import (
+    AssessmentTemplateUpdater,
+    calculate_scores_from_template,
+    scores_from_assessments,
+)
 
 # Initialise DB
 init_db(app, bcrypt)
@@ -1139,15 +1143,16 @@ def student_dashboard():
     final_pct = student.calculate_final_grade()
     gpa_grade = student.get_gpa_and_grade()
 
-    # ── Average score over the VISIBLE rows ────────────────────────────────
+    # ── Final score and grade from the school-template formula chain ───────
     if assessments:
-        total_max = sum(a.max_score for a in assessments if a.max_score)
-        total_got = sum(a.score     for a in assessments if a.score is not None)
-        avg_score = (total_got / total_max * 100) if total_max else 0.0
+        raw_filtered = scores_from_assessments(assessments)
+        filtered_result = calculate_scores_from_template(raw_filtered)
+        avg_score = filtered_result['final_score']
+        filt_res = {'gpa': filtered_result['gpa'], 'grade': filtered_result['grade']}
     else:
         avg_score = 0.0
+        filt_res = {'gpa': 'N/A', 'grade': 'N/A'}
 
-    filt_res = calculate_gpa_and_grade(avg_score)
     comment  = _get_comment(gpa_grade['gpa']) if gpa_grade['gpa'] != 'N/A' else None
 
     # ── Quiz attempts ──────────────────────────────────────────────────────
@@ -3429,32 +3434,7 @@ def quiz_attempt_review(attempt_id):
 def export_csv():
     if not (current_user.is_admin() or current_user.is_teacher()):
         abort(403)
-    q = Assessment.query.filter_by(archived=False)
-    if current_user.is_teacher():
-        q = q.filter_by(teacher_id=current_user.id)
-    q = q.options(
-        joinedload(Assessment.student),
-        joinedload(Assessment.assigned_teacher),
-    )
-    assessments = q.order_by(Assessment.date_recorded.desc()).all()
-    si = io.StringIO()
-    w  = csv.writer(si)
-    w.writerow(['student_number', 'name', 'category', 'subject', 'score',
-                'max_score', 'percentage', 'term', 'academic_year',
-                'session', 'assessor', 'teacher', 'comments', 'date_recorded'])
-    for a in assessments:
-        tname = a.assigned_teacher.username if a.assigned_teacher else 'N/A'
-        w.writerow([a.student.student_number, a.student.full_name(), a.category,
-                    a.subject, a.score, a.max_score,
-                    f'{a.get_percentage():.2f}', a.term,
-                    a.academic_year, a.session, a.assessor, tname,
-                    a.comments, a.date_recorded.strftime('%Y-%m-%d %H:%M:%S')])
-    mem = io.BytesIO()
-    mem.write(si.getvalue().encode('utf-8'))
-    mem.seek(0)
-    return send_file(mem, as_attachment=True,
-                     download_name='assessments_export.csv',
-                     mimetype='text/csv')
+    return redirect(url_for('export_assessments_excel'))
 
 
 @app.route('/export/student/<int:student_id>/csv')
@@ -3462,35 +3442,10 @@ def export_csv():
 def export_student_csv(student_id):
     if not (current_user.is_admin() or current_user.is_teacher()):
         abort(403)
-    student = Student.query.get_or_404(student_id)
     subject = request.args.get('subject')
-    q = Assessment.query.filter_by(student_id=student.id, archived=False)
-    if current_user.is_teacher():
-        q = q.filter_by(teacher_id=current_user.id)
-        if current_user.subject:
-            q = q.filter_by(subject=current_user.subject)
     if subject:
-        q = q.filter_by(subject=subject)
-    q = q.options(joinedload(Assessment.assigned_teacher))
-    si = io.StringIO()
-    w  = csv.writer(si)
-    w.writerow(['category', 'subject', 'class', 'score', 'max_score',
-                'percentage', 'grade', 'term', 'academic_year',
-                'session', 'assessor', 'teacher', 'comments', 'date_recorded'])
-    for a in q.all():
-        tname = a.assigned_teacher.username if a.assigned_teacher else 'N/A'
-        w.writerow([a.category, a.subject, a.class_name,
-                    a.score, a.max_score, f'{a.get_percentage():.2f}',
-                    a.get_grade_letter(), a.term, a.academic_year,
-                    a.session, a.assessor, tname, a.comments,
-                    a.date_recorded.strftime('%Y-%m-%d %H:%M:%S')])
-    mem = io.BytesIO()
-    mem.write(si.getvalue().encode('utf-8'))
-    mem.seek(0)
-    sub_s = f'_{subject}' if subject else ''
-    return send_file(mem, as_attachment=True,
-                     download_name=f'{student.student_number}_{student.last_name}_assessments{sub_s}.csv',
-                     mimetype='text/csv')
+        return redirect(url_for('export_student_excel', student_id=student_id, subject=subject))
+    return redirect(url_for('export_student_excel', student_id=student_id))
 
 
 @app.route('/export/excel/student/<int:student_id>')
@@ -3663,14 +3618,21 @@ def import_excel():
                     errors.append(str(exc))
             cache.delete("incomplete_assessments")
             db.session.commit()
-            os.remove(filepath)
+            try:
+                os.remove(filepath)
+            except OSError:
+                pass
             flash(f'Imported {ok} assessments', 'success')
             if errors:
                 flash(f'{len(errors)} errors: {"; ".join(errors[:5])}', 'warning')
             return redirect(url_for('assessments_list'))
         except Exception as exc:
             db.session.rollback()
-            if os.path.exists(filepath): os.remove(filepath)
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                except OSError:
+                    pass
             flash(f'Error: {exc}', 'danger')
     return render_template('import_excel.html', form=form)
 

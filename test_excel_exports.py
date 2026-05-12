@@ -3,7 +3,7 @@ import tempfile
 from openpyxl import Workbook, load_workbook
 from flask_login import login_user
 
-from app import app, db, export_student_excel, download_template
+from app import app, db, export_csv, export_student_csv, export_student_excel, download_template
 from models import User, Student, Assessment, Setting
 from template_updater import AssessmentTemplateUpdater, calculate_scores_from_template
 
@@ -153,6 +153,54 @@ def test_export_student_excel_route_creates_file(tmp_path):
 
         assert response.status_code == 200
         assert 'attachment' in response.headers.get('Content-Disposition', '')
+
+
+def test_export_csv_route_redirects_to_excel(tmp_path):
+    template_path = tmp_path / 'student_template.xlsx'
+    _create_minimal_school_template(str(template_path))
+
+    _setup_db_with_template(app, tmp_path)
+
+    with app.app_context():
+        admin_user = User(username='admin_test', password_hash='x', role='admin')
+        db.session.add(admin_user)
+        db.session.commit()
+
+        with app.test_request_context():
+            login_user(admin_user)
+            response = export_csv()
+
+        assert response.status_code == 302
+        assert response.headers.get('Location', '').endswith('/export/assessments/excel')
+
+
+def test_export_student_csv_route_redirects_to_excel(tmp_path):
+    template_path = tmp_path / 'student_template.xlsx'
+    _create_minimal_school_template(str(template_path))
+
+    _setup_db_with_template(app, tmp_path)
+
+    with app.app_context():
+        admin_user = User(username='admin_test2', password_hash='x', role='admin')
+        db.session.add(admin_user)
+        db.session.commit()
+
+        student = Student(
+            first_name='Jane',
+            last_name='Doe',
+            student_number='STU101',
+            class_name='form1',
+            study_area='mathematics'
+        )
+        db.session.add(student)
+        db.session.commit()
+
+        with app.test_request_context():
+            login_user(admin_user)
+            response = export_student_csv(student.id)
+
+        assert response.status_code == 302
+        assert response.headers.get('Location', '').endswith(f'/export/excel/student/{student.id}')
 
 
 def test_download_template_student_route_serves_template(tmp_path):

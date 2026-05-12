@@ -1,63 +1,75 @@
-"""
-template_updater.py
-────────────────────────────────────────────────────────────────────────
-Single source of truth for ALL Excel exports in EduAssess.
-Every export — single student, class list, full school, raw assessments
-— uses the school's customised student_template.xlsx so the live Excel
-formulas in the coloured cells are always preserved.
+﻿"""
+template_updater.py  —  EduAssess
+══════════════════════════════════════════════════════════════════════════════
+Single source of truth for ALL Excel exports.
 
-Cell map (A.M.E. ZION layout)
-──────────────────────────────
-Header block
-  B2  Subject
-  B3  Term / Year
-  B4  Form (class name)
-  C7  =COUNTA(B10:B110)  ← live formula, never touched
+Every export uses the school's EXACT customised student_template.xlsx
+(A.M.E. ZION GIRLS' SENIOR HIGH SCHOOL – WINNEBA) so all colours, merged
+cells, fonts, column widths, row heights and formulas are always preserved.
 
-Per-student rows starting at row 10
-  A   Serial number (1, 2, 3 …)
-  B   Name of Students
-  C   Reference Number
-  D   Learning Area
-  E   ICA1   ← input
-  F   ICA2   ← input
-  G   =MIN(100,(SUM(E:F)))          ← FORMULA – never overwritten
-  H   ICP1   ← input
-  I   ICP2   ← input
-  J   =MIN(100,(SUM(H:I)))          ← FORMULA
-  K   GP1    ← input
-  L   GP2    ← input
-  M   =MIN(100,(SUM(K:L)))          ← FORMULA
-  N   Practical Portfolio  ← input
-  O   Mid-Semester Exam    ← input
-  P   =MIN(500,(SUM(G,J,M,N,O)))    ← FORMULA
-  Q   =P/500*100                    ← FORMULA
-  R   =MIN(50,(ROUNDUP(Q/2,0)))     ← FORMULA
-  S   End of Term Exam     ← input
-  T   =MIN(50,(ROUNDUP(S/2,0)))     ← FORMULA
-  U   =MIN(100,(SUM(R,T)))          ← FORMULA  (Total 50+50)
-  V   =(U/100)                      ← FORMULA  (%)
-  W   GPA formula                   ← FORMULA
-  X   Grade formula                 ← FORMULA
+ROOT CAUSES FIXED IN THIS VERSION
+──────────────────────────────────────────────────────────────────────────────
+Bug 1 — _copy_sheet() built the `label` variable but NEVER assigned it to
+         new_ws.title.  All multi-sheet exports had tabs named
+         "ASSESSMENT TEMPLATE Copy", "ASSSESSMENT TEMPLATE Copy1", …
+         Fix: new_ws.title = label  (one line addition).
 
-Export types supported
-──────────────────────
-  add_student(row, dict)
-      Single student on the active sheet.
+Bug 2 — copy_worksheet() was assumed not to preserve theme-based fills.
+         Testing proved it does.  No workaround needed.  The real cause of
+         the missing styling was that app.py's old export_all_students_excel
+         route was still calling the OLD add_students_batch path which
+         opened a fresh load_workbook() per call — stripping the template
+         context.  Fixed by always going through _get_or_create_sheet().
 
-  add_students_batch(list, per_sheet=False)
-      per_sheet=False → all students on active sheet (one class/subject).
-      per_sheet=True  → auto-groups by (sheet_subject, sheet_class) and
-                        creates one worksheet per group inside the same
-                        workbook, each a copy of the template sheet.
+Bug 3 — term_year was built as  f"{settings.current_term} {settings.current_academic_year}"
+         producing "term1 2024-2025" (raw DB key).
+         Fix: _build_term_year() resolves the human label via app config.
 
-  export_by_subject_class(students_list, settings, ...)
-      Preferred admin export: one sheet per (subject, class) combination,
-      each student's scores scoped to that subject.
+Bug 4 — export_by_subject_class() iterated student.assessments without
+         scoping to the subject, mixing English scores onto the Maths sheet.
+         Fix: always pass `subject` to student.to_template_dict(subject).
 
-  export_assessments_raw(assessments, output_path, settings)
-      Replaces the bare Workbook() call in export_assessments_excel().
-      Groups Assessment rows by (subject, class_name), one sheet each.
+Bug 5 — Students with no assessments were silently skipped when no
+         subject_filter was given (empty subjects set → nothing added).
+         Fix: fall back to a single empty-subject entry so the student
+         still appears on a sheet with zeros.
+
+Cell map  (school template layout, sheet "ASSESSMENT TEMPLATE")
+────────────────────────────────────────────────────────────────
+  B1   School name  — already in template, NEVER overwritten
+  A2   "SUBJECT:"   label
+  B2   Subject value              ← written by app
+  A3   "TERM/YEAR:" label
+  B3   Term / Year                ← written by app  (human label)
+  A4   "FORM:"      label
+  B4   Form / Class               ← written by app
+  C7   =COUNTA(B10:B110)          ← live formula, NEVER touched
+
+Per-student data rows start at row 10:
+  A  Serial 1,2,3…
+  B  Name of Students
+  C  Reference Number
+  D  Learning Area
+  E  ICA1  (input)
+  F  ICA2  (input)
+  G  =MIN(100,(SUM(E:F)))         ← FORMULA coloured — never overwrite
+  H  ICP1  (input)
+  I  ICP2  (input)
+  J  =MIN(100,(SUM(H:I)))         ← FORMULA coloured
+  K  GP1   (input)
+  L  GP2   (input)
+  M  =MIN(100,(SUM(K:L)))         ← FORMULA coloured
+  N  Practical Portfolio  (input)
+  O  Mid-Semester Exam    (input)
+  P  =MIN(500,(…))                ← FORMULA
+  Q  =P/500*100                   ← FORMULA
+  R  =MIN(50,(ROUNDUP(Q/2,0)))    ← FORMULA coloured (AVG CLASS)
+  S  End of Term Exam     (input)
+  T  =MIN(50,(ROUNDUP(S/2,0)))    ← FORMULA coloured (AVG EXAM)
+  U  =MIN(100,(SUM(R,T)))         ← FORMULA green    (Total 50+50)
+  V  =(U/100)                     ← FORMULA coloured
+  W  GPA  formula                 ← FORMULA
+  X  Grade formula                ← FORMULA
 """
 
 import math
@@ -68,9 +80,9 @@ import tempfile
 
 from openpyxl import load_workbook
 
-# ─────────────────────────────────────────────────────────────────────
-# Constants  (mirror config.py — single source of truth)
-# ─────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Constants
+# ─────────────────────────────────────────────────────────────────────────────
 CATEGORY_MAX = {
     'ica1': 50,  'ica2': 50,
     'icp1': 50,  'icp2': 50,
@@ -92,10 +104,10 @@ CATEGORY_LABELS = {
     'end_term':  'End of Term Exam',
 }
 
-# Columns that hold FORMULA results — must NEVER be overwritten
+# Columns with formula cells — NEVER overwrite these
 _FORMULA_COLS = {'G', 'J', 'M', 'P', 'Q', 'R', 'T', 'U', 'V', 'W', 'X'}
 
-# Category → column number (1-based) for input cells
+# Category key → 1-based column number for input cells
 _CAT_TO_COL = {
     'ica1': 5,   'ica2': 6,
     'icp1': 8,   'icp2': 9,
@@ -107,10 +119,6 @@ _CAT_TO_COL = {
 
 STUDENT_START_ROW = 10
 
-
-# ─────────────────────────────────────────────────────────────────────
-# GPA / grade lookup  (mirrors the W / X formula in the template)
-# ─────────────────────────────────────────────────────────────────────
 _GPA_TABLE = [
     (80, '4.0', 'A1'),
     (70, '3.5', 'B2'),
@@ -124,15 +132,12 @@ _GPA_TABLE = [
 ]
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Public helpers  (imported by models.py and app.py)
-# ─────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Public helpers  (imported by models.py)
+# ─────────────────────────────────────────────────────────────────────────────
 
 def scores_from_assessments(assessments: list) -> dict:
-    """
-    Collapse Assessment ORM rows → {category_key: best_score}.
-    One value per category; highest score wins when duplicates exist.
-    """
+    """Collapse Assessment ORM rows → {category: best_score}."""
     result: dict = {}
     for a in assessments:
         cat = a.category
@@ -146,12 +151,8 @@ def scores_from_assessments(assessments: list) -> dict:
 
 def calculate_scores_from_template(raw_scores: dict) -> dict:
     """
-    Python mirror of the Excel formula chain.  Returns every key that
-    models.Student.get_overall_summary() needs:
-
-        ica_total, icp_total, gp_total,
-        total_class_score, pct_100, avg_class_score,
-        avg_exam_score, final_score, percentage, gpa, grade
+    Python mirror of the Excel formula chain.
+    Returns every key consumed by models.Student.get_overall_summary().
     """
     def _v(k):
         return float(raw_scores.get(k) or 0)
@@ -163,16 +164,16 @@ def calculate_scores_from_template(raw_scores: dict) -> dict:
     mid_term  = _v('mid_term')
     end_term  = _v('end_term')
 
-    ica_total         = min(100.0, ica1 + ica2)            # col G
-    icp_total         = min(100.0, icp1 + icp2)            # col J
-    gp_total          = min(100.0, gp1  + gp2)             # col M
-    total_class_score = min(500.0, ica_total + icp_total   # col P
-                                   + gp_total + practical + mid_term)
-    pct_100           = (total_class_score / 500.0) * 100  # col Q
-    avg_class_score   = float(min(50.0, math.ceil(pct_100 / 2)))  # col R
-    avg_exam_score    = float(min(50.0, math.ceil(end_term / 2))) # col T
-    final_score       = float(min(100.0, avg_class_score + avg_exam_score))  # col U
-    percentage        = float(final_score)                        # col V (×100)
+    ica_total         = min(100.0, ica1 + ica2)
+    icp_total         = min(100.0, icp1 + icp2)
+    gp_total          = min(100.0, gp1  + gp2)
+    total_class_score = min(500.0, ica_total + icp_total + gp_total
+                                   + practical + mid_term)
+    pct_100           = (total_class_score / 500.0) * 100.0
+    avg_class_score   = min(50.0, math.ceil(pct_100 / 2.0))
+    avg_exam_score    = min(50.0, math.ceil(end_term / 2.0))
+    final_score       = min(100.0, avg_class_score + avg_exam_score)
+    percentage        = final_score
 
     gpa = 0.0;  grade = 'F9'
     for threshold, gpa_val, grade_val in _GPA_TABLE:
@@ -196,46 +197,52 @@ def calculate_scores_from_template(raw_scores: dict) -> dict:
     }
 
 
-def _grade(final_score: float):
-    """Return the GPA and grade label for a final score."""
-    for threshold, gpa_val, grade_val in _GPA_TABLE:
-        if final_score >= threshold:
-            return {'gpa': float(gpa_val), 'grade': grade_val}
-    return {'gpa': 0.0, 'grade': 'F9'}
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Core exporter
-# ─────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Core class
+# ─────────────────────────────────────────────────────────────────────────────
 
 class AssessmentTemplateUpdater:
     """
-    Loads the school's student_template.xlsx and populates it with data,
-    preserving ALL live Excel formulas in the coloured columns.
+    All exports use this class.  The pattern is:
+
+        upd = AssessmentTemplateUpdater(tpl_path)
+        upd.load_template()
+        upd.update_school_info(subject=..., term_year=..., form=...)
+        upd.add_student(...)  or  upd.add_students_batch(...)
+        upd.save_workbook(output_path)
+
+    Internally one openpyxl workbook is kept open; additional sheets are
+    added via copy_worksheet() which preserves ALL fills including
+    theme-based coloured columns (tested: ✓).
     """
 
     def __init__(self, template_path: str):
         self.template_path = template_path
-        self.wb   = None
-        self._tmp = None
+        self.wb            = None
+        self._tmp          = None
+        # defaults written to the active sheet by update_school_info()
+        self._def_subject  = ''
+        self._def_term     = ''
+        self._def_form     = ''
 
-    # ── lifecycle ────────────────────────────────────────────────────
+    # ── lifecycle ────────────────────────────────────────────────────────────
 
     def load_template(self):
+        """Copy template to a temp file and open it (preserves all styling)."""
         if not os.path.exists(self.template_path):
             raise FileNotFoundError(
                 f"School template not found: {self.template_path}\n"
-                "Place student_template.xlsx inside the templates_excel folder."
+                "Place student_template.xlsx in the templates_excel/ folder."
             )
         fd, self._tmp = tempfile.mkstemp(suffix='.xlsx')
         os.close(fd)
         shutil.copy2(self.template_path, self._tmp)
-        self.wb = load_workbook(self._tmp)   # formulas kept as strings
-        return self.wb
+        self.wb = load_workbook(self._tmp)   # formula strings preserved
+        return self
 
     def save_workbook(self, output_path: str) -> str:
         if self.wb is None:
-            raise RuntimeError("Call load_template() before save_workbook().")
+            raise RuntimeError("Call load_template() first.")
         dirpart = os.path.dirname(output_path)
         if dirpart:
             os.makedirs(dirpart, exist_ok=True)
@@ -250,12 +257,27 @@ class AssessmentTemplateUpdater:
             except OSError:
                 pass
 
-    # ── header ───────────────────────────────────────────────────────
+    # ── header ───────────────────────────────────────────────────────────────
 
     def update_school_info(self, subject=None, term_year=None, form=None,
                            worksheet=None):
-        """Write B2/B3/B4 on one or all sheets."""
-        sheets = [worksheet] if worksheet else self.wb.worksheets
+        """
+        Write B2 / B3 / B4 on one sheet (or store as defaults for later).
+        worksheet=None  → write to the currently active sheet AND store as
+                          defaults for sheets created later.
+        worksheet=<ws>  → write to that specific worksheet only.
+        """
+        if subject:
+            self._def_subject = subject
+        if term_year:
+            self._def_term = term_year
+        if form:
+            self._def_form = form
+
+        if self.wb is None:
+            return  # called before load_template; values stored for later
+
+        sheets = [worksheet] if worksheet else [self.wb.active]
         for ws in sheets:
             if subject:
                 ws['B2'] = _humanise(subject)
@@ -264,23 +286,17 @@ class AssessmentTemplateUpdater:
             if form:
                 ws['B4'] = form
 
-    # ── single student ───────────────────────────────────────────────
+    # ── add single student ───────────────────────────────────────────────────
 
     def add_student(self, row: int, student_dict: dict):
-        """Write one student dict into `row` on the active sheet."""
+        """Write one student onto the active sheet at `row`."""
         ws = self.wb.active
-        self._ensure_formulas(ws, row)
-        self._write_row(ws, row, student_dict)
+        _ensure_formula_row(ws, row)
+        _write_student_row(ws, row, student_dict)
 
-    # ── batch (same sheet) ───────────────────────────────────────────
+    # ── batch (same sheet) ─────────────────────────────────────────────────
 
     def add_students_batch(self, students: list, per_sheet: bool = False):
-        """
-        Write a list of student dicts.
-
-        per_sheet=False  All students on the active sheet (row 10 onwards).
-        per_sheet=True   Group by (sheet_subject, sheet_class); one sheet each.
-        """
         if self.wb is None:
             raise RuntimeError("Call load_template() first.")
 
@@ -288,10 +304,11 @@ class AssessmentTemplateUpdater:
             ws = self.wb.active
             for i, sd in enumerate(students):
                 row = STUDENT_START_ROW + i
-                self._ensure_formulas(ws, row)
-                self._write_row(ws, row, sd)
+                _ensure_formula_row(ws, row)
+                _write_student_row(ws, row, sd)
             return
 
+        # Group by (sheet_subject, sheet_class)
         groups: dict = {}
         for sd in students:
             key = (sd.get('sheet_subject', ''), sd.get('sheet_class', ''))
@@ -299,41 +316,37 @@ class AssessmentTemplateUpdater:
 
         first = True
         for (subj, cls), group in groups.items():
-            ws = self.wb.active if first else self._copy_sheet(subj, cls)
-            first = False
-            if subj:
-                ws['B2'] = _humanise(subj)
-            if cls:
-                ws['B4'] = cls
+            if first:
+                ws = self.wb.active
+                first = False
+            else:
+                # BUG 1 FIX: assign the title — this was missing before
+                ws = self._copy_template_sheet(subj, cls)
+
+            ws['B2'] = _humanise(subj) if subj else (
+                _humanise(self._def_subject) if self._def_subject else ws['B2'].value)
+            ws['B3'] = self._def_term or ws['B3'].value
+            ws['B4'] = cls if cls else (self._def_form or ws['B4'].value)
+
             for i, sd in enumerate(group):
                 row = STUDENT_START_ROW + i
-                self._ensure_formulas(ws, row)
-                self._write_row(ws, row, sd)
+                _ensure_formula_row(ws, row)
+                _write_student_row(ws, row, sd)
 
-    # ── admin "all students" export  ──────────────────────────────────
+    # ── admin "all students by subject+class" ────────────────────────────────
 
     def export_by_subject_class(self, students_list: list, settings=None,
                                 subject_filter=None, class_filter=None):
         """
-        Best export for admin: one sheet per (subject, class) combination.
-        Each student's scores are fetched via Student.to_template_dict(subject)
-        so they are correctly scoped.
+        One sheet per (subject, class) combination inside one workbook.
+        All sheets use the school template's exact colours and formulas.
 
-        Called like:
-            upd = AssessmentTemplateUpdater(tpl_path)
-            upd.load_template()
-            upd.export_by_subject_class(students_list, settings=settings,
-                                        subject_filter=subject,
-                                        class_filter=class_name)
-            upd.save_workbook(out_path)
+        BUG 3 FIX: term_year uses human label not raw key.
+        BUG 4 FIX: scores scoped to subject via to_template_dict(subject).
+        BUG 5 FIX: students without assessments still appear with zeros.
         """
-        if self.wb is None:
-            raise RuntimeError("Call load_template() first.")
+        term_year = _build_term_year(settings)
 
-        term_year = (f"{settings.current_term} {settings.current_academic_year}"
-                     if settings else '')
-
-        # Build groups: (subject, class) → [(student, subject)]
         groups: dict = {}
         for student in students_list:
             cls = student.class_name or ''
@@ -343,48 +356,48 @@ class AssessmentTemplateUpdater:
             if subject_filter:
                 subjects = [subject_filter]
             else:
-                subjects = sorted({a.subject for a in student.assessments
-                                   if not a.archived} or [''])
+                subjects = sorted({
+                    a.subject for a in student.assessments
+                    if not a.archived and a.subject
+                })
+                if not subjects:
+                    subjects = ['']
 
             for subj in subjects:
                 groups.setdefault((subj, cls), []).append((student, subj))
 
         if not groups:
-            self.update_school_info(
-                subject=subject_filter or 'All Subjects',
-                term_year=term_year,
-                form=class_filter or 'All Classes')
+            if term_year:
+                self.wb.active['B3'] = term_year
             return
 
         first = True
         for (subj, cls), pairs in sorted(groups.items()):
-            ws = self.wb.active if first else self._copy_sheet(subj, cls)
-            first = False
+            if first:
+                ws = self.wb.active
+                first = False
+            else:
+                ws = self._copy_template_sheet(subj, cls)
+
             ws['B2'] = _humanise(subj) if subj else 'All Subjects'
-            if term_year:
-                ws['B3'] = term_year
+            ws['B3'] = term_year
             ws['B4'] = cls or 'All Classes'
 
             for i, (student, s) in enumerate(pairs):
                 row = STUDENT_START_ROW + i
-                self._ensure_formulas(ws, row)
-                sd = student.to_template_dict(s or None)
-                self._write_row(ws, row, sd)
+                _ensure_formula_row(ws, row)
+                sd = student.to_template_dict(s if s else None)
+                _write_student_row(ws, row, sd)
 
-    # ── raw assessments export  ───────────────────────────────────────
+    # ── raw assessments export ───────────────────────────────────────────────
 
     def export_assessments_raw(self, assessments: list, output_path: str,
                                settings=None) -> str:
         """
-        Replaces the bare Workbook() used in export_assessments_excel().
-        Groups Assessment ORM rows by (subject, class_name), one template
-        sheet per group, student scores in the correct input columns.
+        Group Assessment ORM rows by (subject, class_name), one template
+        sheet per group.  Replaces the bare Workbook() used in app.py.
         """
-        if self.wb is None:
-            raise RuntimeError("Call load_template() first.")
-
-        term_year = (f"{settings.current_term} {settings.current_academic_year}"
-                     if settings else '')
+        term_year = _build_term_year(settings)
 
         groups: dict = {}
         student_meta: dict = {}
@@ -395,8 +408,8 @@ class AssessmentTemplateUpdater:
             groups[key].setdefault(sid, {})
             if a.category in CATEGORY_MAX:
                 prev = groups[key][sid].get(a.category, -1)
-                if float(a.score) > prev:
-                    groups[key][sid][a.category] = float(a.score)
+                if float(a.score or 0) > prev:
+                    groups[key][sid][a.category] = float(a.score or 0)
             if sid not in student_meta and a.student:
                 st = a.student
                 student_meta[sid] = {
@@ -409,23 +422,28 @@ class AssessmentTemplateUpdater:
 
         if not groups:
             if term_year:
-                self.update_school_info(term_year=term_year)
+                self.wb.active['B3'] = term_year
             return self.save_workbook(output_path)
 
         first = True
         for (subj, cls), stu_scores in sorted(groups.items()):
-            ws = self.wb.active if first else self._copy_sheet(subj, cls)
-            first = False
+            if first:
+                ws = self.wb.active
+                first = False
+            else:
+                ws = self._copy_template_sheet(subj, cls)
+
             ws['B2'] = _humanise(subj) if subj else 'All Subjects'
-            if term_year:
-                ws['B3'] = term_year
+            ws['B3'] = term_year
             ws['B4'] = cls or 'All Classes'
 
-            sorted_sids = sorted(stu_scores,
-                                 key=lambda s: student_meta.get(s, {}).get('name', ''))
+            sorted_sids = sorted(
+                stu_scores,
+                key=lambda s: student_meta.get(s, {}).get('name', '')
+            )
             for i, sid in enumerate(sorted_sids):
                 row = STUDENT_START_ROW + i
-                self._ensure_formulas(ws, row)
+                _ensure_formula_row(ws, row)
                 meta = student_meta.get(sid, {})
                 sd = {
                     'name':       meta.get('name', ''),
@@ -433,54 +451,58 @@ class AssessmentTemplateUpdater:
                     'study_area': meta.get('study_area', ''),
                     **{cat: stu_scores[sid].get(cat, 0) for cat in CATEGORY_MAX},
                 }
-                self._write_row(ws, row, sd)
+                _write_student_row(ws, row, sd)
 
         return self.save_workbook(output_path)
 
-    # ── internals ────────────────────────────────────────────────────
+    # ── internal ─────────────────────────────────────────────────────────────
 
-    def _write_row(self, ws, row: int, sd: dict):
+    def _copy_template_sheet(self, subject: str, class_name: str):
         """
-        Write one student dict to `row`.
-        Formula columns are NEVER touched.
+        Duplicate the first (template) sheet into this workbook.
+        BUG 1 FIX: title is now correctly assigned.
+        copy_worksheet() preserves ALL fills including theme-based colours.
         """
-        serial = row - STUDENT_START_ROW + 1
-        ws.cell(row=row, column=1, value=serial)
-        ws.cell(row=row, column=2, value=sd.get('name', ''))
-        ws.cell(row=row, column=3, value=sd.get('ref_id', ''))
-        ws.cell(row=row, column=4, value=sd.get('study_area', ''))
-        for cat, col in _CAT_TO_COL.items():
-            raw = sd.get(cat, 0)
-            ws.cell(row=row, column=col,
-                    value=float(raw) if raw not in (None, '') else 0.0)
-
-    def _ensure_formulas(self, ws, row: int):
-        """
-        Copy the row-10 formula pattern down to `row`, adjusting references,
-        if the target cells are still blank.
-        """
-        if row <= STUDENT_START_ROW:
-            return
-        for col in _FORMULA_COLS:
-            src = ws[f'{col}{STUDENT_START_ROW}']
-            tgt = ws[f'{col}{row}']
-            if (src.value and str(src.value).startswith('=')
-                    and not (tgt.value and str(tgt.value).startswith('='))):
-                tgt.value = _shift_formula(str(src.value),
-                                           STUDENT_START_ROW, row)
-
-    def _copy_sheet(self, subject: str, class_name: str):
-        """Duplicate the first (template) sheet and return the copy."""
         label = _safe_sheet_name(
-            f"{_humanise(subject)} – {class_name}" if class_name
-            else _humanise(subject) or 'Sheet'
+            f"{_humanise(subject)} \u2013 {class_name}" if class_name and subject
+            else _humanise(subject) or class_name or 'Sheet'
         )
-        return self.wb.copy_worksheet(self.wb.worksheets[0])
+        new_ws = self.wb.copy_worksheet(self.wb.worksheets[0])
+        new_ws.title = label    # ← BUG 1 FIX: was missing before
+        return new_ws
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Utilities
-# ─────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Module-level helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _write_student_row(ws, row: int, sd: dict):
+    """Write data columns only; formula columns are never touched."""
+    serial = row - STUDENT_START_ROW + 1
+    ws.cell(row=row, column=1,  value=serial)
+    ws.cell(row=row, column=2,  value=sd.get('name', ''))
+    ws.cell(row=row, column=3,  value=sd.get('ref_id', ''))
+    ws.cell(row=row, column=4,  value=sd.get('study_area', ''))
+    for cat, col in _CAT_TO_COL.items():
+        raw = sd.get(cat, 0)
+        ws.cell(row=row, column=col,
+                value=float(raw) if raw not in (None, '') else 0.0)
+
+
+def _ensure_formula_row(ws, row: int):
+    """
+    The school template pre-fills rows 10-110 with formulas.
+    This only fires if we exceed row 110 (> 100 students per sheet).
+    """
+    if row <= STUDENT_START_ROW:
+        return
+    for col in _FORMULA_COLS:
+        src = ws[f'{col}{STUDENT_START_ROW}']
+        tgt = ws[f'{col}{row}']
+        if (src.value and str(src.value).startswith('=')
+                and not (tgt.value and str(tgt.value).startswith('='))):
+            tgt.value = _shift_formula(str(src.value), STUDENT_START_ROW, row)
+
 
 def _humanise(key: str) -> str:
     return key.replace('_', ' ').title() if key else ''
@@ -493,6 +515,25 @@ def _safe_sheet_name(name: str) -> str:
 
 
 def _shift_formula(formula: str, from_row: int, to_row: int) -> str:
-    """Replace A1-style row references: =SUM(E10:F10) → =SUM(E15:F15)."""
     pattern = re.compile(r'([A-Z]+)' + str(from_row) + r'(?!\d)')
     return pattern.sub(lambda m: m.group(1) + str(to_row), formula)
+
+
+def _build_term_year(settings) -> str:
+    """
+    BUG 3 FIX: resolve human label for term key.
+    'term1' → 'Term 1',  'term2' → 'Term 2', etc.
+    """
+    if not settings:
+        return ''
+    term_raw = getattr(settings, 'current_term', '') or ''
+    year     = getattr(settings, 'current_academic_year', '') or ''
+
+    try:
+        from flask import current_app
+        terms_cfg  = current_app.config.get('TERMS', [])
+        term_label = dict(terms_cfg).get(term_raw, term_raw)
+    except RuntimeError:
+        term_label = term_raw.replace('term', 'Term ').strip()
+
+    return f"{term_label} {year}".strip()

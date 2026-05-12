@@ -86,26 +86,28 @@ class ExcelBulkImporter:
 
     def import_assessments(self, start_row=2):
         wb = load_workbook(self.file_path, data_only=True)
-        ws = wb.active
-        assessments = []
-        for row in ws.iter_rows(min_row=start_row, values_only=True):
-            if not any(row):
-                continue
-            assessment_data = {
-                'student_number': row[0],
-                'category': row[1],
-                'subject': row[2],
-                'score': row[3],
-                'max_score': row[4],
-                'term': row[5],
-                'session': row[6],
-                'assessor': row[7],
-                'comments': row[8] if len(row) > 8 else ""
-            }
-            if assessment_data['student_number'] and assessment_data['score'] is not None:
-                assessments.append(assessment_data)
-        wb.close()
-        return assessments
+        try:
+            ws = wb.active
+            assessments = []
+            for row in ws.iter_rows(min_row=start_row, values_only=True):
+                if not any(row):
+                    continue
+                assessment_data = {
+                    'student_number': row[0],
+                    'category': row[1],
+                    'subject': row[2],
+                    'score': row[3],
+                    'max_score': row[4],
+                    'term': row[5],
+                    'session': row[6],
+                    'assessor': row[7],
+                    'comments': row[8] if len(row) > 8 else ""
+                }
+                if assessment_data['student_number'] and assessment_data['score'] is not None:
+                    assessments.append(assessment_data)
+            return assessments
+        finally:
+            wb.close()
 
 
 class StudentBulkImporter:
@@ -114,31 +116,33 @@ class StudentBulkImporter:
 
     def import_students(self, start_row=2):
         wb = load_workbook(self.file_path, data_only=True)
-        ws = wb.active
-        students = []
+        try:
+            ws = wb.active
+            students = []
 
-        def normalize(value):
-            if value is None:
-                return None
-            if isinstance(value, float) and value.is_integer():
-                value = int(value)
-            return str(value).strip()
+            def normalize(value):
+                if value is None:
+                    return None
+                if isinstance(value, float) and value.is_integer():
+                    value = int(value)
+                return str(value).strip()
 
-        for row in ws.iter_rows(min_row=start_row, values_only=True):
-            if not any(row):
-                continue
-            student_data = {
-                'student_number': normalize(row[0]) if len(row) > 0 else None,
-                'first_name':     normalize(row[1]) if len(row) > 1 else None,
-                'last_name':      normalize(row[2]) if len(row) > 2 else None,
-                'middle_name':    normalize(row[3]) if len(row) > 3 else None,
-                'class_name':     normalize(row[4]) if len(row) > 4 else None,
-                'study_area':     normalize(row[5]) if len(row) > 5 else None,
-            }
-            if student_data['student_number'] and student_data['first_name'] and student_data['last_name']:
-                students.append(student_data)
-        wb.close()
-        return students
+            for row in ws.iter_rows(min_row=start_row, values_only=True):
+                if not any(row):
+                    continue
+                student_data = {
+                    'student_number': normalize(row[0]) if len(row) > 0 else None,
+                    'first_name':     normalize(row[1]) if len(row) > 1 else None,
+                    'last_name':      normalize(row[2]) if len(row) > 2 else None,
+                    'middle_name':    normalize(row[3]) if len(row) > 3 else None,
+                    'class_name':     normalize(row[4]) if len(row) > 4 else None,
+                    'study_area':     normalize(row[5]) if len(row) > 5 else None,
+                }
+                if student_data['student_number'] and student_data['first_name'] and student_data['last_name']:
+                    students.append(student_data)
+            return students
+        finally:
+            wb.close()
 
 
 class TeacherBulkImporter:
@@ -147,30 +151,32 @@ class TeacherBulkImporter:
 
     def import_teachers(self, start_row=2):
         wb = load_workbook(self.file_path, data_only=True)
-        ws = wb.active
-        teachers = []
+        try:
+            ws = wb.active
+            teachers = []
 
-        def normalize(value):
-            if value is None:
-                return None
-            if isinstance(value, float) and value.is_integer():
-                value = int(value)
-            return str(value).strip()
+            def normalize(value):
+                if value is None:
+                    return None
+                if isinstance(value, float) and value.is_integer():
+                    value = int(value)
+                return str(value).strip()
 
-        for row in ws.iter_rows(min_row=start_row, values_only=True):
-            if not any(row):
-                continue
-            teacher_data = {
-                'username': normalize(row[0]) if len(row) > 0 else None,
-                'password': normalize(row[1]) if len(row) > 1 else None,
-                'role':     normalize(row[2]) if len(row) > 2 else None,
-                'subject':  normalize(row[3]) if len(row) > 3 else None,
-                'classes':  normalize(row[4]) if len(row) > 4 else None,
-            }
-            if teacher_data['username']:
-                teachers.append(teacher_data)
-        wb.close()
-        return teachers
+            for row in ws.iter_rows(min_row=start_row, values_only=True):
+                if not any(row):
+                    continue
+                teacher_data = {
+                    'username': normalize(row[0]) if len(row) > 0 else None,
+                    'password': normalize(row[1]) if len(row) > 1 else None,
+                    'role':     normalize(row[2]) if len(row) > 2 else None,
+                    'subject':  normalize(row[3]) if len(row) > 3 else None,
+                    'classes':  normalize(row[4]) if len(row) > 4 else None,
+                }
+                if teacher_data['username']:
+                    teachers.append(teacher_data)
+            return teachers
+        finally:
+            wb.close()
 
 
 class QuestionBulkImporter:
@@ -179,33 +185,35 @@ class QuestionBulkImporter:
 
     def import_questions(self, start_row=2):
         wb = load_workbook(self.file_path, data_only=True)
-        ws = wb.active
-        questions = []
-        for row in ws.iter_rows(min_row=start_row, values_only=True):
-            if not any(row):
-                continue
-            question_data = {
-                'question_text':  row[0],
-                'question_type':  row[1],
-                'option_a':       row[2] if len(row) > 2 else None,
-                'option_b':       row[3] if len(row) > 3 else None,
-                'option_c':       row[4] if len(row) > 4 else None,
-                'option_d':       row[5] if len(row) > 5 else None,
-                'correct_answer': row[6],
-                'difficulty':     row[7] if len(row) > 7 else 'medium',
-                'explanation':    row[8] if len(row) > 8 else None,
-            }
-            if question_data['question_text'] and question_data['question_type'] and question_data['correct_answer']:
-                if question_data['question_type'].lower() == 'mcq':
-                    question_data['options'] = [
-                        question_data['option_a'], question_data['option_b'],
-                        question_data['option_c'], question_data['option_d']
-                    ]
-                else:
-                    question_data['options'] = None
-                questions.append(question_data)
-        wb.close()
-        return questions
+        try:
+            ws = wb.active
+            questions = []
+            for row in ws.iter_rows(min_row=start_row, values_only=True):
+                if not any(row):
+                    continue
+                question_data = {
+                    'question_text':  row[0],
+                    'question_type':  row[1],
+                    'option_a':       row[2] if len(row) > 2 else None,
+                    'option_b':       row[3] if len(row) > 3 else None,
+                    'option_c':       row[4] if len(row) > 4 else None,
+                    'option_d':       row[5] if len(row) > 5 else None,
+                    'correct_answer': row[6],
+                    'difficulty':     row[7] if len(row) > 7 else 'medium',
+                    'explanation':    row[8] if len(row) > 8 else None,
+                }
+                if question_data['question_text'] and question_data['question_type'] and question_data['correct_answer']:
+                    if question_data['question_type'].lower() == 'mcq':
+                        question_data['options'] = [
+                            question_data['option_a'], question_data['option_b'],
+                            question_data['option_c'], question_data['option_d']
+                        ]
+                    else:
+                        question_data['options'] = None
+                    questions.append(question_data)
+            return questions
+        finally:
+            wb.close()
 
 
 def create_default_template(output_path):
