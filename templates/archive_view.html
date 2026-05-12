@@ -340,8 +340,8 @@ table.at{width:100%;border-collapse:separate;border-spacing:0;min-width:800px}
         <div class="tbl-hd-m" id="recCount">{{ pagination.total if pagination and pagination.total is not none else 0 }} records</div>
       </div>
       <div class="tbl-hd-r">
-        <a class="btn btn-ghost" href="{{ url_for('export_csv') }}" style="color:#e8c46a;border-color:rgba(201,165,62,.3);font-size:12px;padding:6px 12px">
-          <i class="ti ti-download" aria-hidden="true" style="font-size:13px"></i> Export CSV
+        <a class="btn btn-ghost" href="{{ url_for('export_assessments_excel') }}" style="color:#e8c46a;border-color:rgba(201,165,62,.3);font-size:12px;padding:6px 12px">
+          <i class="ti ti-download" aria-hidden="true" style="font-size:13px"></i> Export Excel
         </a>
       </div>
     </div>

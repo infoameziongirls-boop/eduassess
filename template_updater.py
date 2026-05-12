@@ -7,128 +7,49 @@ Every export uses the school's EXACT customised student_template.xlsx
 (A.M.E. ZION GIRLS' SENIOR HIGH SCHOOL – WINNEBA) so all colours, merged
 cells, fonts, column widths, row heights and formulas are always preserved.
 
-═══════════════════════════════════════════════════════════════════════════════
-DIAGNOSIS REPORT — BUGS IDENTIFIED AND FIXED
-═══════════════════════════════════════════════════════════════════════════════
+═══════════════════════════════════════════════════════════════════════════
+VERIFIED TEMPLATE LAYOUT  (student_template.xlsx)
+═══════════════════════════════════════════════════════════════════════════
 
-BUG 1 — copy_worksheet() does NOT carry drawings / logos to the new sheet.
-─────────────────────────────────────────────────────────────────────────────
-Root cause: openpyxl's copy_worksheet() creates the new worksheet XML but
-does NOT create a _rels file for it, so there is no relationship pointing the
-copied sheet to xl/drawings/drawing1.xml. The school logo images (image1.jpeg
-/ image2.png embedded via drawing1.xml) only appear on the first sheet; every
-additional subject-class sheet is logo-free.
+Sheet name : student_template
 
-Fix: _copy_template_sheet() now uses _zip_copy_sheet() — a direct ZIP-level
-duplication that reads the raw source sheet XML, clones it into a new sheet
-slot, writes a matching _rels file (linking the same drawing and table), and
-registers the new sheet in workbook.xml and [Content_Types].xml — all without
-openpyxl touching those parts. This preserves every byte of the original
-sheet: shared-formula indices, custom row heights, theme-based fills, borders,
-the logo drawing relationship, the grade-lookup table relationship, and
-sheet-level namespace extensions (x14ac, xr, xr2, xr3).
+Header cells:
+  A1  SCHOOL: label         B1  School name (already in template)
+  A2  SUBJECT: label        B2  Subject value          ← written by app
+  A3  TERM/YEAR: label      B3  Term / Year             ← written by app
+  A4  FORM: label           B4  Form / Class            ← written by app
+  F7  =COUNTA(D10:D110)     (live student count — auto-updates when D fills)
 
-BUG 2 — _shift_formula() used a naive regex that mis-shifted the formulas.
-─────────────────────────────────────────────────────────────────────────────
-Root cause: The original pattern r'([A-Z]+)' + str(from_row) + r'(?!\\d)' only
-replaced occurrences of the literal row number immediately after a column
-letter. When from_row=10 and the formula contains "10" as part of "0.10" or a
-numeric constant this could corrupt the formula. More critically, the _shift_
-formula path is only reached for rows > 110 (more than 100 students on one
-sheet). For the normal case (rows 10–110 are pre-built in the template) the
-shift is not needed at all, but when it is needed the regex must be safe.
+Column headers are on row 9.  Student data rows begin at row 10.
 
-Fix: Pattern now uses a proper cell-reference regex with word-boundary anchors,
-and an explicit negative look-ahead for digits.
-
-BUG 3 — _write_student_row() set the serial number to `row - STUDENT_START_ROW + 1`
-        but never cleared old serial values when a template row already had one.
-─────────────────────────────────────────────────────────────────────────────
-Root cause: The template pre-populates column A with serial numbers 1–100 for
-rows 10–109. When data is written to row 10 the serial becomes 1 (correct).
-When rows are written to a COPIED sheet the sheet starts as a pristine clone
-of the template, so column A already has the correct serials. No bug in the
-normal case, but if a student row is written that is beyond the template's
-pre-populated range (>109) the serial was calculated correctly anyway because
-_write_student_row() always sets it explicitly. No change needed here, but
-added a comment for clarity.
-
-BUG 4 — _ensure_formula_row() regenerated formulas using the WRONG source.
-─────────────────────────────────────────────────────────────────────────────
-Root cause: The code read the formula string from STUDENT_START_ROW (row 10)
-and called _shift_formula() to adjust it for the target row. However row 10
-has INDIVIDUAL (non-shared) formula elements in the raw XML, while rows 11–74
-use Excel's shared-formula mechanism (`t="shared" si="N"`). openpyxl expands
-these when it reads the file, so cell.value for G11 correctly returns
-'=MIN(100, (SUM(E11:F11)))'. The source cell for the shift should therefore
-be STUDENT_START_ROW + 1 (row 11, the first shared-formula row), not row 10,
-because row 10 has slightly different whitespace/form (e.g. "MIN(100, (SUM…))"
-vs "MIN(100,(SUM…))"). This caused cosmetically different formulas in overflow
-rows. Fixed by using row 11 as the copy source for _ensure_formula_row().
-
-BUG 5 — The GPA formula in template_updater.py (calculate_scores_from_template)
-        did not match the actual formula in the template's W column.
-─────────────────────────────────────────────────────────────────────────────
-Root cause: The Python helper used a GPA_TABLE with integer GPA values
-(4, 3.5 …) while the real W10 formula returns STRING values ("4.0", "3.5" …).
-The X10 (Grade) formula also differs from what _GPA_TABLE stores — the actual
-grade formula uses "F9" for <40 (not "F9" for >=0). These mismatch between
-the Python mirror and the actual sheet formulas caused incorrect API-level
-score reporting.
-
-Fix: calculate_scores_from_template() now returns gpa as a string ("4.0",
-"3.5" …) matching what Excel computes, and the grade fallback uses "F9" for
-scores <40 matching the IF chain in X10. The _GPA_TABLE is updated accordingly.
-
-BUG 6 — _copy_template_sheet() (old version) used openpyxl copy_worksheet()
-        which silently dropped the sheet-level table relationship (table1.xml).
-─────────────────────────────────────────────────────────────────────────────
-Root cause: copy_worksheet() created a _rels entry for sheet1 only. The grade-
-lookup table (Table2 / table1.xml) was therefore only linked from sheet1. The
-ZIP-level copy approach in Bug 1's fix also fixes this: the raw _rels XML
-(containing BOTH the drawing and the table relationship) is copied verbatim.
-
-BUG 7 — _build_term_year() used raw DB keys when no Flask app context exists.
-─────────────────────────────────────────────────────────────────────────────
-Already partially fixed in the previous version. Further hardened: the
-function now never raises, always returns a clean string.
-
-═══════════════════════════════════════════════════════════════════════════════
-Cell map  (school template layout, sheet "ASSESSMENT TEMPLATE")
-═══════════════════════════════════════════════════════════════════════════════
-  B1   School name  — already in template, NEVER overwritten
-  A2   "SUBJECT:"   label
-  B2   Subject value              ← written by app
-  A3   "TERM/YEAR:" label
-  B3   Term / Year                ← written by app  (human label)
-  A4   "FORM:"      label
-  B4   Form / Class               ← written by app
-
-Per-student data rows start at row 10:
-  A  Serial 1,2,3…
-  B  Name of Students
-  C  Reference Number
-  D  Learning Area
-  E  ICA1  (input)
-  F  ICA2  (input)
-  G  =MIN(100, (SUM(E:F)))        ← FORMULA coloured — never overwrite
-  H  ICP1  (input)
-  I  ICP2  (input)
-  J  =MIN(100,(SUM(H:I)))         ← FORMULA coloured
-  K  GP1   (input)
-  L  GP2   (input)
-  M  =MIN(100,(SUM(K:L)))         ← FORMULA coloured
-  N  Practical Portfolio  (input)
-  O  Mid-Semester Exam    (input)
-  P  =MIN(500,(…))                ← FORMULA
-  Q  =P/500*100                   ← FORMULA
-  R  =MIN(50,(ROUNDUP(Q/2,0)))    ← FORMULA coloured (AVG CLASS)
-  S  End of Term Exam     (input)
-  T  =MIN(50,(ROUNDUP(S/2,0)))    ← FORMULA coloured (AVG EXAM)
-  U  =MIN(100,(SUM(R,T)))         ← FORMULA green    (Total 50+50)
-  V  =(U/100)                     ← FORMULA coloured
-  W  GPA  formula (returns string "4.0", "3.5" … "0.0")
-  X  Grade formula (returns "A1", "B2" … "F9")
+Per-student columns (1-based):
+  A (1)   Serial number
+  B (2)   Student No.
+  C (3)   Surname (last_name)
+  D (4)   First Name
+  E (5)   Other Name (middle_name)
+  F (6)   Reference Number
+  G (7)   Study Area / Learning Area
+  H (8)   ica1  INPUT
+  I (9)   ica2  INPUT
+  J (10)  =MIN(100,(SUM(H:I)))                    FORMULA — never overwrite
+  K (11)  icp1  INPUT
+  L (12)  icp2  INPUT
+  M (13)  =MIN(100,(SUM(K:L)))                    FORMULA — never overwrite
+  N (14)  gp1   INPUT
+  O (15)  gp2   INPUT
+  P (16)  =MIN(100,(SUM(N:O)))                    FORMULA — never overwrite
+  Q (17)  practical  INPUT
+  R (18)  mid_term   INPUT
+  S (19)  =MIN(500,(SUM(J,M,P,Q,R)))              FORMULA — never overwrite
+  T (20)  =S/500*100                              FORMULA — never overwrite
+  U (21)  =MIN(50,(ROUNDUP(T/2,0)))              FORMULA — never overwrite
+  V (22)  end_term   INPUT
+  W (23)  =MIN(50,(ROUNDUP(V/2,0)))              FORMULA — never overwrite
+  X (24)  =MIN(100,(SUM(U,W)))                   FORMULA — never overwrite
+  Y (25)  =(X/100)                               FORMULA — never overwrite
+  Z (26)  GPA  IF-chain — returns "4.0".."0.0"  FORMULA — never overwrite
+  AA (27) Grade IF-chain — returns "A1".."F9"   FORMULA — never overwrite
 """
 
 import math
@@ -153,7 +74,7 @@ _NS_RELS = "http://schemas.openxmlformats.org/package/2006/relationships"
 _REL_SHEET = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Constants
+# Constants — verified against actual student_template.xlsx
 # ─────────────────────────────────────────────────────────────────────────────
 CATEGORY_MAX = {
     'ica1': 50,  'ica2': 50,
@@ -176,23 +97,30 @@ CATEGORY_LABELS = {
     'end_term':  'End of Term Exam',
 }
 
-# Columns with formula cells — NEVER overwrite these
-_FORMULA_COLS = {'G', 'J', 'M', 'P', 'Q', 'R', 'T', 'U', 'V', 'W', 'X'}
+# ── Formula-protected columns ────────────────────────────────────────────────
+# These columns contain Excel formulas that must NEVER be overwritten.
+# Verified against actual template row 10.
+_FORMULA_COLS = {'J', 'M', 'P', 'S', 'T', 'U', 'W', 'X', 'Y', 'Z', 'AA'}
 
-# Category key → 1-based column number for input cells
+# ── Category → 1-based column number for INPUT cells ────────────────────────
+# Verified against column headers in row 9 of student_template.xlsx.
 _CAT_TO_COL = {
-    'ica1': 5,   'ica2': 6,
-    'icp1': 8,   'icp2': 9,
-    'gp1':  11,  'gp2':  12,
-    'practical': 14,
-    'mid_term':  15,
-    'end_term':  19,
+    'ica1':      8,   # H
+    'ica2':      9,   # I
+    'icp1':     11,   # K
+    'icp2':     12,   # L
+    'gp1':      14,   # N
+    'gp2':      15,   # O
+    'practical': 17,  # Q
+    'mid_term':  18,  # R
+    'end_term':  22,  # V
 }
 
-STUDENT_START_ROW = 10
+STUDENT_START_ROW = 10   # First student data row (row 9 is the header row)
 
-# GPA table matching the W-column grading logic.
-# Python scores use numeric GPA values so downstream consumers can compare floats.
+# GPA table — mirrors the Z-column IF chain in the template.
+# Python consumers receive numeric floats for comparison; the template itself
+# returns string "4.0", "3.5" etc. for display.
 _GPA_TABLE = [
     (80, 4.0, 'A1'),
     (70, 3.5, 'B2'),
@@ -202,7 +130,7 @@ _GPA_TABLE = [
     (50, 1.5, 'C6'),
     (45, 1.0, 'D7'),
     (40, 0.5, 'E8'),
-    (0,   0.0, 'F9'),
+    (0,  0.0, 'F9'),
 ]
 
 
@@ -225,12 +153,12 @@ def scores_from_assessments(assessments: list) -> dict:
 
 def calculate_scores_from_template(raw_scores: dict) -> dict:
     """
-    Python mirror of the Excel formula chain.
+    Python mirror of the Excel formula chain in student_template.xlsx.
     Returns every key consumed by models.Student.get_overall_summary().
 
-    GPA is returned as a STRING matching the W-column formula
-    (e.g. "4.0", "3.5") and grade matches the X-column formula
-    ("A1" … "F9").
+    GPA is returned as a numeric float (4.0, 3.5 …) for Python comparisons.
+    The template's Z-column displays the equivalent string ("4.0", "3.5" …)
+    for on-screen formatting — this is a display-only difference.
     """
     def _v(k):
         return float(raw_scores.get(k) or 0)
@@ -242,18 +170,28 @@ def calculate_scores_from_template(raw_scores: dict) -> dict:
     mid_term  = _v('mid_term')
     end_term  = _v('end_term')
 
-    ica_total         = min(100.0, ica1 + ica2)
-    icp_total         = min(100.0, icp1 + icp2)
-    gp_total          = min(100.0, gp1  + gp2)
+    # Mirrors J, M, P columns
+    ica_total = min(100.0, ica1 + ica2)
+    icp_total = min(100.0, icp1 + icp2)
+    gp_total  = min(100.0, gp1  + gp2)
+
+    # Mirrors S column: =MIN(500,(SUM(J,M,P,Q,R)))
     total_class_score = min(500.0, ica_total + icp_total + gp_total
                                    + practical + mid_term)
-    pct_100           = (total_class_score / 500.0) * 100.0
-    avg_class_score   = min(50.0, math.ceil(pct_100 / 2.0))
-    avg_exam_score    = min(50.0, math.ceil(end_term / 2.0))
-    final_score       = min(100.0, avg_class_score + avg_exam_score)
-    percentage        = final_score
 
-    # BUG 5 FIX: return numeric GPA values for Python consumers.
+    # Mirrors T column: =S/500*100
+    pct_100 = (total_class_score / 500.0) * 100.0
+
+    # Mirrors U column: =MIN(50,(ROUNDUP(T/2,0)))
+    avg_class_score = min(50.0, math.ceil(pct_100 / 2.0))
+
+    # Mirrors W column: =MIN(50,(ROUNDUP(V/2,0)))
+    avg_exam_score = min(50.0, math.ceil(end_term / 2.0))
+
+    # Mirrors X column: =MIN(100,(SUM(U,W)))
+    final_score = min(100.0, avg_class_score + avg_exam_score)
+    percentage  = final_score
+
     gpa = 0.0;  grade = 'F9'
     for threshold, gpa_val, grade_val in _GPA_TABLE:
         if final_score >= threshold:
@@ -280,14 +218,9 @@ def _grade(percent):
     """Return GPA and grade mapping for a final percentage."""
     if percent is None:
         return {'gpa': 'N/A', 'grade': 'N/A'}
-    if percent >= 80:   return {'gpa': 4.0, 'grade': 'A1'}
-    if percent >= 70:   return {'gpa': 3.5, 'grade': 'B2'}
-    if percent >= 65:   return {'gpa': 3.0, 'grade': 'B3'}
-    if percent >= 60:   return {'gpa': 2.5, 'grade': 'C4'}
-    if percent >= 55:   return {'gpa': 2.0, 'grade': 'C5'}
-    if percent >= 50:   return {'gpa': 1.5, 'grade': 'C6'}
-    if percent >= 45:   return {'gpa': 1.0, 'grade': 'D7'}
-    if percent >= 40:   return {'gpa': 0.5, 'grade': 'E8'}
+    for threshold, gpa_val, grade_val in _GPA_TABLE:
+        if percent >= threshold:
+            return {'gpa': gpa_val, 'grade': grade_val}
     return {'gpa': 0.0, 'grade': 'F9'}
 
 
@@ -303,38 +236,24 @@ class _ZipSheetDuplicator:
 
     openpyxl is only used for reading and writing DATA cells (values).
     All structural duplication is done by directly editing the ZIP XML.
-
-    Usage
-    -----
-        dup = _ZipSheetDuplicator(template_path)
-        dup.prepare(n_extra_sheets)          # build in-memory ZIP with n copies
-        dup.write_cells(sheet_index, row, col, value)  …
-        dup.save(output_path)
     """
 
     def __init__(self, template_path: str):
         self._tpl = template_path
-        # In-memory copy of every file in the ZIP
         self._files: dict[str, bytes] = {}
-        self._source_sheet_name = "ASSESSMENT TEMPLATE"
-        self._sheet_paths: list[str] = []   # ordered list of xl/worksheets/sheetN.xml
-        self._sheet_names: list[str] = []   # display names
-        # Lazy-loaded lxml trees for sheets we need to edit
+        # FIXED: actual sheet name in student_template.xlsx
+        self._source_sheet_name = "student_template"
+        self._sheet_paths: list[str] = []
+        self._sheet_names: list[str] = []
         self._sheet_trees: dict[str, etree._Element] = {}
 
     # ── preparation ─────────────────────────────────────────────────────────
 
     def prepare(self, extra_sheet_labels: list[str]) -> None:
-        """
-        Load the template ZIP and clone the source sheet `len(extra_sheet_labels)`
-        additional times.  The first slot (sheet1) is always the source sheet
-        renamed to extra_sheet_labels[0] if supplied, otherwise left as-is.
-        """
         with zipfile.ZipFile(self._tpl, 'r') as z:
             for name in z.namelist():
                 self._files[name] = z.read(name)
 
-        # Identify the source sheet path from workbook.xml
         wb_tree = etree.fromstring(self._files['xl/workbook.xml'])
         ns = {'ns': _NS_WB, 'r': _NS_R}
         src_rId = None
@@ -343,22 +262,20 @@ class _ZipSheetDuplicator:
                 src_rId = sheet_el.get('{%s}id' % _NS_R)
                 break
         if src_rId is None:
-            # Fall back to first sheet
+            # Fallback to first sheet
             sheet_el = wb_tree.findall('.//ns:sheet', ns)[0]
             src_rId  = sheet_el.get('{%s}id' % _NS_R)
             self._source_sheet_name = sheet_el.get('name')
 
-        # Resolve rId → path via workbook rels
         wb_rels_tree = etree.fromstring(self._files['xl/_rels/workbook.xml.rels'])
         ns_rels = {'r': _NS_RELS}
         self._src_sheet_path = None
         self._src_rels_path  = None
         for rel in wb_rels_tree.findall('r:Relationship', ns_rels):
             if rel.get('Id') == src_rId:
-                target = rel.get('Target')
-                # Target may be relative to xl/
+                target = rel.get('Target').lstrip('/')
                 if not target.startswith('xl/'):
-                    target = 'xl/' + target.lstrip('/')
+                    target = 'xl/' + target
                 self._src_sheet_path = target
                 self._src_rels_path  = target.replace(
                     'worksheets/', 'worksheets/_rels/'
@@ -371,44 +288,32 @@ class _ZipSheetDuplicator:
         self._sheet_paths = [self._src_sheet_path]
         self._sheet_names = [self._source_sheet_name]
 
-        # Clone for each extra label
         for i, label in enumerate(extra_sheet_labels):
             self._clone_sheet(i + 2, label)
 
-        # Set display name for sheet 1
         if extra_sheet_labels:
             self._sheet_names[0] = extra_sheet_labels[0]
             self._rename_sheet_in_workbook(1, extra_sheet_labels[0])
-            # Extra sheets are named inside _clone_sheet
 
     def _clone_sheet(self, sheet_index: int, display_name: str) -> None:
-        """Copy the source sheet XML + rels into a new sheetN slot."""
         new_path      = f'xl/worksheets/sheet{sheet_index}.xml'
         new_rels_path = f'xl/worksheets/_rels/sheet{sheet_index}.xml.rels'
         rId           = f'rId_sheet{sheet_index}'
 
-        # Copy raw sheet XML (preserves every attribute, shared-formula ref, etc.)
-        src_xml = self._files[self._src_sheet_path]
-        # Strip any uid attributes that must be unique
         src_xml = re.sub(
-            rb'xr:uid="\{[0-9A-F-]+\}"', b'', src_xml, flags=re.IGNORECASE
+            rb'xr:uid="\{[0-9A-F-]+\}"', b'', self._files[self._src_sheet_path],
+            flags=re.IGNORECASE
         )
         self._files[new_path] = src_xml
 
-        # Copy raw rels XML (preserves drawing + table relationships verbatim)
         if self._src_rels_path in self._files:
-            rels_xml = self._files[self._src_rels_path]
-            # The rels use absolute paths already (e.g. /xl/drawings/drawing1.xml)
-            # so they work correctly for any sheetN without modification.
-            self._files[new_rels_path] = rels_xml
+            self._files[new_rels_path] = self._files[self._src_rels_path]
         else:
-            # Build a minimal rels if the source had none (shouldn't happen)
             self._files[new_rels_path] = (
                 b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                 b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>'
             )
 
-        # Register in workbook.xml
         wb_tree = etree.fromstring(self._files['xl/workbook.xml'])
         ns = {'ns': _NS_WB, 'r': _NS_R}
         sheets_el = wb_tree.find('.//ns:sheets', ns)
@@ -420,21 +325,17 @@ class _ZipSheetDuplicator:
             wb_tree, xml_declaration=True, encoding='UTF-8', standalone=True
         )
 
-        # Register in workbook rels
         wb_rels_tree = etree.fromstring(self._files['xl/_rels/workbook.xml.rels'])
         ns_rels = {'r': _NS_RELS}
         new_rel = etree.SubElement(wb_rels_tree, '{%s}Relationship' % _NS_RELS)
         new_rel.set('Id', rId)
         new_rel.set('Type', _REL_SHEET)
-        rel_target = new_path.replace('xl/', '')  # relative to xl/
-        new_rel.set('Target', rel_target)
+        new_rel.set('Target', new_path.replace('xl/', ''))
         self._files['xl/_rels/workbook.xml.rels'] = etree.tostring(
             wb_rels_tree, xml_declaration=True, encoding='UTF-8', standalone=True
         )
 
-        # Register in [Content_Types].xml
         ct_tree = etree.fromstring(self._files['[Content_Types].xml'])
-        ns_ct = {'ct': _NS_CT}
         new_ov = etree.SubElement(ct_tree, '{%s}Override' % _NS_CT)
         new_ov.set('PartName', '/' + new_path)
         new_ov.set(
@@ -449,7 +350,6 @@ class _ZipSheetDuplicator:
         self._sheet_names.append(display_name)
 
     def _rename_sheet_in_workbook(self, sheet_index: int, name: str) -> None:
-        """Rename sheet #sheet_index (1-based) in workbook.xml."""
         wb_tree = etree.fromstring(self._files['xl/workbook.xml'])
         ns = {'ns': _NS_WB}
         sheets = wb_tree.findall('.//ns:sheet', ns)
@@ -462,14 +362,12 @@ class _ZipSheetDuplicator:
     # ── data writing ────────────────────────────────────────────────────────
 
     def _get_sheet_tree(self, sheet_idx: int) -> etree._Element:
-        """Return (and cache) the lxml tree for a given sheet index (0-based)."""
         path = self._sheet_paths[sheet_idx]
         if path not in self._sheet_trees:
             self._sheet_trees[path] = etree.fromstring(self._files[path])
         return self._sheet_trees[path]
 
     def _flush_sheet_tree(self, sheet_idx: int) -> None:
-        """Serialise the lxml tree back to bytes in self._files."""
         path = self._sheet_paths[sheet_idx]
         if path in self._sheet_trees:
             self._files[path] = etree.tostring(
@@ -484,22 +382,33 @@ class _ZipSheetDuplicator:
         tree = self._get_sheet_tree(sheet_idx)
         ns   = {'ns': _NS_WB}
 
-        def _set_cell(cell_ref: str, value: str) -> None:
+        def _set(cell_ref: str, value: str) -> None:
             row_num, col_num = _cell_ref_to_row_col(cell_ref)
-            _set_cell_value_in_tree(tree, ns, row_num, col_num, value, cell_type='s_shared')
+            _set_cell_value_in_tree(tree, ns, row_num, col_num, value)
 
         if subject:
-            _set_cell('B2', _humanise(subject))
+            _set('B2', _humanise(subject))
         if term_year:
-            _set_cell('B3', term_year)
+            _set('B3', term_year)
         if form:
-            _set_cell('B4', form)
+            _set('B4', form)
 
     def write_student_row(self, sheet_idx: int, row: int, student_dict: dict) -> None:
         """
         Write one student's data onto sheet `sheet_idx` (0-based) at `row`.
-        Formula columns (G J M P Q R T U V W X) are NEVER touched —
-        the template XML already has them pre-filled for rows 10–110.
+
+        Formula columns are NEVER touched — the template XML already has
+        pre-filled formulas for every row.
+
+        Expected keys in student_dict
+        ──────────────────────────────
+        student_number  — goes to column B (2)
+        last_name       — goes to column C (3)   [Surname]
+        first_name      — goes to column D (4)
+        middle_name     — goes to column E (5)   [Other Name, may be empty]
+        ref_id          — goes to column F (6)
+        study_area      — goes to column G (7)
+        ica1..end_term  — input score columns per _CAT_TO_COL
         """
         tree = self._get_sheet_tree(sheet_idx)
         ns   = {'ns': _NS_WB}
@@ -507,22 +416,26 @@ class _ZipSheetDuplicator:
 
         # Column A: serial number
         _set_cell_numeric(tree, ns, row, 1, serial)
-        # Column B: student name
-        _set_cell_string(tree, ns, row, 2, student_dict.get('name', ''))
-        # Column C: reference number
-        _set_cell_string(tree, ns, row, 3, student_dict.get('ref_id', ''))
-        # Column D: learning area
-        _set_cell_string(tree, ns, row, 4, student_dict.get('study_area', ''))
+        # Column B: Student Number
+        _set_cell_string(tree, ns, row, 2, student_dict.get('student_number', ''))
+        # Column C: Surname
+        _set_cell_string(tree, ns, row, 3, student_dict.get('last_name', ''))
+        # Column D: First Name
+        _set_cell_string(tree, ns, row, 4, student_dict.get('first_name', ''))
+        # Column E: Other Name
+        _set_cell_string(tree, ns, row, 5, student_dict.get('middle_name', '') or '')
+        # Column F: Reference Number
+        _set_cell_string(tree, ns, row, 6, student_dict.get('ref_id', ''))
+        # Column G: Study Area
+        _set_cell_string(tree, ns, row, 7, student_dict.get('study_area', ''))
 
-        # Input score columns
+        # Score input columns (formula columns are left untouched)
         for cat, col in _CAT_TO_COL.items():
             raw = student_dict.get(cat, 0)
             val = float(raw) if raw not in (None, '') else 0.0
             _set_cell_numeric(tree, ns, row, col, val)
 
     def save(self, output_path: str) -> str:
-        """Flush all sheet trees and write the final ZIP to output_path."""
-        # Flush all modified sheet trees
         for i in range(len(self._sheet_paths)):
             self._flush_sheet_tree(i)
 
@@ -556,30 +469,25 @@ def _col_num_to_letter(n: int) -> str:
 
 
 def _cell_ref_to_row_col(ref: str):
-    m = re.match(r'([A-Z]+)(\\d+)', ref.upper())
+    m = re.match(r'([A-Z]+)(\d+)', ref.upper())
     if not m:
         raise ValueError(f"Invalid cell ref: {ref}")
     return int(m.group(2)), _col_letter_to_num(m.group(1))
 
 
 def _find_or_create_row(tree: etree._Element, ns: dict, row_num: int) -> etree._Element:
-    """Return the <row> element for row_num, creating it if absent."""
     sheet_data = tree.find('ns:sheetData', ns)
     if sheet_data is None:
-        # sheetData must exist in a valid sheet
         sheet_data = tree.find('{%s}sheetData' % _NS_WB)
-    # Iterate existing rows
     for row_el in sheet_data:
         r = int(row_el.get('r', 0))
         if r == row_num:
             return row_el
         if r > row_num:
-            # Insert before this one
             new_row = etree.Element('{%s}row' % _NS_WB)
             new_row.set('r', str(row_num))
             sheet_data.insert(list(sheet_data).index(row_el), new_row)
             return new_row
-    # Append
     new_row = etree.Element('{%s}row' % _NS_WB)
     new_row.set('r', str(row_num))
     sheet_data.append(new_row)
@@ -587,7 +495,6 @@ def _find_or_create_row(tree: etree._Element, ns: dict, row_num: int) -> etree._
 
 
 def _find_or_create_cell(row_el: etree._Element, col_num: int) -> etree._Element:
-    """Return the <c> element for col_num in row_el, creating if absent."""
     col_letter = _col_num_to_letter(col_num)
     row_num    = int(row_el.get('r'))
     cell_ref   = f'{col_letter}{row_num}'
@@ -596,7 +503,6 @@ def _find_or_create_cell(row_el: etree._Element, col_num: int) -> etree._Element
         c_ref = cell.get('r', '')
         if c_ref == cell_ref:
             return cell
-        # Cells must be in column order
         if c_ref:
             c_col = _col_letter_to_num(re.match(r'([A-Z]+)', c_ref).group(1))
             if c_col > col_num:
@@ -611,16 +517,12 @@ def _find_or_create_cell(row_el: etree._Element, col_num: int) -> etree._Element
 
 
 def _set_cell_numeric(tree: etree._Element, ns: dict, row_num: int, col_num: int, value) -> None:
-    """Write a numeric value, preserving the existing cell style (s="…")."""
     row_el  = _find_or_create_row(tree, ns, row_num)
     cell_el = _find_or_create_cell(row_el, col_num)
-    # Remove 't' attribute (numeric is the default type)
     if 't' in cell_el.attrib:
         del cell_el.attrib['t']
-    # Remove any formula element (we are writing a data value, not a formula)
     for f_el in cell_el.findall('{%s}f' % _NS_WB):
         cell_el.remove(f_el)
-    # Find or create <v>
     v_el = cell_el.find('{%s}v' % _NS_WB)
     if v_el is None:
         v_el = etree.SubElement(cell_el, '{%s}v' % _NS_WB)
@@ -628,23 +530,17 @@ def _set_cell_numeric(tree: etree._Element, ns: dict, row_num: int, col_num: int
 
 
 def _set_cell_string(tree: etree._Element, ns: dict, row_num: int, col_num: int, value: str) -> None:
-    """
-    Write an inline string value.  We use t="inlineStr" with an <is><t> child
-    so we do not need to touch sharedStrings.xml.
-    """
     row_el  = _find_or_create_row(tree, ns, row_num)
     cell_el = _find_or_create_cell(row_el, col_num)
-    # Clear existing formula and value children
     for child in list(cell_el):
         cell_el.remove(child)
     cell_el.set('t', 'inlineStr')
     is_el = etree.SubElement(cell_el, '{%s}is' % _NS_WB)
     t_el  = etree.SubElement(is_el,   '{%s}t'  % _NS_WB)
-    t_el.text = str(value)
+    t_el.text = str(value) if value else ''
 
 
 def _set_cell_value_in_tree(tree, ns, row_num, col_num, value, cell_type='str'):
-    """Generic cell setter used for header fields."""
     _set_cell_string(tree, ns, row_num, col_num, value)
 
 
@@ -654,7 +550,7 @@ def _set_cell_value_in_tree(tree, ns, row_num, col_num, value, cell_type='str'):
 
 class AssessmentTemplateUpdater:
     """
-    All exports use this class.  Pattern:
+    All exports use this class.
 
         upd = AssessmentTemplateUpdater(tpl_path)
         upd.load_template()
@@ -662,10 +558,8 @@ class AssessmentTemplateUpdater:
         upd.add_student(row, dict) | upd.add_students_batch(…)
         upd.save_workbook(output_path)
 
-    For multi-sheet exports (add_students_batch(per_sheet=True) and
-    export_by_subject_class / export_assessments_raw) the class switches to
-    _ZipSheetDuplicator internally to preserve every byte of the template —
-    including logo images, theme-based fills, and the grade-lookup table.
+    For multi-sheet exports the class delegates to _ZipSheetDuplicator to
+    preserve the school logo, drawings, grade table and every formula row.
     """
 
     def __init__(self, template_path: str):
@@ -675,7 +569,6 @@ class AssessmentTemplateUpdater:
         self._def_subject  = ''
         self._def_term     = ''
         self._def_form     = ''
-        # Multi-sheet path
         self._dup: _ZipSheetDuplicator | None = None
 
     # ── lifecycle ────────────────────────────────────────────────────────────
@@ -694,8 +587,10 @@ class AssessmentTemplateUpdater:
 
     def save_workbook(self, output_path: str) -> str:
         if self._dup is not None:
-            # Multi-sheet path: delegate to _ZipSheetDuplicator
-            return self._dup.save(output_path)
+            try:
+                return self._dup.save(output_path)
+            finally:
+                self._cleanup()
         if self.wb is None:
             raise RuntimeError("Call load_template() first.")
         dirpart = os.path.dirname(output_path)
@@ -742,7 +637,7 @@ class AssessmentTemplateUpdater:
         _ensure_formula_row(ws, row)
         _write_student_row(ws, row, student_dict)
 
-    # ── batch — same sheet ────────────────────────────────────────────────────
+    # ── batch ────────────────────────────────────────────────────────────────
 
     def add_students_batch(self, students: list, per_sheet: bool = False):
         if self.wb is None:
@@ -756,7 +651,7 @@ class AssessmentTemplateUpdater:
                 _write_student_row(ws, row, sd)
             return
 
-        # ── Multi-sheet: use ZIP duplicator for pixel-perfect fidelity ────────
+        # Multi-sheet via ZIP duplicator
         groups: dict = {}
         order: list  = []
         for sd in students:
@@ -773,12 +668,10 @@ class AssessmentTemplateUpdater:
             )
             for subj, cls in order
         ]
-        extra_labels = labels[1:]
 
         dup = _ZipSheetDuplicator(self.template_path)
-        dup.prepare(extra_labels if len(order) > 1 else [])
+        dup.prepare(labels[1:] if len(order) > 1 else [])
         if len(order) == 1:
-            # Rename the single sheet
             dup._rename_sheet_in_workbook(1, labels[0])
         self._dup = dup
 
@@ -797,12 +690,6 @@ class AssessmentTemplateUpdater:
 
     def export_by_subject_class(self, students_list: list, settings=None,
                                 subject_filter=None, class_filter=None):
-        """
-        One sheet per (subject, class) combination.
-        BUG 1 FIX: uses _ZipSheetDuplicator — logo and table preserved.
-        BUG 4 FIX: scores scoped to subject.
-        BUG 5 FIX: students without assessments still appear with zeros.
-        """
         term_year = _build_term_year(settings)
 
         groups: dict = {}
@@ -828,7 +715,6 @@ class AssessmentTemplateUpdater:
                 groups[key].append((student, subj))
 
         if not groups:
-            # Nothing to write — still produce a valid single-sheet file
             self._write_single_header_only(term_year)
             return
 
@@ -858,7 +744,6 @@ class AssessmentTemplateUpdater:
                 dup.write_student_row(sheet_idx, STUDENT_START_ROW + i, sd)
 
     def _write_single_header_only(self, term_year: str):
-        """Produce a single-sheet file with just the term/year header."""
         if self.wb is None:
             return
         ws = self.wb.active
@@ -869,11 +754,6 @@ class AssessmentTemplateUpdater:
 
     def export_assessments_raw(self, assessments: list, output_path: str,
                                settings=None) -> str:
-        """
-        Group Assessment ORM rows by (subject, class_name), one template
-        sheet per group.
-        BUG 1 FIX: uses _ZipSheetDuplicator.
-        """
         term_year = _build_term_year(settings)
 
         groups: dict       = {}
@@ -894,11 +774,14 @@ class AssessmentTemplateUpdater:
             if sid not in student_meta and a.student:
                 st = a.student
                 student_meta[sid] = {
-                    'name':       st.full_name(),
-                    'ref_id':     st.reference_number or '',
-                    'study_area': (st.get_study_area_display()
-                                   if hasattr(st, 'get_study_area_display')
-                                   else (st.study_area or '')),
+                    'student_number': st.student_number or '',
+                    'last_name':      st.last_name or '',
+                    'first_name':     st.first_name or '',
+                    'middle_name':    st.middle_name or '',
+                    'ref_id':         st.reference_number or '',
+                    'study_area':     (st.get_study_area_display()
+                                       if hasattr(st, 'get_study_area_display')
+                                       else (st.study_area or '')),
                 }
 
         if not groups:
@@ -930,14 +813,12 @@ class AssessmentTemplateUpdater:
             )
             sorted_sids = sorted(
                 groups[key],
-                key=lambda s: student_meta.get(s, {}).get('name', '')
+                key=lambda s: student_meta.get(s, {}).get('last_name', '')
             )
             for i, sid in enumerate(sorted_sids):
                 meta = student_meta.get(sid, {})
                 sd = {
-                    'name':       meta.get('name', ''),
-                    'ref_id':     meta.get('ref_id', ''),
-                    'study_area': meta.get('study_area', ''),
+                    **meta,
                     **{cat: groups[key][sid].get(cat, 0) for cat in CATEGORY_MAX},
                 }
                 dup.write_student_row(sheet_idx, STUDENT_START_ROW + i, sd)
@@ -950,12 +831,22 @@ class AssessmentTemplateUpdater:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _write_student_row(ws, row: int, sd: dict):
-    """Write data columns only; formula columns are never touched."""
+    """
+    Write data columns only; formula columns are never touched.
+
+    Columns written (1-based):
+      A(1)  serial        B(2)  student_number  C(3)  last_name
+      D(4)  first_name    E(5)  middle_name     F(6)  ref_id
+      G(7)  study_area    H-V   score inputs (per _CAT_TO_COL)
+    """
     serial = row - STUDENT_START_ROW + 1
     ws.cell(row=row, column=1,  value=serial)
-    ws.cell(row=row, column=2,  value=sd.get('name', ''))
-    ws.cell(row=row, column=3,  value=sd.get('ref_id', ''))
-    ws.cell(row=row, column=4,  value=sd.get('study_area', ''))
+    ws.cell(row=row, column=2,  value=sd.get('student_number', ''))
+    ws.cell(row=row, column=3,  value=sd.get('last_name',      ''))
+    ws.cell(row=row, column=4,  value=sd.get('first_name',     ''))
+    ws.cell(row=row, column=5,  value=sd.get('middle_name',    '') or '')
+    ws.cell(row=row, column=6,  value=sd.get('ref_id',         ''))
+    ws.cell(row=row, column=7,  value=sd.get('study_area',     ''))
     for cat, col in _CAT_TO_COL.items():
         raw = sd.get(cat, 0)
         ws.cell(row=row, column=col,
@@ -965,13 +856,12 @@ def _write_student_row(ws, row: int, sd: dict):
 def _ensure_formula_row(ws, row: int):
     """
     The template pre-fills rows 10–110 with formulas.
-    Only needs to populate missing formula cells when the target row lacks them.
-
-    BUG 4 FIX: use row 11 as the preferred shared-formula source,
-    but fall back to row 10 when row 11 is blank.
+    Only needs action when the target row is beyond that range.
+    Uses row 11 as the preferred shared-formula source (row 10 has
+    slightly different formula whitespace in the raw XML).
     """
-    source_row = STUDENT_START_ROW + 1   # row 11
-    fallback_row = STUDENT_START_ROW      # row 10
+    source_row   = STUDENT_START_ROW + 1   # row 11
+    fallback_row = STUDENT_START_ROW        # row 10
     for col in _FORMULA_COLS:
         src = ws[f'{col}{source_row}']
         if not (src.value and str(src.value).startswith('=')):
@@ -997,20 +887,13 @@ def _safe_sheet_name(name: str) -> str:
 
 
 def _shift_formula(formula: str, from_row: int, to_row: int) -> str:
-    """
-    BUG 2 FIX: safe cell-reference regex — matches only complete cell refs
-    (one or more capital letters followed by the exact row number, not
-    followed by another digit).
-    """
-    pattern = re.compile(r'([A-Z]+)' + str(from_row) + r'(?!\\d)')
+    """Shift all cell references in a formula from from_row to to_row."""
+    pattern = re.compile(r'([A-Z]+)' + str(from_row) + r'(?!\d)')
     return pattern.sub(lambda m: m.group(1) + str(to_row), formula)
 
 
 def _build_term_year(settings) -> str:
-    """
-    BUG 7 FIX: always returns a clean string, never raises.
-    'term1' → 'Term 1',  'term2' → 'Term 2', etc.
-    """
+    """Always returns a clean string, never raises."""
     if not settings:
         return ''
     term_raw = getattr(settings, 'current_term', '') or ''
@@ -1020,8 +903,6 @@ def _build_term_year(settings) -> str:
         terms_cfg  = current_app.config.get('TERMS', [])
         term_label = dict(terms_cfg).get(term_raw, term_raw)
     except Exception:
-        # No app context or config missing — humanise the raw key
-        term_label = re.sub(r'term(\\d+)', r'Term \1', term_raw, flags=re.IGNORECASE).strip()
-        if not term_label:
-            term_label = term_raw
+        term_label = re.sub(r'term(\d+)', r'Term \1', term_raw,
+                            flags=re.IGNORECASE).strip() or term_raw
     return f"{term_label} {year}".strip()

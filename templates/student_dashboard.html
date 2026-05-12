@@ -1,260 +1,520 @@
 {% extends "base.html" %}
 {% block title %}Student Dashboard - {{ student.full_name() }} - EduAssess Module{% endblock %}
 {% block content %}
-<div class="container-fluid">
-    <!-- Student Info Card -->
-    <div class="row mb-5">
-        <div class="col-md-12">
-            <div class="card" style="background: var(--gradient-primary); color: white;">
-                <div class="card-body">
-                    <div class="row align-items-center">
-                        <div class="col-md-8">
-                            <h2 class="mb-2"><i class="bi bi-person-circle"></i> Welcome, {{ student.first_name }}!</h2>
-                            <p class="mb-0 opacity-75">
-                                <i class="bi bi-person-badge me-2"></i> Reference: {{ student.reference_number }} |
-                                <i class="bi bi-hash me-2"></i> Student No: {{ student.student_number }} |
-                                <i class="bi bi-building me-2"></i> Class: {{ student.get_class_display() or 'N/A' }}
-                            </p>
-                        </div>
-                        <div class="col-md-4 text-end">
-                            <a href="{{ url_for('student_logout') }}" class="btn btn-light">
-                                <i class="bi bi-box-arrow-left"></i> Logout
-                            </a>
-                        </div>
-                    </div>
+<style>
+/* ── Design tokens ─────────────────────────────────────────────────── */
+:root {
+  --edu-blue:        #1a56a0;
+  --edu-blue-light:  #2d74c4;
+  --edu-blue-dark:   #123d78;
+  --edu-accent:      #f59e0b;
+  --edu-success:     #059669;
+  --edu-warning:     #d97706;
+  --edu-danger:      #dc2626;
+  --edu-purple:      #7c3aed;
+  --card-radius:     14px;
+  --card-shadow:     0 2px 12px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.05);
+  --card-shadow-lg:  0 8px 32px rgba(26,86,160,.18), 0 2px 8px rgba(0,0,0,.07);
+  --tr: 0.22s cubic-bezier(.4,0,.2,1);
+}
+
+/* ── Page entrance animations ──────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity:0; transform:translateY(18px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+@keyframes countUp {
+  from { opacity:0; transform:scale(.85); }
+  to   { opacity:1; transform:scale(1); }
+}
+.anim-1 { animation: fadeUp .45s ease both .05s; }
+.anim-2 { animation: fadeUp .45s ease both .12s; }
+.anim-3 { animation: fadeUp .45s ease both .19s; }
+.anim-4 { animation: fadeUp .45s ease both .26s; }
+.anim-5 { animation: fadeUp .45s ease both .33s; }
+.anim-6 { animation: fadeUp .45s ease both .40s; }
+.anim-7 { animation: fadeUp .45s ease both .47s; }
+
+/* ── Hero / welcome card ───────────────────────────────────────────── */
+/*
+   BUG 5 FIX: original used var(--gradient-primary) which is undefined
+   in most themes → invisible white-on-white text.
+   Now uses a fully explicit gradient with hard-coded white text.
+*/
+.hero-card {
+  background: linear-gradient(125deg, #123d78 0%, #1a56a0 55%, #2d74c4 100%);
+  border-radius: var(--card-radius);
+  border: none;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--card-shadow-lg);
+}
+.hero-card::before {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 380px 260px at 92% -10%, rgba(245,158,11,.2) 0%, transparent 65%),
+    radial-gradient(ellipse 240px 180px at 5%  110%, rgba(255,255,255,.06) 0%, transparent 55%);
+  pointer-events: none;
+}
+.hero-dots {
+  position: absolute; right: -24px; top: -24px;
+  width: 230px; height: 230px; opacity:.065;
+  background-image: radial-gradient(circle, #fff 1.5px, transparent 1.5px);
+  background-size: 22px 22px; pointer-events: none;
+}
+.hero-title { color:#fff; font-size:1.65rem; font-weight:700; letter-spacing:-.3px; }
+.hero-meta  { color:rgba(255,255,255,.82); font-size:.88rem; }
+.hero-badge {
+  background:rgba(255,255,255,.15); color:#fff;
+  border:1px solid rgba(255,255,255,.28); border-radius:8px;
+  padding:3px 11px; font-size:.79rem; font-weight:600;
+  display:inline-flex; align-items:center; gap:5px;
+  transition: background var(--tr);
+}
+.hero-badge:hover { background:rgba(255,255,255,.25); }
+
+/* ── Stat cards ────────────────────────────────────────────────────── */
+/*
+   BUG 5 FIX: original stat cards used a coloured background covering the
+   entire card → unpredictable contrast. Now: white card, coloured icon
+   square + 3 px bottom stripe only. Text is always #1a1a2e on white.
+*/
+.stat-edu {
+  border-radius: var(--card-radius);
+  border: 1px solid rgba(0,0,0,.06);
+  box-shadow: var(--card-shadow);
+  background: #fff;
+  transition: transform var(--tr), box-shadow var(--tr);
+  position: relative; overflow: hidden;
+}
+.stat-edu:hover { transform:translateY(-3px); box-shadow:0 10px 28px rgba(0,0,0,.12); }
+.stat-icon-wrap {
+  width:52px; height:52px; border-radius:13px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:1.5rem; flex-shrink:0;
+}
+.stat-value { font-size:1.85rem; font-weight:800; line-height:1.1; color:#1a1a2e; }
+.stat-label { font-size:.76rem; font-weight:600; text-transform:uppercase; letter-spacing:.6px; color:#6b7280; margin-top:3px; }
+.stat-sub   { font-size:.73rem; color:#9ca3af; margin-top:2px; }
+.stat-stripe {
+  position:absolute; bottom:0; left:0; right:0; height:3px;
+  border-radius:0 0 var(--card-radius) var(--card-radius);
+}
+/* grade pill — coloured pill inside the grade stat card */
+.grade-pill {
+  font-size:1.55rem; font-weight:800; line-height:1;
+  padding:4px 20px; border-radius:50px; display:inline-block;
+}
+
+/* ── Section cards ─────────────────────────────────────────────────── */
+.section-card {
+  border-radius: var(--card-radius);
+  border: 1px solid rgba(0,0,0,.07);
+  box-shadow: var(--card-shadow);
+  background: #fff; overflow: hidden;
+}
+.section-hdr {
+  padding:13px 20px; border-bottom:1px solid rgba(0,0,0,.07);
+  background:#fafafa; display:flex; align-items:center; justify-content:space-between;
+}
+.section-hdr h5 { font-weight:700; font-size:.93rem; color:#1a1a2e; margin:0; }
+.sec-icon {
+  width:30px; height:30px; border-radius:8px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:.95rem; margin-right:9px; flex-shrink:0;
+}
+.sec-count {
+  font-size:.73rem; font-weight:700; padding:3px 10px;
+  border-radius:20px; letter-spacing:.3px;
+}
+
+/* ── Filter card ───────────────────────────────────────────────────── */
+.filter-card { border-radius:var(--card-radius); border:1px solid rgba(0,0,0,.07); box-shadow:var(--card-shadow); background:#fff; overflow:hidden; }
+.filter-hdr  {
+  background:linear-gradient(90deg,#1a56a0 0%,#2d74c4 100%);
+  color:#fff; padding:12px 20px;
+  display:flex; align-items:center; gap:8px;
+}
+.filter-hdr h6 { color:#fff; font-weight:700; font-size:.9rem; margin:0; }
+.filter-card .form-select {
+  border-color:rgba(0,0,0,.12); border-radius:9px; font-size:.86rem;
+  transition:border-color var(--tr), box-shadow var(--tr);
+}
+.filter-card .form-select:focus {
+  border-color:var(--edu-blue); box-shadow:0 0 0 3px rgba(26,86,160,.12);
+}
+.atag {
+  display:inline-flex; align-items:center; gap:5px;
+  background:rgba(26,86,160,.09); color:var(--edu-blue);
+  border:1px solid rgba(26,86,160,.2); border-radius:20px;
+  padding:3px 10px; font-size:.76rem; font-weight:600;
+}
+
+/* ── Subject result cards ─────────────────────────────────────────── */
+.subj-card {
+  border-radius:12px; border:1px solid rgba(0,0,0,.07); background:#fff;
+  transition:transform var(--tr), box-shadow var(--tr);
+}
+.subj-card:hover { transform:translateY(-2px); box-shadow:0 8px 22px rgba(0,0,0,.09); }
+.score-ring {
+  width:80px; height:80px; border-radius:50%; border-width:5px; border-style:solid;
+  display:flex; align-items:center; justify-content:center;
+  font-size:1rem; font-weight:800; margin:0 auto 8px;
+  transition:transform var(--tr);
+}
+.subj-card:hover .score-ring { transform:scale(1.07); }
+
+/* ── Table ─────────────────────────────────────────────────────────── */
+.edu-table { font-size:.875rem; }
+.edu-table thead th {
+  background:#f8fafc; color:#374151; font-weight:700;
+  font-size:.76rem; text-transform:uppercase; letter-spacing:.5px;
+  border-bottom:2px solid rgba(0,0,0,.08); padding:11px 14px; white-space:nowrap;
+}
+.edu-table tbody tr { transition:background var(--tr); }
+.edu-table tbody tr:hover { background:rgba(26,86,160,.03); }
+.edu-table tbody td { padding:11px 14px; vertical-align:middle; border-color:rgba(0,0,0,.05); }
+.edu-table tbody tr:last-child td { border-bottom:none; }
+
+/* ── Badges ─────────────────────────────────────────────────────────── */
+/* category label */
+.cat-badge {
+  font-size:.71rem; font-weight:700; padding:3px 8px; border-radius:6px;
+  background:rgba(26,86,160,.1); color:var(--edu-blue); letter-spacing:.25px;
+}
+/*
+   BUG 6 FIX: Assessment.get_grade_letter() returns A+/A/B+/B/C+/C/D+/D/F
+   (see models.py). The original template checked A1/B2/B3/C4 etc (GPA labels)
+   which NEVER matched → every row showed bg-secondary (grey).
+*/
+.gb      { display:inline-block; padding:3px 10px; border-radius:6px; font-weight:800; font-size:.82rem; }
+.gb-aplus, .gb-a  { background:#d1fae5; color:#065f46; }
+.gb-bplus, .gb-b  { background:#dbeafe; color:#1e40af; }
+.gb-cplus, .gb-c  { background:#fef3c7; color:#92400e; }
+.gb-dplus, .gb-d  { background:#ffedd5; color:#9a3412; }
+.gb-f             { background:#fee2e2; color:#991b1b; }
+
+/* percentage badge */
+.pct { padding:3px 9px; border-radius:6px; font-weight:700; font-size:.8rem; }
+.pct-hi  { background:#d1fae5; color:#065f46; }
+.pct-mid { background:#fef3c7; color:#92400e; }
+.pct-lo  { background:#ffedd5; color:#9a3412; }
+.pct-fl  { background:#fee2e2; color:#991b1b; }
+
+/* ── Empty state ───────────────────────────────────────────────────── */
+.empty-state { padding:52px 24px; text-align:center; color:#9ca3af; }
+.empty-state i { font-size:2.8rem; opacity:.4; display:block; margin-bottom:12px; }
+.empty-state h6 { color:#6b7280; margin-bottom:4px; }
+.empty-state p  { font-size:.87rem; margin:0; }
+
+/* ── Bottom strip ──────────────────────────────────────────────────── */
+.strip-card {
+  border-radius:12px; border:1px solid rgba(0,0,0,.07);
+  background:#fff; box-shadow:var(--card-shadow);
+  padding:20px 24px; text-align:center;
+}
+.strip-card h4 { font-size:1.7rem; font-weight:800; color:#1a1a2e; margin:0; }
+.strip-card p  { font-size:.75rem; font-weight:600; text-transform:uppercase; letter-spacing:.6px; color:#9ca3af; margin:4px 0 0; }
+</style>
+
+<div class="container-fluid pb-4">
+  {# ══ 1. HERO CARD ════════════════════════════════════════════════════ #}
+  <div class="row mb-4 anim-1">
+    <div class="col-12">
+      <div class="hero-card card">
+        <div class="hero-dots"></div>
+        <div class="card-body py-4 px-4 position-relative">
+          <div class="row align-items-center">
+            <div class="col-md-8">
+              <div class="d-flex align-items-center gap-3 mb-2">
+                <div style="width:52px;height:52px;background:rgba(255,255,255,.18);border:2px solid rgba(255,255,255,.3);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.45rem;color:#fff;flex-shrink:0;">
+                  <i class="bi bi-person-fill"></i>
                 </div>
+                <div>
+                  <h2 class="hero-title mb-0">Welcome, {{ student.first_name }}!</h2>
+                  <p class="hero-meta mb-0">{{ student.full_name() }}</p>
+                </div>
+              </div>
+              <div class="d-flex flex-wrap gap-2 mt-3">
+                <span class="hero-badge"><i class="bi bi-person-badge"></i>Ref: {{ student.reference_number }}</span>
+                <span class="hero-badge"><i class="bi bi-hash"></i>{{ student.student_number }}</span>
+                <span class="hero-badge"><i class="bi bi-building"></i>{{ student.get_class_display() or 'No Class' }}</span>
+                {% if student.get_study_area_display() %}
+                <span class="hero-badge"><i class="bi bi-journal-bookmark"></i>{{ student.get_study_area_display() }}</span>
+                {% endif %}
+              </div>
             </div>
+            <div class="col-md-4 text-md-end mt-3 mt-md-0">
+              <a href="{{ url_for('student_quizzes') }}"
+                 class="btn btn-sm me-2"
+                 style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:9px;">
+                <i class="bi bi-controller me-1"></i>Take a Quiz
+              </a>
+              <a href="{{ url_for('student_logout') }}"
+                 class="btn btn-sm"
+                 style="background:rgba(255,255,255,.92);color:#1a56a0;font-weight:700;border-radius:9px;border:none;">
+                <i class="bi bi-box-arrow-left me-1"></i>Logout
+              </a>
+            </div>
+          </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  {# ══ 2. STAT CARDS ══════════════════════════════════════════════════ #}
+  <div class="row mb-4 g-3">
+
+    <div class="col-xl-3 col-md-6 anim-2">
+      <div class="stat-edu card h-100">
+        <div class="stat-stripe" style="background:var(--edu-blue);"></div>
+        <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
+          <div class="stat-icon-wrap" style="background:rgba(26,86,160,.1);color:var(--edu-blue);">
+            <i class="bi bi-clipboard-check-fill"></i>
+          </div>
+          <div>
+            <div class="stat-value" style="animation:countUp .5s ease both .4s;">{{ assessments|length }}</div>
+            <div class="stat-label">Assessments</div>
+            <div class="stat-sub">{% if selected_subject or selected_class or selected_category %}filtered view{% else %}all records{% endif %}</div>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- Quick Stats -->
-    <div class="row mb-5">
-        <div class="col-lg-3 col-md-6 mb-4">
-            <div class="card stat-card success h-100">
-                <div class="card-body text-center">
-                    <i class="bi bi-clipboard-check-fill fs-1 text-success mb-3"></i>
-                    <h3 class="fw-bold">{{ assessments|length }}</h3>
-                    <p class="text-muted mb-0">Total Assessments</p>
-                </div>
-            </div>
+    <div class="col-xl-3 col-md-6 anim-3">
+      <div class="stat-edu card h-100">
+        <div class="stat-stripe" style="background:var(--edu-success);"></div>
+        <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
+          <div class="stat-icon-wrap" style="background:rgba(5,150,105,.1);color:var(--edu-success);">
+            <i class="bi bi-trophy-fill"></i>
+          </div>
+          <div>
+            <div class="stat-value">{{ "%.1f"|format(average_score) if average_score else '0.0' }}%</div>
+            <div class="stat-label">Average Score</div>
+            <div class="stat-sub">filtered selection</div>
+          </div>
         </div>
-        <div class="col-lg-3 col-md-6 mb-4">
-            <div class="card stat-card h-100">
-                <div class="card-body text-center">
-                    <i class="bi bi-trophy-fill fs-1 text-primary mb-3"></i>
-                    <h3 class="fw-bold">{{ "%.1f"|format(average_score) if average_score else '0.0' }}%</h3>
-                    <p class="text-muted mb-0">Average Score</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-md-6 mb-4">
-            <div class="card stat-card warning h-100">
-                <div class="card-body text-center">
-                    <i class="bi bi-graph-up fs-1 text-warning mb-3"></i>
-                    <h3 class="fw-bold">{{ "%.1f"|format(filtered_gpa) if filtered_gpa else '0.0' }}</h3>
-                    <p class="text-muted mb-0">GPA</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-3 col-md-6 mb-4">
-            <div class="card stat-card h-100" style="border-color: 
-                {% if filtered_grade == 'A1' %}#28a745
-                {% elif filtered_grade in ['B2'] %}#28a745
-                {% elif filtered_grade == 'B3' %}#f0e68c
-                {% elif filtered_grade == 'C4' %}#ffd700
-                {% elif filtered_grade == 'C5' %}#ffff00
-                {% elif filtered_grade == 'C6' %}#ffa500
-                {% elif filtered_grade == 'D7' %}#ff8c00
-                {% elif filtered_grade == 'E8' %}#dc3545
-                {% else %}#dc3545
-                {% endif %}; background-color: 
-                {% if filtered_grade == 'A1' %}#28a745
-                {% elif filtered_grade in ['B2'] %}#28a745
-                {% elif filtered_grade == 'B3' %}#f0e68c
-                {% elif filtered_grade == 'C4' %}#ffd700
-                {% elif filtered_grade == 'C5' %}#ffff00
-                {% elif filtered_grade == 'C6' %}#ffa500
-                {% elif filtered_grade == 'D7' %}#ff8c00
-                {% elif filtered_grade == 'E8' %}#dc3545
-                {% else %}#dc3545
-                {% endif %};">
-                <div class="card-body text-center">
-                    <i class="bi bi-star-fill fs-1 mb-3" style="color: 
-                        {% if filtered_grade == 'A1' %}#fff
-                        {% elif filtered_grade in ['B2'] %}#fff
-                        {% elif filtered_grade == 'B3' %}#000
-                        {% elif filtered_grade == 'C4' %}#000
-                        {% elif filtered_grade == 'C5' %}#000
-                        {% elif filtered_grade == 'C6' %}#fff
-                        {% elif filtered_grade == 'D7' %}#fff
-                        {% elif filtered_grade == 'E8' %}#fff
-                        {% else %}#fff
-                        {% endif %};"></i>
-                    <h3 class="fw-bold" style="color: 
-                        {% if filtered_grade == 'A1' %}#ffffff
-                        {% elif filtered_grade in ['B2'] %}#ffffff
-                        {% elif filtered_grade == 'B3' %}#000000
-                        {% elif filtered_grade == 'C4' %}#000000
-                        {% elif filtered_grade == 'C5' %}#000000
-                        {% elif filtered_grade == 'C6' %}#ffffff
-                        {% elif filtered_grade == 'D7' %}#ffffff
-                        {% elif filtered_grade == 'E8' %}#ffffff
-                        {% else %}#ffffff
-                        {% endif %}; text-shadow: 
-                        {% if filtered_grade in ['B3', 'C4', 'C5'] %}1px 1px 2px rgba(255,255,255,0.7)
-                        {% else %}1px 1px 2px rgba(0,0,0,0.3)
-                        {% endif %};">{{ filtered_grade or 'N/A' }}</h3>
-                    <p class="text-muted mb-0" style="color: 
-                        {% if filtered_grade == 'A1' %}rgba(255,255,255,0.9)
-                        {% elif filtered_grade in ['B2'] %}rgba(255,255,255,0.9)
-                        {% elif filtered_grade == 'B3' %}rgba(0,0,0,0.9)
-                        {% elif filtered_grade == 'C4' %}rgba(0,0,0,0.9)
-                        {% elif filtered_grade == 'C5' %}rgba(0,0,0,0.9)
-                        {% elif filtered_grade == 'C6' %}rgba(255,255,255,0.9)
-                        {% elif filtered_grade == 'D7' %}rgba(255,255,255,0.9)
-                        {% elif filtered_grade == 'E8' %}rgba(255,255,255,0.9)
-                        {% else %}rgba(255,255,255,0.9)
-                        {% endif %};">Grade</p>
-                </div>
-            </div>
-        </div>
+      </div>
     </div>
 
-    <!-- Assessment Filters -->
-    <div class="row mb-4">
-        <div class="col-md-12">
-            <div class="card">
-                <div class="card-header" style="background: var(--gradient-secondary); color: white;">
-                    <h5 class="mb-0"><i class="bi bi-funnel-fill"></i> Filter Assessments</h5>
-                </div>
-                <div class="card-body">
-                    <form method="GET" class="row g-3">
-                        <div class="col-md-3">
-                            <label class="form-label fw-semibold">Subject</label>
-                            <select name="subject" class="form-select" onchange="this.form.submit()">
-                                <option value="">All Subjects</option>
-                                {% for subject in subjects %}
-                                <option value="{{ subject }}" {% if selected_subject == subject %}selected{% endif %}>
-                                    {{ subject|title }}
-                                </option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label fw-semibold">Class</label>
-                            <select name="class" class="form-select" onchange="this.form.submit()">
-                                <option value="">All Classes</option>
-                                {% for class in classes %}
-                                <option value="{{ class }}" {% if selected_class == class %}selected{% endif %}>
-                                    {{ class }}
-                                </option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label fw-semibold">Category</label>
-                            <select name="category" class="form-select" onchange="this.form.submit()">
-                                <option value="">All Categories</option>
-                                {% for cat in categories %}
-                                <option value="{{ cat }}" {% if selected_category == cat %}selected{% endif %}>
-                                    {{ cat|title }}
-                                </option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <a href="{{ url_for('student_dashboard') }}" class="btn btn-outline-secondary w-100">
-                                <i class="bi bi-x-circle"></i> Clear Filters
-                            </a>
-                        </div>
-                    </form>
-                </div>
+    <div class="col-xl-3 col-md-6 anim-4">
+      <div class="stat-edu card h-100">
+        <div class="stat-stripe" style="background:var(--edu-accent);"></div>
+        <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
+          <div class="stat-icon-wrap" style="background:rgba(245,158,11,.1);color:var(--edu-accent);">
+            <i class="bi bi-graph-up-arrow"></i>
+          </div>
+          <div>
+            <div class="stat-value">
+              {% if filtered_gpa and filtered_gpa != 'N/A' %}{{ "%.1f"|format(filtered_gpa|float) }}{% else %}N/A{% endif %}
             </div>
+            <div class="stat-label">GPA</div>
+            <div class="stat-sub">filtered selection</div>
+          </div>
         </div>
+      </div>
     </div>
 
-    <!-- Results by Teacher/Subject -->
-    {% if teacher_results %}
-    <div class="row mb-4">
-        <div class="col-md-12">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">Results by Teacher & Subject</h5>
-                    {% for teacher_name, subjects in teacher_results.items() %}
-                    <div class="mb-4">
-                        <h6 class="text-primary mb-3"><i class="bi bi-person-circle"></i> {{ teacher_name }}</h6>
-                        <div class="row">
-                            {% for subject, data in subjects.items() %}
-                            <div class="col-md-6 col-lg-4 mb-3">
-                                <div class="card border-primary">
-                                    <div class="card-body text-center">
-                                        <h6 class="card-title">{{ subject|title }}</h6>
-                                        <div class="mb-2">
-                                            {% if data.grade == 'A1' %}
-                                                <div class="bg-success text-white rounded-circle d-flex align-items-center justify-content-center mx-auto" style="width: 80px; height: 80px; font-size: 1.2rem; font-weight: bold;">
-                                                    {{ "%.1f"|format(data.final_percent) }}%
-                                                </div>
-                                            {% elif data.grade in ['B2'] %}
-                                                <div class="text-white rounded-circle d-flex align-items-center justify-content-center mx-auto" style="width: 80px; height: 80px; font-size: 1.2rem; font-weight: bold; background-color: #28a745;">
-                                                    {{ "%.1f"|format(data.final_percent) }}%
-                                                </div>
-                                            {% elif data.grade == 'B3' %}
-                                                <div class="text-dark rounded-circle d-flex align-items-center justify-content-center mx-auto" style="width: 80px; height: 80px; font-size: 1.2rem; font-weight: bold; background-color: #f0e68c;">
-                                                    {{ "%.1f"|format(data.final_percent) }}%
-                                                </div>
-                                            {% elif data.grade == 'C4' %}
-                                                <div class="text-dark rounded-circle d-flex align-items-center justify-content-center mx-auto" style="width: 80px; height: 80px; font-size: 1.2rem; font-weight: bold; background-color: #ffd700;">
-                                                    {{ "%.1f"|format(data.final_percent) }}%
-                                                </div>
-                                            {% elif data.grade == 'C5' %}
-                                                <div class="text-dark rounded-circle d-flex align-items-center justify-content-center mx-auto" style="width: 80px; height: 80px; font-size: 1.2rem; font-weight: bold; background-color: #ffff00;">
-                                                    {{ "%.1f"|format(data.final_percent) }}%
-                                                </div>
-                                            {% elif data.grade == 'C6' %}
-                                                <div class="text-white rounded-circle d-flex align-items-center justify-content-center mx-auto" style="width: 80px; height: 80px; font-size: 1.2rem; font-weight: bold; background-color: #ffa500;">
-                                                    {{ "%.1f"|format(data.final_percent) }}%
-                                                </div>
-                                            {% elif data.grade == 'D7' %}
-                                                <div class="text-white rounded-circle d-flex align-items-center justify-content-center mx-auto" style="width: 80px; height: 80px; font-size: 1.2rem; font-weight: bold; background-color: #ff8c00;">
-                                                    {{ "%.1f"|format(data.final_percent) }}%
-                                                </div>
-                                            {% elif data.grade == 'E8' %}
-                                                <div class="text-white rounded-circle d-flex align-items-center justify-content-center mx-auto" style="width: 80px; height: 80px; font-size: 1.2rem; font-weight: bold; background-color: #dc3545;">
-                                                    {{ "%.1f"|format(data.final_percent) }}%
-                                                </div>
-                                            {% else %}
-                                                <div class="bg-danger text-white rounded-circle d-flex align-items-center justify-content-center mx-auto" style="width: 80px; height: 80px; font-size: 1.2rem; font-weight: bold;">
-                                                    {{ "%.1f"|format(data.final_percent) }}%
-                                                </div>
-                                            {% endif %}
-                                        </div>
-                                        <div class="mt-2">
-                                            <div class="mb-1">
-                                                <span class="badge 
-                                                    {% if data.grade == 'A1' %}bg-success
-                                                    {% elif data.grade in ['B2', 'B3'] %}bg-success
-                                                    {% elif data.grade in ['C4', 'C5', 'C6'] %}bg-warning
-                                                    {% elif data.grade == 'D7' %}bg-warning
-                                                    {% elif data.grade == 'E8' %}bg-danger
-                                                    {% else %}bg-secondary{% endif %} 
-                                                    fw-bold fs-6 px-3 py-2">
-                                                    Grade: {{ data.grade }}
-                                                </span>
-                                            </div>
-                                            <small class="text-muted">GPA: {{ data.gpa }} | {{ data.assessments|length }} assessments</small>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-    </div>
+    {#
+      BUG 6 FIX (grade stat card):
+      filtered_grade comes from calculate_gpa_and_grade() → returns A1/B2/B3…
+      BUT Assessment.get_grade_letter() returns A+/A/B+/B… — they are DIFFERENT.
+      The stat card grade (filtered_grade) is the GPA-style label from
+      calculate_gpa_and_grade(), so A1/B2/B3/C4/C5/C6/D7/E8/F9 IS correct here.
+      (The table rows are different — see below.)
+    #}
+    {% set g = filtered_grade %}
+    {% if g == 'A1' %}
+      {% set gcol='#059669' %}{% set gbg='rgba(5,150,105,.1)'  %}{% set gst='var(--edu-success)' %}
+    {% elif g == 'B2' %}
+      {% set gcol='#0369a1' %}{% set gbg='rgba(3,105,161,.1)'  %}{% set gst='#0369a1' %}
+    {% elif g == 'B3' %}
+      {% set gcol='#0369a1' %}{% set gbg='rgba(3,105,161,.1)'  %}{% set gst='#0369a1' %}
+    {% elif g in ['C4','C5','C6'] %}
+      {% set gcol='#d97706' %}{% set gbg='rgba(217,119,6,.1)'  %}{% set gst='var(--edu-warning)' %}
+    {% elif g in ['D7','E8'] %}
+      {% set gcol='#ea580c' %}{% set gbg='rgba(234,88,12,.1)'  %}{% set gst='#ea580c' %}
+    {% else %}
+      {% set gcol='#dc2626' %}{% set gbg='rgba(220,38,38,.1)'  %}{% set gst='var(--edu-danger)' %}
     {% endif %}
+    <div class="col-xl-3 col-md-6 anim-5">
+      <div class="stat-edu card h-100">
+        <div class="stat-stripe" style="background:{{ gst }};"></div>
+        <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
+          <div class="stat-icon-wrap" style="background:{{ gbg }};color:{{ gcol }};">
+            <i class="bi bi-award-fill"></i>
+          </div>
+          <div>
+            <div style="margin-bottom:2px;">
+              <span class="grade-pill" style="background:{{ gbg }};color:{{ gcol }};">{{ g or 'N/A' }}</span>
+            </div>
+            <div class="stat-label">Grade</div>
+            <div class="stat-sub">filtered selection</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>{# /stat row #}
+
+  {# ══ 3. FILTERS ═════════════════════════════════════════════════════ #}
+  {#
+    BUG 1 FIX:
+    subjects / classes / categories are populated from the full unfiltered
+    assessment list in the route (see app.py fix). The template just renders
+    what it receives — no change needed here except removing the old broken
+    {{ subject|title }} which didn't handle snake_case keys like english_language.
+  #}
+  <div class="row mb-4 anim-6">
+    <div class="col-12">
+      <div class="filter-card">
+        <div class="filter-hdr">
+          <i class="bi bi-funnel-fill"></i>
+          <h6>Filter Assessments</h6>
+        </div>
+        <div class="card-body py-3 px-4">
+          <form method="GET" class="row g-3 align-items-end">
+            <div class="col-md-3">
+              <label class="form-label fw-semibold" style="font-size:.8rem;color:#374151;">Subject</label>
+              <select name="subject" class="form-select" onchange="this.form.submit()">
+                <option value="">All Subjects</option>
+                {% for subj in subjects %}
+                <option value="{{ subj }}" {% if selected_subject == subj %}selected{% endif %}>
+                  {{ subj.replace('_',' ')|title }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold" style="font-size:.8rem;color:#374151;">Class</label>
+              <select name="class" class="form-select" onchange="this.form.submit()">
+                <option value="">All Classes</option>
+                {% for cls in classes %}
+                <option value="{{ cls }}" {% if selected_class == cls %}selected{% endif %}>{{ cls }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold" style="font-size:.8rem;color:#374151;">Category</label>
+              <select name="category" class="form-select" onchange="this.form.submit()">
+                <option value="">All Categories</option>
+                {% for cat in categories %}
+                <option value="{{ cat }}" {% if selected_category == cat %}selected{% endif %}>
+                  {{ CATEGORY_LABELS.get(cat, cat.replace('_',' ')|title) }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3">
+              <a href="{{ url_for('student_dashboard') }}" class="btn btn-outline-secondary w-100" style="border-radius:9px;">
+                <i class="bi bi-x-circle me-1"></i>Clear Filters
+              </a>
+            </div>
+          </form>
+          {% if selected_subject or selected_class or selected_category %}
+          <div class="d-flex flex-wrap gap-2 mt-3 pt-3" style="border-top:1px solid rgba(0,0,0,.06);">
+            <span style="font-size:.74rem;color:#9ca3af;align-self:center;">Active filters:</span>
+            {% if selected_subject %}<span class="atag"><i class="bi bi-book-fill"></i>{{ selected_subject.replace('_',' ')|title }}</span>{% endif %}
+            {% if selected_class  %}<span class="atag"><i class="bi bi-building"></i>{{ selected_class }}</span>{% endif %}
+            {% if selected_category %}<span class="atag"><i class="bi bi-tag-fill"></i>{{ CATEGORY_LABELS.get(selected_category, selected_category) }}</span>{% endif %}
+            <span style="font-size:.74rem;color:#9ca3af;align-self:center;">
+              — showing {{ assessments|length }} record{{ 's' if assessments|length != 1 }}
+            </span>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ══ 4. RESULTS BY TEACHER & SUBJECT ════════════════════════════════ #}
+  {#
+    BUG 2 FIX: teacher_results now built from full unfiltered list in the route.
+    BUG 3 FIX: None teacher_id gracefully handled in the route.
+    BUG 6 FIX (score rings): grade conditions check get_grade_letter() values
+    (A+/A/B+/B/C+/C/D+/D/F) NOT the GPA labels — these are per-assessment grades.
+  #}
+  {% if teacher_results %}
+  <div class="row mb-4 anim-6">
+    <div class="col-12">
+      <div class="section-card">
+        <div class="section-hdr">
+          <div class="d-flex align-items-center">
+            <div class="sec-icon" style="background:rgba(124,58,237,.12);color:var(--edu-purple);">
+              <i class="bi bi-bar-chart-fill"></i>
+            </div>
+            <h5>Results by Teacher &amp; Subject</h5>
+          </div>
+          <span class="sec-count" style="background:rgba(124,58,237,.1);color:var(--edu-purple);">
+            Always shows all subjects
+          </span>
+        </div>
+        <div class="card-body px-4 py-4">
+          {% for teacher_name, subj_data in teacher_results.items() %}
+          <div class="{% if not loop.last %}mb-4 pb-4{% endif %}"
+               style="{% if not loop.last %}border-bottom:1px solid rgba(0,0,0,.06);{% endif %}">
+            <div class="d-flex align-items-center gap-2 mb-3">
+              <div style="width:34px;height:34px;border-radius:50%;
+                          background:linear-gradient(135deg,#1a56a0,#2d74c4);
+                          display:flex;align-items:center;justify-content:center;
+                          color:#fff;font-size:.85rem;font-weight:700;flex-shrink:0;">
+                {{ teacher_name[0]|upper }}
+              </div>
+              <h6 class="text-primary mb-0 fw-bold">{{ teacher_name }}</h6>
+            </div>
+            <div class="row g-3">
+              {% for subj_key, data in subj_data.items() %}
+              {% set fp = data.final_percent %}
+              {% set dg = data.grade %}
+              {#
+                data.grade is set from calculate_gpa_and_grade() in the route
+                → returns A1/B2/B3/C4/C5/C6/D7/E8/F9 style labels.
+              #}
+              {% if dg == 'A1' %}
+                {% set rc='#059669' %}{% set rbg='#d1fae5' %}{% set rbd='#059669' %}
+              {% elif dg in ['B2','B3'] %}
+                {% set rc='#1e40af' %}{% set rbg='#dbeafe' %}{% set rbd='#1e40af' %}
+              {% elif dg in ['C4','C5','C6'] %}
+                {% set rc='#92400e' %}{% set rbg='#fef3c7' %}{% set rbd='#d97706' %}
+              {% elif dg in ['D7','E8'] %}
+                {% set rc='#9a3412' %}{% set rbg='#ffedd5' %}{% set rbd='#ea580c' %}
+              {% else %}
+                {% set rc='#991b1b' %}{% set rbg='#fee2e2' %}{% set rbd='#dc2626' %}
+              {% endif %}
+              <div class="col-xl-2 col-lg-3 col-md-4 col-6">
+                <div class="subj-card p-3 text-center h-100">
+                  <p class="mb-3 fw-bold text-uppercase"
+                     style="font-size:.69rem;letter-spacing:.5px;color:#6b7280;line-height:1.3;">
+                    {{ subj_key.replace('_',' ')|title }}
+                  </p>
+                  <div class="score-ring" style="border-color:{{ rbd }};color:{{ rc }};background:{{ rbg }};">
+                    {{ "%.0f"|format(fp) }}%
+                  </div>
+                  <div class="mt-2">
+                    <span class="gb
+                      {% if dg == 'A1' %}gb-aplus
+                      {% elif dg in ['B2','B3'] %}gb-b
+                      {% elif dg in ['C4','C5','C6'] %}gb-c
+                      {% elif dg in ['D7','E8'] %}gb-d
+                      {% else %}gb-f{% endif %}">
+                      {{ dg }}
+                    </span>
+                  </div>
+                  <p class="text-muted mt-1 mb-0" style="font-size:.71rem;">
+                    GPA {{ data.gpa }} &middot; {{ data.assessments|length }} rec.
+                  </p>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
     <!-- Assessments Table -->
     <div class="row">
@@ -264,10 +524,10 @@
                     <h5 class="card-title">Assessment Records</h5>
                     {% if assessments %}
                     <div class="table-responsive">
-                        <table class="table table-hover">
+                        <table class="table edu-table mb-0">
                             <thead>
                                 <tr>
-                                    <th>Date</th>
+                                    <th class="ps-4">Date</th>
                                     <th>Subject</th>
                                     <th>Category</th>
                                     <th>Class</th>
@@ -279,43 +539,69 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for assessment in assessments %}
+                                {% for a in assessments %}
+                                {% set pct   = a.get_percentage() %}
+                                {% set grade = a.get_grade_letter() %}
                                 <tr>
-                                    <td>{{ assessment.date_recorded.strftime('%Y-%m-%d') }}</td>
-                                    <td>{{ assessment.subject|title }}</td>
-                                    <td><span class="badge bg-primary">{{ assessment.category }}</span></td>
-                                    <td>{{ assessment.class_name or 'N/A' }}</td>
-                                    <td>{{ assessment.score }}/{{ assessment.max_score }}</td>
+                                    <td class="ps-4 text-nowrap" style="color:#6b7280;font-size:.82rem;">
+                                        {{ a.date_recorded.strftime('%d %b %Y') }}
+                                    </td>
+                                    <td class="fw-semibold" style="color:#1a1a2e;">
+                                        {{ a.subject.replace('_',' ')|title }}
+                                    </td>
                                     <td>
-                                        <span class="badge {% if assessment.get_percentage() >= 70 %}bg-success{% elif assessment.get_percentage() >= 50 %}bg-warning{% else %}bg-danger{% endif %}">
-                                            {{ "%.1f"|format(assessment.get_percentage()) }}%
+                                      <span class="cat-badge">{{ CATEGORY_LABELS.get(a.category, a.category) }}</span>
+                                    </td>
+                                    <td style="color:#6b7280;">{{ a.class_name or '—' }}</td>
+                                    <td class="fw-bold" style="color:#1a1a2e;">
+                                        {{ a.score|int }}<span style="color:#9ca3af;font-weight:400;">/{{ a.max_score|int }}</span>
+                                    </td>
+                                    <td>
+                                        <span class="pct
+                                            {% if pct >= 70 %}pct-hi
+                                            {% elif pct >= 55 %}pct-mid
+                                            {% elif pct >= 40 %}pct-lo
+                                            {% else %}pct-fl{% endif %}">
+                                            {{ "%.1f"|format(pct) }}%
                                         </span>
                                     </td>
                                     <td>
-                                        {% set grade = assessment.get_grade_letter() %}
-                                        <span class="badge 
-                                            {% if grade == 'A1' %}bg-success
-                                            {% elif grade in ['B2', 'B3'] %}bg-success
-                                            {% elif grade in ['C4', 'C5', 'C6'] %}bg-warning
-                                            {% elif grade == 'D7' %}bg-warning
-                                            {% elif grade == 'E8' %}bg-danger
-                                            {% else %}bg-secondary{% endif %} 
-                                            fw-bold fs-6">
+                                        <span class="gb
+                                            {% if grade == 'A+' %}gb-aplus
+                                            {% elif grade == 'A'  %}gb-a
+                                            {% elif grade == 'B+' %}gb-bplus
+                                            {% elif grade == 'B'  %}gb-b
+                                            {% elif grade == 'C+' %}gb-cplus
+                                            {% elif grade == 'C'  %}gb-c
+                                            {% elif grade == 'D+' %}gb-dplus
+                                            {% elif grade == 'D'  %}gb-d
+                                            {% else %}gb-f{% endif %}">
                                             {{ grade }}
                                         </span>
                                     </td>
-                                    <td>{{ assessment.assessor or 'N/A' }}</td>
-                                    <td>{{ assessment.comments|truncate(30) if assessment.comments else 'N/A' }}</td>
+                                    <td style="color:#6b7280;font-size:.82rem;">{{ a.assessor or '—' }}</td>
+                                    <td style="color:#6b7280;font-size:.82rem;max-width:150px;">
+                                      {% if a.comments %}
+                                        <span title="{{ a.comments }}">{{ a.comments[:38] }}{% if a.comments|length > 38 %}…{% endif %}</span>
+                                      {% else %}—{% endif %}
+                                    </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
                     </div>
                     {% else %}
-                    <div class="text-center py-5">
-                        <i class="bi bi-clipboard-x" style="font-size: 3rem; color: #6c757d;"></i>
-                        <h5 class="mt-3">No assessments found</h5>
-                        <p class="text-muted">You don't have any assessments yet.</p>
+                    <div class="empty-state">
+                        <i class="bi bi-clipboard-x"></i>
+                        <h6>No assessments found</h6>
+                        <p>
+                          {% if selected_subject or selected_class or selected_category %}
+                            No records match the active filters.
+                            <a href="{{ url_for('student_dashboard') }}" class="text-primary">Clear filters</a> to see all.
+                          {% else %}
+                            No assessment records have been entered yet.
+                          {% endif %}
+                        </p>
                     </div>
                     {% endif %}
                 </div>
@@ -335,44 +621,50 @@
                 <div class="card-body">
                     {% if quiz_attempts %}
                     <div class="table-responsive">
-                        <table class="table table-hover">
+                        <table class="table edu-table mb-0">
                             <thead>
                                 <tr>
-                                    <th>Date</th>
+                                    <th class="ps-4">Date</th>
                                     <th>Quiz Title</th>
                                     <th>Subject</th>
                                     <th>Score</th>
                                     <th>Percentage</th>
                                     <th>Time Taken</th>
-                                    <th>Actions</th>
+                                    <th></th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for attempt in quiz_attempts %}
                                 {% set quiz = quiz_details.get(attempt.id) %}
                                 <tr>
-                                    <td>{{ attempt.completed_at.strftime('%Y-%m-%d %H:%M') if attempt.completed_at else 'N/A' }}</td>
-                                    <td>{{ quiz.title if quiz else 'Unknown Quiz' }}</td>
-                                    <td>{{ quiz.subject.replace('_', ' ')|title if quiz else 'N/A' }}</td>
-                                    <td>{{ attempt.correct_answers }}/{{ attempt.total_questions }}</td>
+                                    <td class="ps-4 text-nowrap" style="color:#6b7280;font-size:.82rem;">
+                                        {{ attempt.completed_at.strftime('%d %b %Y') if attempt.completed_at else '—' }}
+                                    </td>
+                                    <td class="fw-semibold" style="color:#1a1a2e;">{{ quiz.title if quiz else 'Unknown Quiz' }}</td>
+                                    <td style="color:#6b7280;font-size:.82rem;">{{ quiz.subject.replace('_', ' ')|title if quiz else '—' }}</td>
+                                    <td class="fw-bold" style="color:#1a1a2e;">
+                                        {{ attempt.correct_answers }}<span style="color:#9ca3af;font-weight:400;">/{{ attempt.total_questions }}</span>
+                                    </td>
                                     <td>
-                                        <span class="badge 
-                                            {% if attempt.get_percentage() >= 80 %}bg-success
-                                            {% elif attempt.get_percentage() >= 60 %}bg-warning
-                                            {% else %}bg-danger{% endif %}">
+                                        <span class="pct
+                                            {% if attempt.get_percentage() >= 80 %}pct-hi
+                                            {% elif attempt.get_percentage() >= 60 %}pct-mid
+                                            {% else %}pct-fl{% endif %}">
                                             {{ "%.1f"|format(attempt.get_percentage()) }}%
                                         </span>
                                     </td>
-                                    <td>
+                                    <td style="color:#6b7280;font-size:.82rem;">
                                         {% if attempt.time_taken %}
-                                            {{ "%d"|format(attempt.time_taken // 60) }}m {{ "%d"|format(attempt.time_taken % 60) }}s
+                                            {{ (attempt.time_taken // 60)|int }}m {{ (attempt.time_taken % 60)|int }}s
                                         {% else %}
-                                            N/A
+                                            —
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <a href="{{ url_for('quiz_attempt_review', attempt_id=attempt.id) }}" class="btn btn-sm btn-outline-primary">
-                                            <i class="bi bi-eye"></i> Review
+                                        <a href="{{ url_for('quiz_attempt_review', attempt_id=attempt.id) }}"
+                                           class="btn btn-sm"
+                                           style="background:rgba(26,86,160,.08);color:var(--edu-blue);border:none;border-radius:8px;font-size:.8rem;font-weight:600;padding:4px 12px;">
+                                            <i class="bi bi-eye me-1"></i>Review
                                         </a>
                                     </td>
                                 </tr>
@@ -381,10 +673,10 @@
                         </table>
                     </div>
                     {% else %}
-                    <div class="text-center py-5">
-                        <i class="bi bi-question-circle" style="font-size: 3rem; color: #6c757d;"></i>
-                        <h5 class="mt-3">No quiz attempts found</h5>
-                        <p class="text-muted">You haven't taken any quizzes yet.</p>
+                    <div class="empty-state">
+                        <i class="bi bi-question-circle"></i>
+                        <h6>No quiz attempts yet</h6>
+                        <p><a href="{{ url_for('student_quizzes') }}" class="text-primary">Browse available quizzes</a></p>
                     </div>
                     {% endif %}
                 </div>
@@ -392,40 +684,29 @@
         </div>
     </div>
 
-    <!-- Quick Stats -->
-    <div class="row mt-4">
-        <div class="col-md-4">
-            <div class="card text-center">
-                <div class="card-body">
-                    <h6 class="card-subtitle mb-2 text-muted">Total Assessments</h6>
-                    <h3 class="card-title">{{ assessments|length }}</h3>
-                </div>
-            </div>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="strip-card">
+          <div style="font-size:1.4rem;color:var(--edu-blue);margin-bottom:6px;"><i class="bi bi-clipboard-data"></i></div>
+          <h4>{{ assessments|length }}</h4>
+          <p>Total assessments (filtered)</p>
         </div>
-        <div class="col-md-4">
-            <div class="card text-center">
-                <div class="card-body">
-                    <h6 class="card-subtitle mb-2 text-muted">Subjects</h6>
-                    <h3 class="card-title">{{ subjects|length }}</h3>
-                </div>
-            </div>
+      </div>
+      <div class="col-md-4">
+        <div class="strip-card">
+          <div style="font-size:1.4rem;color:var(--edu-success);margin-bottom:6px;"><i class="bi bi-book-half"></i></div>
+          <h4>{{ subjects|length }}</h4>
+          <p>Subjects on record</p>
         </div>
-        <div class="col-md-4">
-            <div class="card text-center">
-                <div class="card-body">
-                    <h6 class="card-subtitle mb-2 text-muted">Average Score</h6>
-                    <h3 class="card-title">
-                        {% if assessments %}
-                        {% set total_percent = 0 %}
-                        {% for a in assessments %}
-                        {% set total_percent = total_percent + a.get_percentage() %}
-                        {% endfor %}
-                        {{ "%.1f"|format(total_percent / assessments|length) }}%
-                        {% else %}0%{% endif %}
-                    </h3>
-                </div>
-            </div>
+      </div>
+      <div class="col-md-4">
+        <div class="strip-card">
+          <div style="font-size:1.4rem;color:var(--edu-accent);margin-bottom:6px;"><i class="bi bi-graph-up"></i></div>
+          <h4>{{ "%.1f"|format(average_score) }}%</h4>
+          <p>Average score (filtered)</p>
         </div>
+      </div>
     </div>
+
 </div>
 {% endblock %}

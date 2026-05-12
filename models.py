@@ -346,18 +346,21 @@ class Student(UserMixin, db.Model):
             query = [a for a in query if a.subject == subject]
         raw = scores_from_assessments(query)
         return {
-            'name':       self.full_name(),
-            'ref_id':     self.reference_number or '',
-            'study_area': self.get_study_area_display() or '',
-            'ica1':       raw.get('ica1',      0),
-            'ica2':       raw.get('ica2',      0),
-            'icp1':       raw.get('icp1',      0),
-            'icp2':       raw.get('icp2',      0),
-            'gp1':        raw.get('gp1',       0),
-            'gp2':        raw.get('gp2',       0),
-            'practical':  raw.get('practical', 0),
-            'mid_term':   raw.get('mid_term',  0),
-            'end_term':   raw.get('end_term',  0),
+            'student_number': self.student_number or '',
+            'last_name':      self.last_name or '',
+            'first_name':     self.first_name or '',
+            'middle_name':    self.middle_name or '',
+            'ref_id':         self.reference_number or '',
+            'study_area':     self.get_study_area_display() or '',
+            'ica1':           raw.get('ica1',      0),
+            'ica2':           raw.get('ica2',      0),
+            'icp1':           raw.get('icp1',      0),
+            'icp2':           raw.get('icp2',      0),
+            'gp1':            raw.get('gp1',       0),
+            'gp2':            raw.get('gp2',       0),
+            'practical':      raw.get('practical', 0),
+            'mid_term':       raw.get('mid_term',  0),
+            'end_term':       raw.get('end_term',  0),
         }
 
 

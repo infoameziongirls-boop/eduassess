@@ -17,9 +17,6 @@
                 <li><a class="dropdown-item" href="{{ url_for('export_assessments_excel', subject=request.args.get('subject', ''), class=request.args.get('class', ''), category=request.args.get('category', '')) }}">
                     <i class="bi bi-file-earmark-excel"></i> Export to Excel
                 </a></li>
-                <li><a class="dropdown-item" href="{{ url_for('export_csv') }}">
-                    <i class="bi bi-file-earmark-text"></i> Export CSV
-                </a></li>
             </ul>
         </div>
         <a href="{{ url_for('new_assessment') }}" class="btn btn-primary">

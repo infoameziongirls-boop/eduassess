@@ -5,6 +5,8 @@ import random
 import re
 import time
 import json
+import shutil
+import filecmp
 from functools import wraps
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -254,6 +256,7 @@ persistent_dir = os.environ.get(
 )
 app.config['UPLOAD_FOLDER']      = os.path.join(persistent_dir, 'uploads')
 app.config['TEMPLATE_FOLDER']    = os.path.join(persistent_dir, 'templates_excel')
+app.config['REPO_TEMPLATE_FOLDER'] = os.path.join(os.path.dirname(__file__), 'templates_excel')
 app.config['SESSION_FILE_DIR']   = os.path.join(persistent_dir, 'flask_sessions')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
@@ -261,6 +264,18 @@ for d in [app.config['UPLOAD_FOLDER'],
           app.config['TEMPLATE_FOLDER'],
           app.config['SESSION_FILE_DIR']]:
     os.makedirs(d, exist_ok=True)
+
+
+def _get_assessment_template_path(filename=None):
+    filename = filename or app.config.get('ASSESSMENT_TEMPLATE_FILE', 'student_template.xlsx')
+    runtime_path = os.path.join(app.config['TEMPLATE_FOLDER'], filename)
+    repo_path = os.path.join(app.config['REPO_TEMPLATE_FOLDER'], filename)
+    if os.path.exists(repo_path):
+        if not os.path.exists(runtime_path) or not filecmp.cmp(runtime_path, repo_path, shallow=False):
+            shutil.copy2(repo_path, runtime_path)
+        return runtime_path
+    return runtime_path
+
 
 # ---------------------------------------------------------------------------
 # Extensions
@@ -3456,7 +3471,7 @@ def export_student_excel(student_id):
         abort(403)
     student = Student.query.get_or_404(student_id)
     subject = request.args.get('subject')
-    tpl_path = os.path.join(app.config['TEMPLATE_FOLDER'], 'student_template.xlsx')
+    tpl_path = _get_assessment_template_path('student_template.xlsx')
     if not os.path.exists(tpl_path):
         flash('School template (student_template.xlsx) not found in templates_excel/. '
               'Please upload it via Admin → Settings.', 'danger')
@@ -3477,7 +3492,10 @@ def export_student_excel(student_id):
             term_year=(f'{settings.current_term} {settings.current_academic_year}'
                        if settings else ''),
             form=student.class_name)
-        upd.add_student(10, student.to_template_dict(subject))
+        student_dict = student.to_template_dict(subject)
+        student_dict['sheet_subject'] = exp_subj
+        student_dict['sheet_class'] = student.class_name or ''
+        upd.add_students_batch([student_dict], per_sheet=True)
         upd.save_workbook(out_path)
         return send_file(out_path, as_attachment=True,
                          download_name=out_name,
@@ -3504,7 +3522,7 @@ def export_all_students_excel():
         q = q.filter_by(class_name=class_name)
     students_list = q.order_by(Student.last_name, Student.first_name).all()
 
-    tpl_path = os.path.join(app.config['TEMPLATE_FOLDER'], 'student_template.xlsx')
+    tpl_path = _get_assessment_template_path('student_template.xlsx')
     if not os.path.exists(tpl_path):
         flash('School template (student_template.xlsx) not found in templates_excel/. '
               'Please upload it via Admin → Settings.', 'danger')
@@ -3555,7 +3573,7 @@ def export_assessments_excel():
     out_name   = f'assessments_{filter_str}_{datetime.now().strftime("%Y%m%d")}.xlsx'
     out_path   = os.path.join(app.config['UPLOAD_FOLDER'], out_name)
 
-    tpl_path = os.path.join(app.config['TEMPLATE_FOLDER'], 'student_template.xlsx')
+    tpl_path = _get_assessment_template_path('student_template.xlsx')
     if not os.path.exists(tpl_path):
         flash('School template (student_template.xlsx) not found in templates_excel/. '
               'Please upload it via Admin → Settings.', 'danger')
@@ -3652,7 +3670,7 @@ def download_template(template_type):
         'user_import':  ('user_import_template.xlsx',    'teacher_bulk_import_template.xlsx', create_teacher_import_template),
     }
     if template_type == 'student':
-        tpl_path = os.path.join(app.config['TEMPLATE_FOLDER'], 'student_template.xlsx')
+        tpl_path = _get_assessment_template_path('student_template.xlsx')
         if not os.path.exists(tpl_path):
             flash('School assessment template not found. Please upload student_template.xlsx via Admin → Settings.', 'danger')
             return redirect(url_for('admin_settings'))

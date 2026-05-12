@@ -1,9 +1,10 @@
+import hashlib
 import os
 import tempfile
 from openpyxl import Workbook, load_workbook
 from flask_login import login_user
 
-from app import app, db, export_csv, export_student_csv, export_student_excel, download_template
+from app import app, db, export_csv, export_student_csv, export_student_excel, download_template, _get_assessment_template_path
 from excel_utils import ExcelBulkImporter
 from models import User, Student, Assessment, Setting
 from template_updater import AssessmentTemplateUpdater, calculate_scores_from_template
@@ -14,17 +15,17 @@ def _create_minimal_school_template(path):
     ws = wb.active
     row = 10
     formulas = {
-        'G': '=MIN(100,(SUM(E10:F10)))',
         'J': '=MIN(100,(SUM(H10:I10)))',
         'M': '=MIN(100,(SUM(K10:L10)))',
-        'P': '=MIN(500,(SUM(G10,J10,M10,N10,O10)))',
-        'Q': '=P10/500*100',
-        'R': '=MIN(50,(ROUNDUP(Q10/2,0)))',
-        'T': '=MIN(50,(ROUNDUP(S10/2,0)))',
-        'U': '=MIN(100,(SUM(R10,T10)))',
-        'V': '=U10/100',
-        'W': '=IF(U10>=80,4,IF(U10>=70,3.5,IF(U10>=65,2.5,IF(U10>=60,2,IF(U10>=55,1.5,IF(U10>=50,1,IF(U10>=45,0.5,0)))))))',
-        'X': '=IF(U10>=80,"A1",IF(U10>=70,"B2",IF(U10>=65,"B3",IF(U10>=60,"C4",IF(U10>=55,"C5",IF(U10>=50,"C6",IF(U10>=45,"D7",IF(U10>=40,"E8","F9"))))))))',
+        'P': '=MIN(100,(SUM(N10:O10)))',
+        'S': '=MIN(500,(SUM(J10,M10,P10,Q10,R10)))',
+        'T': '=S10/500*100',
+        'U': '=MIN(50,(ROUNDUP(T10/2,0)))',
+        'W': '=MIN(50,(ROUNDUP(V10/2,0)))',
+        'X': '=MIN(100,(SUM(U10,W10)))',
+        'Y': '=X10/100',
+        'Z': '=IF(X10>=80,"4.0",IF(X10>=70,"3.5",IF(X10>=65,"2.5",IF(X10>=60,"2.0",IF(X10>=55,"1.5",IF(X10>=50,"1.0",IF(X10>=45,"0.5","0.0")))))))',
+        'AA': '=IF(X10>=80,"A1",IF(X10>=70,"B2",IF(X10>=65,"B3",IF(X10>=60,"C4",IF(X10>=55,"C5",IF(X10>=50,"C6",IF(X10>=45,"D7",IF(X10>=40,"E8","F9"))))))))',
     }
     for col, formula in formulas.items():
         ws[f'{col}{row}'] = formula
@@ -83,11 +84,12 @@ def test_assessment_template_updater_copies_row_formulas(tmp_path):
     workbook = load_workbook(str(output_path), data_only=False)
     ws = workbook.active
 
-    assert ws['E11'].value == 20.0
-    assert ws['F11'].value == 25.0
-    assert ws['G11'].value == '=MIN(100,(SUM(E11:F11)))'
-    assert ws['P11'].value == '=MIN(500,(SUM(G11,J11,M11,N11,O11)))'
-    assert ws['X11'].value == '=IF(U11>=80,"A1",IF(U11>=70,"B2",IF(U11>=65,"B3",IF(U11>=60,"C4",IF(U11>=55,"C5",IF(U11>=50,"C6",IF(U11>=45,"D7",IF(U11>=40,"E8","F9"))))))))'
+    assert ws['H11'].value == 20.0
+    assert ws['I11'].value == 25.0
+    assert ws['J11'].value == '=MIN(100,(SUM(H11:I11)))'
+    assert ws['P11'].value == '=MIN(100,(SUM(N11:O11)))'
+    assert ws['S11'].value == '=MIN(500,(SUM(J11,M11,P11,Q11,R11)))'
+    assert ws['X11'].value == '=MIN(100,(SUM(U11,W11)))'
 
 
 def test_excel_bulk_importer_accepts_reference_number_header(tmp_path):
@@ -244,6 +246,70 @@ def test_download_template_student_route_serves_template(tmp_path):
         with app.test_request_context():
             login_user(admin_user)
             response = download_template('student')
+
+        assert response.status_code == 200
+        assert 'attachment' in response.headers.get('Content-Disposition', '')
+
+
+def test_get_assessment_template_path_copies_repo_template_and_exports(tmp_path):
+    repo_template_dir = tmp_path / 'repo_templates_excel'
+    runtime_template_dir = tmp_path / 'runtime_templates_excel'
+    upload_dir = tmp_path / 'uploads'
+    repo_template_dir.mkdir()
+    runtime_template_dir.mkdir()
+    upload_dir.mkdir()
+
+    # Create the authoritative repo template copy
+    repo_template_path = repo_template_dir / 'student_template.xlsx'
+    _create_minimal_school_template(str(repo_template_path))
+
+    # Ensure runtime storage starts empty
+    runtime_template_path = runtime_template_dir / 'student_template.xlsx'
+    if runtime_template_path.exists():
+        runtime_template_path.unlink()
+
+    app.config['REPO_TEMPLATE_FOLDER'] = str(repo_template_dir)
+    app.config['TEMPLATE_FOLDER'] = str(runtime_template_dir)
+    app.config['UPLOAD_FOLDER'] = str(upload_dir)
+    app.config['TESTING'] = True
+
+    copied_path = _get_assessment_template_path('student_template.xlsx')
+    assert copied_path == str(runtime_template_path)
+    assert runtime_template_path.exists()
+    assert hashlib.sha256(runtime_template_path.read_bytes()).hexdigest() == \
+           hashlib.sha256(repo_template_path.read_bytes()).hexdigest()
+
+    _setup_db_with_template(app, tmp_path)
+    with app.app_context():
+        admin_user = User(username='admin_copy', password_hash='x', role='admin')
+        db.session.add(admin_user)
+        db.session.commit()
+
+        student = Student(
+            first_name='Jane',
+            last_name='Doe',
+            student_number='STU_TEST',
+            class_name='form1',
+            study_area='mathematics'
+        )
+        db.session.add(student)
+        db.session.commit()
+
+        assessment = Assessment(
+            student_id=student.id,
+            category='ica1',
+            subject='mathematics',
+            class_name='form1',
+            score=40.0,
+            max_score=50.0,
+            teacher_id=admin_user.id,
+        )
+        db.session.add(assessment)
+        db.session.commit()
+
+        with app.test_request_context():
+            login_user(admin_user)
+            response = export_student_excel(student.id)
 
         assert response.status_code == 200
         assert 'attachment' in response.headers.get('Content-Disposition', '')
