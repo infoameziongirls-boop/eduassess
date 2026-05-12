@@ -3587,10 +3587,17 @@ def import_excel():
             ok = 0; errors = []
             for data in data_list:
                 try:
-                    student = Student.query.filter_by(
-                        student_number=data['student_number']).first()
+                    student = None
+                    student_identifier = (data.get('student_number') or \
+                                          data.get('reference_number') or '').strip()
+                    if data.get('student_number'):
+                        student = Student.query.filter_by(
+                            student_number=data['student_number']).first()
+                    if not student and data.get('reference_number'):
+                        student = Student.query.filter_by(
+                            reference_number=data['reference_number']).first()
                     if not student:
-                        errors.append(f"Student {data['student_number']} not found")
+                        errors.append(f"Student {student_identifier or 'Unknown'} not found")
                         continue
                     if Assessment.query.filter_by(
                             student_id=student.id,
@@ -3599,7 +3606,7 @@ def import_excel():
                             term=data['term'],
                             academic_year=data.get('academic_year'),
                             session=data['session']).first():
-                        errors.append(f"Assessment already exists for {data['student_number']}")
+                        errors.append(f"Assessment already exists for {student_identifier or 'Unknown'}")
                         continue
                     db.session.add(Assessment(
                         student=student, category=data['category'],

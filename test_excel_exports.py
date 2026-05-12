@@ -4,6 +4,7 @@ from openpyxl import Workbook, load_workbook
 from flask_login import login_user
 
 from app import app, db, export_csv, export_student_csv, export_student_excel, download_template
+from excel_utils import ExcelBulkImporter
 from models import User, Student, Assessment, Setting
 from template_updater import AssessmentTemplateUpdater, calculate_scores_from_template
 
@@ -87,6 +88,32 @@ def test_assessment_template_updater_copies_row_formulas(tmp_path):
     assert ws['G11'].value == '=MIN(100,(SUM(E11:F11)))'
     assert ws['P11'].value == '=MIN(500,(SUM(G11,J11,M11,N11,O11)))'
     assert ws['X11'].value == '=IF(U11>=80,"A1",IF(U11>=70,"B2",IF(U11>=65,"B3",IF(U11>=60,"C4",IF(U11>=55,"C5",IF(U11>=50,"C6",IF(U11>=45,"D7",IF(U11>=40,"E8","F9"))))))))'
+
+
+def test_excel_bulk_importer_accepts_reference_number_header(tmp_path):
+    path = tmp_path / 'assessment_import.xlsx'
+    wb = Workbook()
+    ws = wb.active
+    for _ in range(8):
+        ws.append([None] * 10)
+    ws.append([
+        'Student Number', 'Name of Students', 'Reference Number', 'Learning Area',
+        'category', 'subject', 'score', 'max_score', 'term', 'session',
+        'assessor', 'comments'
+    ])
+    ws.append([
+        'STU001', 'Jane Doe', 'REF001', 'Mathematics',
+        'ica1', 'Mathematics', 40, 50, 'First Term', '2024/2025',
+        'Teacher A', 'Good effort'
+    ])
+    wb.save(str(path))
+
+    imported = ExcelBulkImporter(str(path)).import_assessments()
+    assert len(imported) == 1
+    assert imported[0]['student_number'] == 'STU001'
+    assert imported[0]['reference_number'] == 'REF001'
+    assert imported[0]['category'] == 'ica1'
+    assert imported[0]['score'] == 40
 
 
 def _setup_db_with_template(app, tmp_path):

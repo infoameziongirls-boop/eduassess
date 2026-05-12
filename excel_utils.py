@@ -88,22 +88,112 @@ class ExcelBulkImporter:
         wb = load_workbook(self.file_path, data_only=True)
         try:
             ws = wb.active
-            assessments = []
-            for row in ws.iter_rows(min_row=start_row, values_only=True):
+
+            def normalize(value):
+                if value is None:
+                    return None
+                if isinstance(value, float) and value.is_integer():
+                    value = int(value)
+                return str(value).strip()
+
+            def normalize_header(value):
+                if value is None:
+                    return ''
+                return str(value).strip().lower().replace('.', '').replace('_', ' ')
+
+            header_row = None
+            header_map = {}
+            for idx, row in enumerate(ws.iter_rows(min_row=1,
+                                                 max_row=min(15, ws.max_row),
+                                                 values_only=True), start=1):
                 if not any(row):
                     continue
+                normalized = [normalize_header(cell) for cell in row]
+                if any(label in normalized for label in (
+                        'student number', 'reference number', 'ref id',
+                        'category', 'subject', 'score', 'term', 'session')):
+                    header_row = idx
+                    for col_idx, label in enumerate(normalized):
+                        if label in ('student number', 'student number or reference number',
+                                     'student no', 'student id'):
+                            header_map['student_number'] = col_idx
+                        elif label in ('reference number', 'reference no', 'ref id'):
+                            header_map['reference_number'] = col_idx
+                        elif label == 'category':
+                            header_map['category'] = col_idx
+                        elif label == 'subject':
+                            header_map['subject'] = col_idx
+                        elif label == 'score':
+                            header_map['score'] = col_idx
+                        elif label in ('max score', 'maximum score', 'max_score'):
+                            header_map['max_score'] = col_idx
+                        elif label == 'term':
+                            header_map['term'] = col_idx
+                        elif label in ('academic year', 'academic_year'):
+                            header_map['academic_year'] = col_idx
+                        elif label == 'session':
+                            header_map['session'] = col_idx
+                        elif label == 'assessor':
+                            header_map['assessor'] = col_idx
+                        elif label == 'comments':
+                            header_map['comments'] = col_idx
+                    break
+
+            data_row_start = header_row + 1 if header_row else start_row
+            assessments = []
+            for row in ws.iter_rows(min_row=data_row_start, values_only=True):
+                if not any(row):
+                    continue
+
+                if header_row:
+                    student_number = normalize(row[header_map['student_number']]) \
+                        if 'student_number' in header_map and len(row) > header_map['student_number'] else None
+                    reference_number = normalize(row[header_map['reference_number']]) \
+                        if 'reference_number' in header_map and len(row) > header_map['reference_number'] else None
+                    category = normalize(row[header_map['category']]) \
+                        if 'category' in header_map and len(row) > header_map['category'] else None
+                    subject = normalize(row[header_map['subject']]) \
+                        if 'subject' in header_map and len(row) > header_map['subject'] else None
+                    score = row[header_map['score']] if 'score' in header_map and len(row) > header_map['score'] else None
+                    max_score = row[header_map['max_score']] if 'max_score' in header_map and len(row) > header_map['max_score'] else None
+                    term = normalize(row[header_map['term']]) \
+                        if 'term' in header_map and len(row) > header_map['term'] else None
+                    session = normalize(row[header_map['session']]) \
+                        if 'session' in header_map and len(row) > header_map['session'] else None
+                    academic_year = normalize(row[header_map['academic_year']]) \
+                        if 'academic_year' in header_map and len(row) > header_map['academic_year'] else None
+                    assessor = normalize(row[header_map['assessor']]) \
+                        if 'assessor' in header_map and len(row) > header_map['assessor'] else None
+                    comments = normalize(row[header_map['comments']]) \
+                        if 'comments' in header_map and len(row) > header_map['comments'] else ""
+                else:
+                    student_number = normalize(row[0]) if len(row) > 0 else None
+                    reference_number = normalize(row[2]) if len(row) > 2 else None
+                    category = normalize(row[1]) if len(row) > 1 else None
+                    subject = normalize(row[2]) if len(row) > 2 else None
+                    score = row[3] if len(row) > 3 else None
+                    max_score = row[4] if len(row) > 4 else None
+                    term = normalize(row[5]) if len(row) > 5 else None
+                    session = normalize(row[6]) if len(row) > 6 else None
+                    academic_year = normalize(row[7]) if len(row) > 7 else None
+                    assessor = normalize(row[8]) if len(row) > 8 else None
+                    comments = normalize(row[9]) if len(row) > 9 else ""
+
                 assessment_data = {
-                    'student_number': row[0],
-                    'category': row[1],
-                    'subject': row[2],
-                    'score': row[3],
-                    'max_score': row[4],
-                    'term': row[5],
-                    'session': row[6],
-                    'assessor': row[7],
-                    'comments': row[8] if len(row) > 8 else ""
+                    'student_number': student_number,
+                    'reference_number': reference_number,
+                    'category': category,
+                    'subject': subject,
+                    'score': score,
+                    'max_score': max_score,
+                    'term': term,
+                    'session': session,
+                    'academic_year': academic_year,
+                    'assessor': assessor,
+                    'comments': comments,
                 }
-                if assessment_data['student_number'] and assessment_data['score'] is not None:
+                if (assessment_data['student_number'] or assessment_data['reference_number']) and \
+                        assessment_data['score'] is not None:
                     assessments.append(assessment_data)
             return assessments
         finally:
