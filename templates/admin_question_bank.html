@@ -13,6 +13,7 @@
             <div>
                 <form method="POST" action="{{ url_for('approve_all_questions') }}" class="d-inline" 
                       onsubmit="return confirm('Are you sure you want to approve all pending questions?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-success">
                         <i class="bi bi-check-all"></i> Approve All Pending
                     </button>
@@ -194,6 +195,7 @@
             </div>
             <form id="moderateForm" method="POST">
                 <div class="modal-body">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="action" id="modalAction">
                     <div id="rejectReasonContainer" style="display: none;">
                         <label for="rejection_reason" class="form-label">Rejection Reason</label>

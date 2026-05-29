@@ -23,6 +23,7 @@
             </div>
             <div class="card-body">
                 <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-4">
                         <label class="form-label fw-600">Send To</label>
                         <select name="recipient_type" class="form-select" required>
