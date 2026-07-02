@@ -23,12 +23,20 @@ def backup_users():
         user_data = []
 
         for user in users:
+            ph = getattr(user, 'password_hash', None)
+            if isinstance(ph, (bytes, bytearray)):
+                try:
+                    ph = ph.decode('utf-8')
+                except Exception:
+                    ph = None
             user_dict = {
                 'id': user.id,
                 'username': user.username,
                 'role': user.role,
                 'subject': user.subject,
+                'class_name': getattr(user, 'class_name', None),
                 'classes': user.get_classes_list() if hasattr(user, 'get_classes_list') else [],
+                'password_hash': ph,
                 'created_at': user.created_at.isoformat() if user.created_at else None
             }
             user_data.append(user_dict)

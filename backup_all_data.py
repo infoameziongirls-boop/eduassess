@@ -38,6 +38,12 @@ def backup_all_data():
             users = User.query.all()
             user_data = []
             for user in users:
+                ph = getattr(user, 'password_hash', None)
+                if isinstance(ph, (bytes, bytearray)):
+                    try:
+                        ph = ph.decode('utf-8')
+                    except Exception:
+                        ph = None
                 user_dict = {
                     'id': user.id,
                     'username': user.username,
@@ -45,6 +51,7 @@ def backup_all_data():
                     'subject': user.subject,
                     'class_name': user.class_name,
                     'classes': user.get_classes_list() if hasattr(user, 'get_classes_list') else [],
+                    'password_hash': ph,
                     'created_at': user.created_at.isoformat() if user.created_at else None
                 }
                 user_data.append(user_dict)
@@ -93,6 +100,8 @@ def backup_all_data():
             assessments = Assessment.query.all()
             assessment_data = []
             for assessment in assessments:
+                # Use date_recorded for assessments (models use date_recorded)
+                dt = getattr(assessment, 'date_recorded', None)
                 assessment_dict = {
                     'id': assessment.id,
                     'student_id': assessment.student_id,
@@ -100,15 +109,15 @@ def backup_all_data():
                     'category': assessment.category,
                     'subject': assessment.subject,
                     'class_name': assessment.class_name,
-                    'score': float(assessment.score) if assessment.score else None,
-                    'max_score': float(assessment.max_score) if assessment.max_score else None,
+                    'score': float(assessment.score) if assessment.score is not None else None,
+                    'max_score': float(assessment.max_score) if assessment.max_score is not None else None,
                     'term': assessment.term,
                     'academic_year': assessment.academic_year,
                     'session': assessment.session,
                     'assessor': assessment.assessor,
                     'teacher_id': assessment.teacher_id,
                     'comments': assessment.comments,
-                    'created_at': assessment.created_at.isoformat() if assessment.created_at else None
+                    'date_recorded': dt.isoformat() if dt else None
                 }
                 assessment_data.append(assessment_dict)
             
