@@ -244,11 +244,42 @@ def get_teacher_students_query(teacher):
 app = Flask(__name__, static_folder='public')
 
 env = os.environ.get('FLASK_ENV', 'development')
-app.config.from_object(config[env])
+config_cls = config.get(env)
+if config_cls is None:
+    print(
+        f"[BOOT][WARNING] Unknown FLASK_ENV={env!r}; falling back to 'development' config.",
+        flush=True,
+    )
+    config_cls = config['default']
+
+app.config.from_object(config_cls)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=2, x_proto=1, x_host=1)
 
-if env == 'production':
-    config[env].validate_production_settings()
+_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+_db_backend = 'sqlite' if _uri.startswith('sqlite') else (
+    'postgresql' if _uri.startswith('postgres') else 'unknown')
+_db_host = None
+if _db_backend == 'postgresql':
+    try:
+        _db_host = _uri.split('@')[1].split('/')[0]
+    except Exception:
+        _db_host = 'unparsed'
+
+print(
+    f"[BOOT] FLASK_ENV={env!r} db_backend={_db_backend} db_host={_db_host!r} "
+    f"pid={os.getpid()}",
+    flush=True,
+)
+if _db_backend == 'sqlite' and config_cls.__name__ not in ('DevelopmentConfig', 'TestingConfig'):
+    print(
+        "[BOOT][WARNING] Using SQLite outside development/testing. "
+        "If this is meant to be production, FLASK_ENV or DATABASE_URL "
+        "is misconfigured.",
+        flush=True,
+    )
+
+if config_cls is config['production']:
+    config_cls.validate_production_settings()
 
 persistent_dir = os.environ.get(
     'PERSISTENT_DIR',
@@ -909,7 +940,21 @@ def cleanup_orphaned_assessments():
 
 @app.route('/health')
 def health_check():
-    return jsonify({'status': 'ok'}), 200
+    uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+    backend = 'sqlite' if uri.startswith('sqlite') else (
+        'postgresql' if uri.startswith('postgres') else 'unknown')
+    db_host = None
+    if backend == 'postgresql':
+        try:
+            db_host = uri.split('@')[1].split('/')[0]
+        except Exception:
+            db_host = 'unparsed'
+    return jsonify({
+        'status': 'ok',
+        'db_backend': backend,
+        'db_host': db_host,
+        'pid': os.getpid(),
+    }), 200
 
 
 # ---------------------------------------------------------------------------
@@ -2161,9 +2206,26 @@ def reset_password(user_id):
     user = User.query.get_or_404(user_id)
     form = PasswordResetForm()
     if form.validate_on_submit():
-        user.password_hash = bcrypt.generate_password_hash(
-            form.password.data).decode('utf-8')
-        db.session.commit()
+        new_hash = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
+        user.password_hash = new_hash
+        try:
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.error(
+                f'reset_password commit failed for user_id={user_id}: {exc}')
+            flash('Password reset failed to save. Please try again.', 'danger')
+            return render_template('reset_password.html', form=form, user=user)
+
+        db.session.expire(user)
+        confirmed_hash = User.query.get(user_id).password_hash
+        if confirmed_hash != new_hash:
+            app.logger.error(
+                'reset_password verification mismatch for user_id=%s: ' \
+                'hash on read-back does not match hash just written.', user_id)
+            flash('Password reset could not be verified. Please try again.', 'danger')
+            return render_template('reset_password.html', form=form, user=user)
+
         log_activity(current_user, 'reset_password',
                      f'Reset password for {user.username}')
         flash(f'Password reset for {user.username}', 'success')

@@ -213,10 +213,12 @@ class Config:
 
 class DevelopmentConfig(Config):
     DEBUG = True
-    SQLALCHEMY_DATABASE_URI = "sqlite:///assessment.db"
+    # In development, inherit Config.SQLALCHEMY_DATABASE_URI so a real
+    # DATABASE_URL is respected when present. Only fall back to local
+    # sqlite when DATABASE_URL is unset.
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_pre_ping": True,
-        "connect_args": {"check_same_thread": False},
+        "connect_args": {"check_same_thread": False} if Config.SQLALCHEMY_DATABASE_URI.startswith("sqlite") else {},
     }
     SESSION_TYPE = "filesystem"
     SESSION_PERMANENT = False
@@ -261,8 +263,10 @@ class ProductionConfig(Config):
     # -------------------------------------------------------------------
     # Neon + PgBouncer (transaction-mode) pool configuration.
     #
-    # IMPORTANT: You MUST use the POOLED connection string from the Neon
-    # dashboard (port 6432, not 5432). Set DATABASE_URL to that string.
+    # IMPORTANT: Use the POOLED connection string from the Neon dashboard.
+    # Neon pooled hosts still use the standard Postgres port 5432. Do NOT
+    # append :6432 to a Neon pooled hostname, because the Neon pooler is
+    # addressed by host string, not by that generic port convention.
     #
     # pool_size=5 / max_overflow=5 gives the application enough pooled
     # connections while allowing Neon PgBouncer to manage server-side
@@ -287,11 +291,14 @@ class ProductionConfig(Config):
     @classmethod
     def validate_production_settings(cls):
         if not os.environ.get("DATABASE_URL"):
-            import warnings
-            warnings.warn(
-                "DATABASE_URL not set; falling back to SQLite. "
-                "Set DATABASE_URL to the Neon POOLED connection string (port 6432).",
-                RuntimeWarning,
+            raise RuntimeError(
+                "DATABASE_URL is not set in a production environment. "
+                "Refusing to start with a fallback SQLite database, because "
+                "on multi-instance/ephemeral-disk hosting this causes silent, "
+                "instance-dependent data divergence (e.g. password resets "
+                "that 'disappear'). Set DATABASE_URL to the Neon pooled "
+                "connection string (host contains '-pooler', standard port 5432) "
+                "in the environment before starting this service."
             )
 
 
