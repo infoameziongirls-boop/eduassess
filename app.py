@@ -654,6 +654,31 @@ def get_grade_point_for_grade(grade):
     return GRADE_POINT_MAP.get(grade)
 
 
+def calculate_total_grade_points(student):
+    from template_updater import calculate_scores_from_template, scores_from_assessments
+
+    subject_groups = {}
+    for assessment in student.assessments:
+        if assessment.archived or not assessment.subject:
+            continue
+        norm_subject = normalize_label(assessment.subject)
+        if not norm_subject:
+            continue
+        subject_groups.setdefault(norm_subject, []).append(assessment)
+
+    if not subject_groups:
+        return None
+
+    total_points = 0
+    for assessments in subject_groups.values():
+        raw_scores = scores_from_assessments(assessments)
+        if not raw_scores:
+            continue
+        result = calculate_scores_from_template(raw_scores)
+        total_points += get_grade_point_for_grade(result['grade']) or 0
+    return total_points
+
+
 def get_grade_class_division(gpa):
     try:
         gpa = float(gpa)
@@ -1272,7 +1297,7 @@ def student_dashboard():
 
     # Use the overall final percent to determine aggregate grade/division
     overall_grade = calculate_gpa_and_grade(final_pct)
-    grade_point   = get_grade_point_for_grade(overall_grade['grade'])
+    grade_point   = calculate_total_grade_points(student)
     grading_class = get_grade_class_division(overall_grade['gpa'])
     comment       = _get_comment(overall_grade['gpa']) if overall_grade['gpa'] != 'N/A' else None
 

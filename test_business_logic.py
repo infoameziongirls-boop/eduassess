@@ -235,6 +235,27 @@ class TestGradeCalculation:
         assert result["gpa"] == 2.5
         assert result["grade"] == "C4"
 
+    def test_total_grade_points_accumulates_subject_grade_points(self, sample_student):
+        """Test total grade points as the sum of individual subject grade points."""
+        # English Language: 72 final = B2 => grade point 2
+        for category in ['ica1', 'ica2', 'icp1', 'icp2', 'gp1']:
+            self.create_assessment(sample_student, category, 50, subject="English Language")
+        self.create_assessment(sample_student, 'end_term', 100, subject="English Language")
+
+        # Mathematics: 72 final = B2 => grade point 2
+        for category in ['ica1', 'ica2', 'icp1', 'icp2', 'gp1']:
+            self.create_assessment(sample_student, category, 50, subject="Mathematics")
+        self.create_assessment(sample_student, 'end_term', 100, subject="Mathematics")
+
+        # Social Studies: 56 final = C4 => grade point 4
+        for category in ['ica1', 'ica2', 'icp1', 'icp2']:
+            self.create_assessment(sample_student, category, 25, subject="Social Studies")
+        self.create_assessment(sample_student, 'end_term', 100, subject="Social Studies")
+
+        from app import calculate_total_grade_points
+        total_points = calculate_total_grade_points(sample_student)
+        assert total_points == 8
+
     def test_get_gpa_and_grade_c5(self, sample_student):
         """Test GPA and grade mapping for C5 (55-59%)"""
         # Create enough raw scores to produce a 58 final grade
