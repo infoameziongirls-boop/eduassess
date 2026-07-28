@@ -14,6 +14,8 @@ def extract_csrf_token(html: str) -> str:
 
 def test_admin_reset_teacher_password_then_teacher_can_login(monkeypatch):
     app.config['TESTING'] = True
+    # Ensure CSRF is enabled for this test so the login form includes a token
+    app.config['WTF_CSRF_ENABLED'] = True
 
     admin_username = f'admin_test_{uuid.uuid4().hex[:8]}'
     teacher_username = f'teacher_test_{uuid.uuid4().hex[:8]}'

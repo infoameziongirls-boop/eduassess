@@ -148,12 +148,23 @@ def teacher_can_view_student(teacher, student):
 
 def get_study_areas():
     from models import SystemConfig
-    return SystemConfig.get_config('STUDY_AREAS', [])
+    return SystemConfig.get_config('STUDY_AREAS', []) or []
 
 
 def get_study_area_subjects():
     from models import SystemConfig
-    return SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
+    return SystemConfig.get_config('STUDY_AREA_SUBJECTS', {}) or {}
+
+
+def get_class_levels():
+    levels = app.config.get('CLASS_LEVELS') or []
+    if not isinstance(levels, list) or not levels:
+        levels = [
+            ('Form 1', 'Form 1'),
+            ('Form 2', 'Form 2'),
+            ('Form 3', 'Form 3'),
+        ]
+    return levels
 
 
 def _get_study_area_subjects_config():
@@ -241,7 +252,7 @@ def get_teacher_students_query(teacher):
 # ---------------------------------------------------------------------------
 # Application factory
 # ---------------------------------------------------------------------------
-app = Flask(__name__, static_folder='public')
+app = Flask(__name__, static_folder='static')
 
 env = os.environ.get('FLASK_ENV', 'development')
 config_cls = config.get(env)
@@ -600,18 +611,64 @@ def get_incomplete_assessments():
     return result
 
 
+GRADE_SCALE = [
+    {'grade': 'A1', 'range': '80 – 100', 'interpretation': 'Excellent', 'gpa': 4.0, 'grade_point': 1},
+    {'grade': 'B2', 'range': '70 – 79', 'interpretation': 'Very Good', 'gpa': 3.5, 'grade_point': 2},
+    {'grade': 'B3', 'range': '60 – 69', 'interpretation': 'Good', 'gpa': 3.0, 'grade_point': 3},
+    {'grade': 'C4', 'range': '55 – 59', 'interpretation': 'Credit', 'gpa': 2.5, 'grade_point': 4},
+    {'grade': 'C5', 'range': '50 – 54', 'interpretation': 'Credit', 'gpa': 2.0, 'grade_point': 5},
+    {'grade': 'C6', 'range': '45 – 49', 'interpretation': 'Credit', 'gpa': 1.5, 'grade_point': 6},
+    {'grade': 'D7', 'range': '40 – 44', 'interpretation': 'Pass', 'gpa': 1.0, 'grade_point': 7},
+    {'grade': 'E8', 'range': '35 – 39', 'interpretation': 'Pass', 'gpa': 0.5, 'grade_point': 8},
+    {'grade': 'F9', 'range': '0 – 34', 'interpretation': 'Fail', 'gpa': 0.0, 'grade_point': 9},
+]
+
+GRADE_DIVISION_SCALE = [
+    {'gpa': '4.0', 'division': 'First Class Division'},
+    {'gpa': '3.5', 'division': 'Second Class Upper Division'},
+    {'gpa': '3.0', 'division': 'Second Class Lower Division'},
+    {'gpa': '2.5', 'division': 'Third Class Division'},
+    {'gpa': '2.0', 'division': 'Pass Division'},
+    {'gpa': 'Below 1.5', 'division': 'Fail Division'},
+]
+
+GRADE_POINT_MAP = {entry['grade']: entry['grade_point'] for entry in GRADE_SCALE}
+
+
 def calculate_gpa_and_grade(percent):
     if percent is None:
         return {'gpa': 'N/A', 'grade': 'N/A'}
     if percent >= 80:   return {'gpa': 4.0, 'grade': 'A1'}
     if percent >= 70:   return {'gpa': 3.5, 'grade': 'B2'}
-    if percent >= 65:   return {'gpa': 3.0, 'grade': 'B3'}
-    if percent >= 60:   return {'gpa': 2.5, 'grade': 'C4'}
-    if percent >= 55:   return {'gpa': 2.0, 'grade': 'C5'}
-    if percent >= 50:   return {'gpa': 1.5, 'grade': 'C6'}
-    if percent >= 45:   return {'gpa': 1.0, 'grade': 'D7'}
-    if percent >= 40:   return {'gpa': 0.5, 'grade': 'E8'}
+    if percent >= 60:   return {'gpa': 3.0, 'grade': 'B3'}
+    if percent >= 55:   return {'gpa': 2.5, 'grade': 'C4'}
+    if percent >= 50:   return {'gpa': 2.0, 'grade': 'C5'}
+    if percent >= 45:   return {'gpa': 1.5, 'grade': 'C6'}
+    if percent >= 40:   return {'gpa': 1.0, 'grade': 'D7'}
+    if percent >= 35:   return {'gpa': 0.5, 'grade': 'E8'}
     return {'gpa': 0.0, 'grade': 'F9'}
+
+
+def get_grade_point_for_grade(grade):
+    return GRADE_POINT_MAP.get(grade)
+
+
+def get_grade_class_division(gpa):
+    try:
+        gpa = float(gpa)
+    except (TypeError, ValueError):
+        return None
+    if gpa >= 4.0:
+        return 'First Class Division'
+    if gpa >= 3.5:
+        return 'Second Class Upper Division'
+    if gpa >= 3.0:
+        return 'Second Class Lower Division'
+    if gpa >= 2.5:
+        return 'Third Class Division'
+    if gpa >= 1.5:
+        return 'Pass Division'
+    return 'Fail Division'
 
 
 def generate_unique_reference_number():
@@ -666,9 +723,17 @@ def _get_comment(gpa):
         gpa = float(gpa)
     except (TypeError, ValueError):
         return None
-    table = {4.0: 'Excellent', 3.5: 'Very Good', 3.0: 'Good',
-             2.5: 'Average', 2.0: 'Below Average', 1.5: 'Credit',
-             1.0: 'Satisfactory', 0.5: 'Pass'}
+    table = {
+        4.0: 'Excellent',
+        3.5: 'Very Good',
+        3.0: 'Good',
+        2.5: 'Credit',
+        2.0: 'Credit',
+        1.5: 'Credit',
+        1.0: 'Pass',
+        0.5: 'Pass',
+        0.0: 'Fail',
+    }
     return table.get(gpa, 'Fail')
 
 
@@ -1204,7 +1269,11 @@ def student_dashboard():
         avg_score = 0.0
         filt_res = {'gpa': 'N/A', 'grade': 'N/A'}
 
-    comment  = _get_comment(gpa_grade['gpa']) if gpa_grade['gpa'] != 'N/A' else None
+    # Use the overall final percent to determine aggregate grade/division
+    overall_grade = calculate_gpa_and_grade(final_pct)
+    grade_point   = get_grade_point_for_grade(overall_grade['grade'])
+    grading_class = get_grade_class_division(overall_grade['gpa'])
+    comment       = _get_comment(overall_grade['gpa']) if overall_grade['gpa'] != 'N/A' else None
 
     # ── Quiz attempts ──────────────────────────────────────────────────────
     quiz_attempts = (
@@ -1225,6 +1294,8 @@ def student_dashboard():
         summary=summary,
         final_percent=final_pct,
         gpa_grade=gpa_grade,
+        grade_point=grade_point,
+        grading_class=grading_class,
         comment=comment,
         subjects=subjects,
         classes=classes,
@@ -1237,6 +1308,8 @@ def student_dashboard():
         filtered_grade=filt_res['grade'],
         quiz_attempts=quiz_attempts,
         quiz_details=quiz_details,
+        grade_scale=GRADE_SCALE,
+        grade_division_scale=GRADE_DIVISION_SCALE,
         CATEGORY_LABELS=CATEGORY_LABELS,
     )
 
@@ -1465,6 +1538,8 @@ def student_view(student_id):
     gr = calculate_gpa_and_grade(final_pct)
     letter_grade = gr['grade'] if final_pct is not None else None
     gpa          = gr['gpa']   if final_pct is not None else None
+    grade_point  = get_grade_point_for_grade(letter_grade)
+    grading_class = get_grade_class_division(gpa)
     comment      = _get_comment(gpa)
 
     teacher_results = None
@@ -1494,6 +1569,8 @@ def student_view(student_id):
         subject=subject, all_subjects=all_subjects,
         study_areas_dict=dict(app.config['STUDY_AREAS']),
         CATEGORY_LABELS=app.config['CATEGORY_LABELS'],
+        grade_point=grade_point,
+        grading_class=grading_class,
     )
 
 
@@ -2313,12 +2390,16 @@ def class_management():
 @login_required
 @admin_required
 def class_register():
-    study_areas = get_study_areas()
+    study_areas = get_study_areas() or []
     students    = Student.query.all()
-    form_levels = [k for k, _ in app.config['CLASS_LEVELS']]
+    form_levels = [k for k, _ in get_class_levels()]
     forms_data  = {}
     for fl in form_levels:
-        forms_data[fl] = {'total_students': 0, 'study_areas': {}}
+        forms_data[fl] = {
+            'total_students': 0,
+            'study_areas': {},
+            'classes': {},
+        }
         for ak, an in study_areas:
             forms_data[fl]['study_areas'][ak] = {
                 'name': an, 'students': [], 'total_students': 0}
@@ -2335,13 +2416,26 @@ def class_register():
             forms_data[sf]['study_areas'][sa] = {
                 'name': sa.replace('_', ' ').title(),
                 'students': [], 'total_students': 0}
+
+        class_name = (s.class_name or 'Unassigned').strip() or 'Unassigned'
+        class_group = forms_data[sf]['classes'].setdefault(
+            class_name,
+            {'name': class_name, 'student_count': 0, 'students': []}
+        )
+        class_group['students'].append(s)
+        class_group['student_count'] += 1
+
         forms_data[sf]['study_areas'][sa]['students'].append(s)
         forms_data[sf]['study_areas'][sa]['total_students'] += 1
         forms_data[sf]['total_students'] += 1
 
     for fd in forms_data.values():
         for ad in fd['study_areas'].values():
-            ad['students'].sort(key=lambda s: (s.last_name or '', s.first_name or ''))
+            ad['students'].sort(key=lambda s: ((s.class_name or '').lower(), s.last_name or '', s.first_name or ''))
+        fd['classes'] = sorted(
+            fd['classes'].values(),
+            key=lambda c: (-c['student_count'], c['name'].lower())
+        )
 
     return render_template('class_register.html',
                            forms_data=forms_data,

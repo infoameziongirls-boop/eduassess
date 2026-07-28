@@ -5,9 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}EduAssess Pro{% endblock %} — EduAssess Pro</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
-    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap-icons.css') }}">
     <style>
         /* ===== DESIGN TOKENS ===== */
         :root {
@@ -21,6 +20,21 @@
             --border-2:   #cdd0e8;
 
             --brand:      #2b5bff;
+            --brand-dim:  #e8edff;
+            --brand-dark: #1a3acc;
+            --teal:       #00c2a8;
+            --teal-dim:   #e0faf6;
+            --amber:      #f59e0b;
+            --amber-dim:  #fef3c7;
+            --rose:       #f43f5e;
+            --rose-dim:   #ffe4e9;
+            --violet:     #7c3aed;
+            --violet-dim: #ede9fe;
+            --green:      #10b981;
+            --green-dim:  #d1fae5;
+
+            --font-display: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            --font-body:    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             --brand-dim:  #e8edff;
             --brand-dark: #1a3acc;
             --teal:       #00c2a8;
@@ -1052,7 +1066,7 @@
 </div>
 {% endif %}
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
 <script>
     // Sidebar toggle
     function toggleSidebar() {
