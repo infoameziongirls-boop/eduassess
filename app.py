@@ -1309,8 +1309,7 @@ def student_dashboard():
         filtered_grade=filt_res['grade'],
         quiz_attempts=quiz_attempts,
         quiz_details=quiz_details,
-        grade_scale=GRADE_SCALE,
-        grade_division_scale=GRADE_DIVISION_SCALE,
+        overall_gpa=overall_grade['gpa'],
         CATEGORY_LABELS=CATEGORY_LABELS,
     )
 
