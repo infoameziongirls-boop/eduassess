@@ -7,6 +7,7 @@ import time
 import json
 import shutil
 import filecmp
+import traceback
 from functools import wraps
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -2390,57 +2391,116 @@ def class_management():
 @login_required
 @admin_required
 def class_register():
-    study_areas = get_study_areas() or []
-    students    = Student.query.all()
-    form_levels = [k for k, _ in get_class_levels()]
-    forms_data  = {}
-    for fl in form_levels:
-        forms_data[fl] = {
-            'total_students': 0,
-            'study_areas': {},
-            'classes': {},
+    try:
+        study_areas = get_study_areas() or []
+        study_areas = [item for item in study_areas
+                       if isinstance(item, (list, tuple)) and len(item) >= 2]
+
+        form_levels = [k for k, _ in get_class_levels() if isinstance(k, str)]
+        if not form_levels:
+            form_levels = ['Unassigned']
+
+        forms_data = {
+            fl: {
+                'total_students': 0,
+                'study_areas': {},
+                'classes': {},
+            }
+            for fl in form_levels
         }
-        for ak, an in study_areas:
-            forms_data[fl]['study_areas'][ak] = {
-                'name': an, 'students': [], 'total_students': 0}
 
-    for s in students:
-        cf = canonical_class_key(s.class_name)
-        if cf and cf in forms_data:
-            sf = cf
-        else:
-            sf = 'Form 1'
+        for fl in form_levels:
+            for ak, an in study_areas:
+                if ak is None:
+                    continue
+                forms_data[fl]['study_areas'][ak] = {
+                    'name': an or ak,
+                    'students': [],
+                    'total_students': 0,
+                }
 
-        sa = s.study_area or 'unassigned'
-        if sa not in forms_data[sf]['study_areas']:
-            forms_data[sf]['study_areas'][sa] = {
-                'name': sa.replace('_', ' ').title(),
-                'students': [], 'total_students': 0}
+        students = Student.query.all()
+        default_bucket = form_levels[0]
 
-        class_name = (s.class_name or 'Unassigned').strip() or 'Unassigned'
-        class_group = forms_data[sf]['classes'].setdefault(
-            class_name,
-            {'name': class_name, 'student_count': 0, 'students': []}
-        )
-        class_group['students'].append(s)
-        class_group['student_count'] += 1
+        for s in students:
+            cf = canonical_class_key(s.class_name)
+            sf = cf if cf in forms_data else default_bucket
 
-        forms_data[sf]['study_areas'][sa]['students'].append(s)
-        forms_data[sf]['study_areas'][sa]['total_students'] += 1
-        forms_data[sf]['total_students'] += 1
+            sa = s.study_area or 'unassigned'
+            study_area_bucket = forms_data[sf]['study_areas']
+            if sa not in study_area_bucket:
+                study_area_bucket[sa] = {
+                    'name': sa.replace('_', ' ').title(),
+                    'students': [],
+                    'total_students': 0,
+                }
 
-    for fd in forms_data.values():
-        for ad in fd['study_areas'].values():
-            ad['students'].sort(key=lambda s: ((s.class_name or '').lower(), s.last_name or '', s.first_name or ''))
-        fd['classes'] = sorted(
-            fd['classes'].values(),
-            key=lambda c: (-c['student_count'], c['name'].lower())
-        )
+            class_name = (s.class_name or 'Unassigned').strip() or 'Unassigned'
+            class_group = forms_data[sf]['classes'].setdefault(
+                class_name,
+                {'name': class_name, 'student_count': 0, 'students': []}
+            )
+            class_group['students'].append(s)
+            class_group['student_count'] += 1
+
+            study_area_bucket[sa]['students'].append(s)
+            study_area_bucket[sa]['total_students'] += 1
+            forms_data[sf]['total_students'] += 1
+
+        for fd in forms_data.values():
+            for ad in fd['study_areas'].values():
+                ad['students'].sort(
+                    key=lambda s: ((s.class_name or '').lower(), s.last_name or '', s.first_name or '')
+                )
+            fd['classes'] = sorted(
+                fd['classes'].values(),
+                key=lambda c: (-c['student_count'], c['name'].lower())
+            )
+
+    except Exception:
+        app.logger.exception('Failed to build class register payload')
+        forms_data = {}
+        study_areas = []
 
     return render_template('class_register.html',
                            forms_data=forms_data,
                            study_areas=study_areas,
                            study_area_subjects=get_study_area_subjects())
+
+
+@app.route('/diagnostic/health')
+def diagnostic_health():
+    from models import Student, User
+
+    try:
+        study_areas = get_study_areas() or []
+        class_levels = get_class_levels() or []
+        study_area_subjects = get_study_area_subjects() or {}
+
+        return jsonify({
+            'status': 'ok',
+            'environment': {
+                'flask_env': os.environ.get('FLASK_ENV'),
+                'database_url_present': bool(os.environ.get('DATABASE_URL') or app.config.get('DATABASE_URL')),
+                'secret_key_present': bool(app.config.get('SECRET_KEY')),
+            },
+            'config': {
+                'class_levels_count': len(class_levels),
+                'study_areas_count': len(study_areas),
+                'study_area_subjects_count': len(study_area_subjects),
+            },
+            'counts': {
+                'students': Student.query.count(),
+                'users': User.query.count(),
+            },
+        })
+    except Exception:
+        app.logger.exception('Diagnostic endpoint failed')
+        return jsonify({
+            'status': 'error',
+            'message': 'Unable to collect diagnostic information',
+            'details': traceback.format_exc().splitlines()[-1],
+        }), 500
 
 
 @app.route('/admin/api/class-levels', methods=['POST'])
