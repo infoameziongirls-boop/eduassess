@@ -778,6 +778,18 @@
                     <a class="s-link {% if request.endpoint == 'assessments_list' %}active{% endif %}" href="{{ url_for('assessments_list') }}">
                         <i class="bi bi-list-check"></i> View Assessments
                     </a>
+                    <a class="s-link {% if request.endpoint == 'import_class_scoresheet' %}active{% endif %}" href="{{ url_for('import_class_scoresheet') }}">
+                        <i class="bi bi-grid-3x3"></i> Bulk Import Class Scoresheet
+                    </a>
+                    <a class="s-link {% if request.endpoint == 'import_excel' %}active{% endif %}" href="{{ url_for('import_excel') }}">
+                        <i class="bi bi-file-earmark-arrow-up"></i> Import Assessment Records
+                    </a>
+                    <a class="s-link" href="{{ url_for('download_template', template_type='import') }}">
+                        <i class="bi bi-download"></i> Download Assessment Import Template
+                    </a>
+                    <a class="s-link {% if request.endpoint == 'export_assessments_excel' %}active{% endif %}" href="{{ url_for('export_assessments_excel') }}">
+                        <i class="bi bi-file-earmark-excel"></i> Export Assessment Report
+                    </a>
                     {% if current_user.is_admin() %}
                     <a class="s-link {% if request.endpoint and 'analytics' in request.endpoint %}active{% endif %}" href="{{ url_for('analytics_dashboard') }}">
                         <i class="bi bi-bar-chart-line"></i> Analytics
@@ -802,8 +814,14 @@
                     <a class="s-link {% if request.endpoint == 'student_new' %}active{% endif %}" href="{{ url_for('student_new') }}">
                         <i class="bi bi-person-plus"></i> Register Student
                     </a>
-                    <a class="s-link" href="{{ url_for('student_bulk_import') }}">
-                        <i class="bi bi-upload"></i> Bulk Import
+                    <a class="s-link {% if request.endpoint == 'student_bulk_import' %}active{% endif %}" href="{{ url_for('student_bulk_import') }}">
+                        <i class="bi bi-upload"></i> Bulk Import Students
+                    </a>
+                    <a class="s-link" href="{{ url_for('download_template', template_type='student_import') }}">
+                        <i class="bi bi-download"></i> Download Student Import Template
+                    </a>
+                    <a class="s-link {% if request.endpoint == 'export_all_students_excel' %}active{% endif %}" href="{{ url_for('export_all_students_excel') }}">
+                        <i class="bi bi-file-earmark-excel"></i> Export Student Workbook
                     </a>
                     {% set class_register_url = safe_url_for('class_register') %}
                     {% if class_register_url %}
@@ -833,6 +851,12 @@
                         <i class="bi bi-database"></i> Question Bank
                     </a>
                     {% if current_user.is_teacher() %}
+                    <a class="s-link {% if request.endpoint == 'bulk_import_questions' %}active{% endif %}" href="{{ url_for('bulk_import_questions') }}">
+                        <i class="bi bi-cloud-upload"></i> Bulk Import Questions
+                    </a>
+                    <a class="s-link" href="{{ url_for('download_question_template') }}">
+                        <i class="bi bi-download"></i> Download Question Template
+                    </a>
                     <a class="s-link" href="{{ url_for('teacher_quiz_results') }}">
                         <i class="bi bi-clipboard-check"></i> Quiz Results
                     </a>
@@ -861,6 +885,18 @@
                 <div class="s-tray-body">
                     <a class="s-link {% if request.endpoint and 'users' == request.endpoint %}active{% endif %}" href="{{ url_for('users') }}">
                         <i class="bi bi-person-gear"></i> Manage Users
+                    </a>
+                    <a class="s-link {% if request.endpoint == 'user_bulk_import' %}active{% endif %}" href="{{ url_for('user_bulk_import') }}">
+                        <i class="bi bi-cloud-upload"></i> Bulk Import Teacher Accounts
+                    </a>
+                    <a class="s-link" href="{{ url_for('download_template', template_type='user_import') }}">
+                        <i class="bi bi-download"></i> Download User Import Template
+                    </a>
+                    <a class="s-link {% if request.endpoint == 'upload_template' %}active{% endif %}" href="{{ url_for('upload_template') }}">
+                        <i class="bi bi-file-earmark-arrow-up"></i> Upload Assessment Template
+                    </a>
+                    <a class="s-link" href="{{ url_for('download_template', template_type='student') }}">
+                        <i class="bi bi-download"></i> Download Assessment Template
                     </a>
                     <a class="s-link {% if request.endpoint and 'class_management' in request.endpoint %}active{% endif %}" href="{{ url_for('class_management') }}">
                         <i class="bi bi-diagram-3"></i> Class Management
@@ -893,14 +929,53 @@
             </button>
             <div class="collapse" id="trayExports">
                 <div class="s-tray-body">
+                    <div class="s-link" style="opacity:.55;pointer-events:none;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;">Assessments</div>
                     <a class="s-link" href="{{ url_for('export_assessments_excel') }}">
-                        <i class="bi bi-file-earmark-excel"></i> Export Assessments Excel
-                    </a>
-                    <a class="s-link" href="{{ url_for('export_all_students_excel') }}">
-                        <i class="bi bi-file-earmark-excel"></i> Export Excel
+                        <i class="bi bi-file-earmark-excel"></i> Export Assessment Report
                     </a>
                     <a class="s-link" href="{{ url_for('import_excel') }}">
-                        <i class="bi bi-cloud-upload"></i> Import Excel
+                        <i class="bi bi-cloud-upload"></i> Import Assessment Records
+                    </a>
+                    <a class="s-link" href="{{ url_for('download_template', template_type='import') }}">
+                        <i class="bi bi-download"></i> Download Assessment Import Template
+                    </a>
+                    <a class="s-link" href="{{ url_for('import_class_scoresheet') }}">
+                        <i class="bi bi-grid-3x3"></i> Bulk Import Class Scoresheet
+                    </a>
+
+                    <div class="s-link" style="opacity:.55;pointer-events:none;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;margin-top:8px;">Students</div>
+                    <a class="s-link" href="{{ url_for('export_all_students_excel') }}">
+                        <i class="bi bi-file-earmark-excel"></i> Export Student Workbook
+                    </a>
+                    <a class="s-link" href="{{ url_for('student_bulk_import') }}">
+                        <i class="bi bi-cloud-upload"></i> Bulk Import Students
+                    </a>
+                    <a class="s-link" href="{{ url_for('download_template', template_type='student_import') }}">
+                        <i class="bi bi-download"></i> Download Student Import Template
+                    </a>
+
+                    <div class="s-link" style="opacity:.55;pointer-events:none;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;margin-top:8px;">Users</div>
+                    <a class="s-link" href="{{ url_for('user_bulk_import') }}">
+                        <i class="bi bi-cloud-upload"></i> Bulk Import Teacher Accounts
+                    </a>
+                    <a class="s-link" href="{{ url_for('download_template', template_type='user_import') }}">
+                        <i class="bi bi-download"></i> Download User Import Template
+                    </a>
+
+                    <div class="s-link" style="opacity:.55;pointer-events:none;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;margin-top:8px;">Questions</div>
+                    <a class="s-link" href="{{ url_for('bulk_import_questions') }}">
+                        <i class="bi bi-cloud-upload"></i> Bulk Import Questions
+                    </a>
+                    <a class="s-link" href="{{ url_for('download_question_template') }}">
+                        <i class="bi bi-download"></i> Download Question Template
+                    </a>
+
+                    <div class="s-link" style="opacity:.55;pointer-events:none;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;margin-top:8px;">Assessment Template</div>
+                    <a class="s-link" href="{{ url_for('upload_template') }}">
+                        <i class="bi bi-file-earmark-arrow-up"></i> Upload School Assessment Template
+                    </a>
+                    <a class="s-link" href="{{ url_for('download_template', template_type='student') }}">
+                        <i class="bi bi-download"></i> Download School Assessment Template
                     </a>
                 </div>
             </div>

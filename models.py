@@ -780,6 +780,38 @@ class TicketReply(db.Model):
         return f"<TicketReply ticket={self.ticket_id} by user={self.user_id}>"
 
 
+def ensure_default_admin_user(app, bcrypt):
+    with app.app_context():
+        default_username = app.config.get("DEFAULT_ADMIN_USERNAME", "admin")
+        default_password = app.config.get("DEFAULT_ADMIN_PASSWORD", "Admin@123")
+
+        admin = User.query.filter_by(username=default_username).first()
+        if admin is None:
+            hashed = bcrypt.generate_password_hash(default_password).decode("utf-8")
+            admin = User(
+                username=default_username,
+                password_hash=hashed,
+                role="admin"
+            )
+            db.session.add(admin)
+            db.session.commit()
+            print(f"Created default admin account: {default_username}")
+            return admin
+
+        if admin.role != "admin":
+            admin.role = "admin"
+            if not admin.password_hash:
+                admin.password_hash = bcrypt.generate_password_hash(default_password).decode("utf-8")
+            db.session.commit()
+            print(f"Upgraded existing user to admin: {default_username}")
+
+        if not admin.password_hash:
+            admin.password_hash = bcrypt.generate_password_hash(default_password).decode("utf-8")
+            db.session.commit()
+
+        return admin
+
+
 def init_db(app, bcrypt):
     if not app.extensions.get('sqlalchemy'):
         db.init_app(app)
@@ -810,22 +842,4 @@ def init_db(app, bcrypt):
             db.session.commit()
             print("Default settings created")
 
-        if User.query.count() == 0:
-            default_username = app.config.get("DEFAULT_ADMIN_USERNAME", "admin")
-            default_password = app.config.get("DEFAULT_ADMIN_PASSWORD", "Admin@123")
-
-            hashed = bcrypt.generate_password_hash(default_password).decode("utf-8")
-            admin = User(
-                username=default_username,
-                password_hash=hashed,
-                role="admin"
-            )
-            db.session.add(admin)
-            db.session.commit()
-
-            print(f"\n{'='*60}")
-            print(f"Created default admin account:")
-            print(f"  Username: {default_username}")
-            print(f"  Password: {default_password}")
-            print(f"  ** CHANGE THIS PASSWORD IMMEDIATELY **")
-            print(f"{'='*60}\n")
+        ensure_default_admin_user(app, bcrypt)

@@ -19,7 +19,7 @@ def initialize_database():
     
     try:
         from app import app, db, bcrypt
-        from models import User, Setting
+        from models import User, Setting, ensure_default_admin_user
         
         with app.app_context():
             print("\nChecking database connection...")
@@ -28,26 +28,11 @@ def initialize_database():
             db.create_all()
             print("[OK] Database tables initialized")
             
-            # Check if default admin exists
+            # Ensure the default admin exists and is usable for login.
+            admin = ensure_default_admin_user(app, bcrypt)
             admin_count = User.query.filter_by(role='admin').count()
-            if admin_count == 0:
-                print("[OK] Creating default admin user...")
-                
-                default_username = os.environ.get('DEFAULT_ADMIN_USERNAME', 'admin')
-                default_password = os.environ.get('DEFAULT_ADMIN_PASSWORD', 'Admin@123')
-                
-                hashed = bcrypt.generate_password_hash(default_password).decode('utf-8')
-                admin = User(
-                    username=default_username,
-                    password_hash=hashed,
-                    role='admin'
-                )
-                db.session.add(admin)
-                db.session.commit()
-                
-                print(f"  Username: {default_username}")
-                print(f"  ** CHANGE THIS PASSWORD IMMEDIATELY **")
-            else:
+            if admin is not None:
+                print(f"[OK] Admin account ready: {admin.username}")
                 print(f"[OK] Found {admin_count} admin user(s)")
             
             # Check if settings exist

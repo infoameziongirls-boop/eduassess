@@ -12,14 +12,14 @@
             <div class="col-md-6 offset-md-3">
                 <div class="card">
                     <div class="card-header">
-                        <h4>Upload Assessment Template</h4>
+                        <h4>Upload School Assessment Template</h4>
                     </div>
                     <div class="card-body">
                         <form method="POST" enctype="multipart/form-data">
                             <div class="mb-3">
                                 <label for="template_file" class="form-label">Excel Template File</label>
                                 <input type="file" class="form-control" id="template_file" name="template_file" accept=".xlsx" required>
-                                <div class="form-text">Upload the assessment template Excel file (.xlsx)</div>
+                                <div class="form-text">Upload the school assessment template Excel file (.xlsx)</div>
                             </div>
                             <button type="submit" class="btn btn-primary">Upload Template</button>
                             <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">Cancel</a>

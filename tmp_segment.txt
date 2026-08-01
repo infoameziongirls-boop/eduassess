@@ -1,0 +1,181 @@
+        
+        
+        <div class="col-12">
+          <div class="stat-edu card h-100">
+            <div class="stat-stripe" style="background:var(--edu-success);"></div>
+            <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
+              <div class="stat-icon-wrap" style="background:rgba(59,130,246,.1);color:var(--edu-blue);">
+                <i class="bi bi-award-fill"></i>
+              </div>
+              <div>
+                <div style="margin-bottom:2px;">
+                  <span class="grade-pill" style="background:rgba(59,130,246,.08);color:var(--edu-blue);">A1</span>
+                </div>
+                <div class="stat-label">Selected Grade</div>
+                <div class="stat-sub">filtered selection</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  
+  
+  <div class="row mb-4 anim-6">
+    <div class="col-12">
+      <div class="filter-card">
+        <div class="filter-hdr">
+          <i class="bi bi-funnel-fill"></i>
+          <h6>Filter Assessments</h6>
+        </div>
+        <div class="card-body py-3 px-4">
+          <form method="GET" class="row g-3 align-items-end">
+            <div class="col-md-3">
+              <label class="form-label fw-semibold" style="font-size:.8rem;color:#374151;">Subject</label>
+              <select name="subject" class="form-select" onchange="this.form.submit()">
+                <option value="">All Subjects</option>
+                
+                <option value="additional_mathematics" >
+                  Additional Mathematics
+                </option>
+                
+                <option value="biology" >
+                  Biology
+                </option>
+                
+                <option value="chemistry" >
+                  Chemistry
+                </option>
+                
+                <option value="economics" >
+                  Economics
+                </option>
+                
+                <option value="english_language" >
+                  English Language
+                </option>
+                
+                <option value="mathematics" >
+                  Mathematics
+                </option>
+                
+                <option value="physics" >
+                  Physics
+                </option>
+                
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold" style="font-size:.8rem;color:#374151;">Class</label>
+              <select name="class" class="form-select" onchange="this.form.submit()">
+                <option value="">All Classes</option>
+                
+                <option value="Form 3" >Form 3</option>
+                
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold" style="font-size:.8rem;color:#374151;">Category</label>
+              <select name="category" class="form-select" onchange="this.form.submit()">
+                <option value="">All Categories</option>
+                
+                <option value="end_term" >
+                  End of Term Exam
+                </option>
+                
+                <option value="gp1" >
+                  Group Project/Research 1
+                </option>
+                
+                <option value="gp2" >
+                  Group Project/Research 2
+                </option>
+                
+                <option value="ica1" >
+                  Individual Assessment 1
+                </option>
+                
+                <option value="ica2" >
+                  Individual Assessment 2
+                </option>
+                
+                <option value="icp1" >
+                  Individual Class Project 1
+                </option>
+                
+                <option value="icp2" >
+                  Individual Class Project 2
+                </option>
+                
+                <option value="mid_term" >
+                  Mid-Semester Exam
+                </option>
+                
+                <option value="practical" >
+                  Practical Portfolio
+                </option>
+                
+              </select>
+            </div>
+            <div class="col-md-3">
+              <a href="/student/dashboard" class="btn btn-outline-secondary w-100" style="border-radius:9px;">
+                <i class="bi bi-x-circle me-1"></i>Clear Filters
+              </a>
+            </div>
+          </form>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+
+  
+  
+  
+  <div class="row mb-4 anim-6">
+    <div class="col-12">
+      <div class="section-card">
+        <div class="section-hdr">
+          <div class="d-flex align-items-center">
+            <div class="sec-icon" style="background:rgba(124,58,237,.12);color:var(--edu-purple);">
+              <i class="bi bi-bar-chart-fill"></i>
+            </div>
+            <h5>Results by Teacher &amp; Subject</h5>
+          </div>
+          <span class="sec-count" style="background:rgba(124,58,237,.1);color:var(--edu-purple);">
+            Always shows all subjects
+          </span>
+        </div>
+        <div class="card-body px-4 py-4">
+          <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3 mb-3">
+            <div class="scrollable-tabs">
+              <ul class="nav nav-pills flex-nowrap gap-2 mb-0" role="tablist">
+                
+                <li class="nav-item" role="presentation">
+                  <button class="nav-link py-1 px-2 small rounded-pill active" id="teacher-tab-1" data-bs-toggle="pill" data-bs-target="#teacher-panel-1" type="button" role="tab" aria-controls="teacher-panel-1" aria-selected="true">
+                    <span class="d-inline-block text-truncate" style="max-width:120px;">Unassigned</span>
+                    <span class="badge bg-white text-secondary ms-1 small">5</span>
+                  </button>
+                </li>
+                
+                <li class="nav-item" role="presentation">
+                  <button class="nav-link py-1 px-2 small rounded-pill " id="teacher-tab-2" data-bs-toggle="pill" data-bs-target="#teacher-panel-2" type="button" role="tab" aria-controls="teacher-panel-2" aria-selected="false">
+                    <span class="d-inline-block text-truncate" style="max-width:120px;">teacher2</span>
+                    <span class="badge bg-white text-secondary ms-1 small">1</span>
+                  </button>
+                </li>
+                
+                <li class="nav-item" role="presentation">
+                  <button class="nav-link py-1 px-2 small rounded-pill " id="teacher-tab-3" data-bs-toggle="pill" data-bs-target="#teacher-panel-3" type="button" role="tab" aria-controls="teacher-panel-3" aria-selected="false">
+                    <span class="d-inline-block text-truncate" style="max-width:120px;">teacher1</span>
+                    <span class="badge bg-white text-secondary ms-1 small">1</span>
+                  </button>
+                </li>
+                
+              </ul>
+            </div>
+            <button class="btn btn-sm btn-outline-primary mt-2 mt-md-0" type="button" data-bs-toggle="pill" data-bs-target="#teacher-panel-all" aria-controls="teacher-panel-all" aria-selected="false">
+              Show all teachers
+            </button>

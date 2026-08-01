@@ -1,0 +1,6 @@
+student_dashboard start current_user=ARABA001 role=student
+student_dashboard student lookup complete: True
+student_dashboard start current_user=ARABA001 role=student
+student_dashboard student lookup complete: True
+student_dashboard start current_user=ARABA001 role=student
+student_dashboard student lookup complete: True
