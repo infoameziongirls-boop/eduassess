@@ -97,7 +97,7 @@ def test_teacher_can_delete_assessment(client):
 
     assert response.status_code == 302
     assert response.headers['Location'].endswith(f'/students/{student.id}')
-    assert Assessment.query.get(assessment.id) is None
+    assert db.session.get(Assessment, assessment.id) is None
 
 
 def test_student_login_get_shows_form(client):
@@ -210,9 +210,31 @@ def test_student_edit_normalizes_class_and_study_area(client):
     assert response.status_code == 302
     assert response.headers['Location'].endswith('/students')
 
-    student = Student.query.get(student.id)
+    student = db.session.get(Student, student.id)
     assert student.class_name == 'Form 1'
     assert student.study_area == 'science_a'
+
+
+def test_student_view_renders_with_na_gpa_for_students_without_assessments(client):
+    admin = create_admin_user()
+    student = Student(
+        student_number='STU_NA',
+        first_name='No',
+        last_name='Assess',
+        reference_number='REFNA',
+        class_name='form1',
+        study_area='mathematics'
+    )
+    db.session.add(student)
+    db.session.commit()
+
+    login_as(client, admin)
+    response = client.get(f'/students/{student.id}', follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b'Aggregate Grade Point Card' in response.data
+    assert b'Class Division' in response.data
+    assert b'N/A' in response.data
 
 
 def test_canonical_helpers_normalize_inputs():

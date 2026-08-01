@@ -6,10 +6,9 @@
 <!-- Page Header -->
 <div class="page-header animate-in">
     <div>
-        <h1 class="page-title">
-            Good {% if current_user.last_login %}day{% else %}morning{% endif %}, {{ current_user.username }}!
-        </h1>
+        <h1 class="page-title">{{ time_greeting(current_user.username) }}</h1>
         <p class="page-subtitle">
+
             {% if current_user.is_teacher() and current_user.subject %}
                 Managing <strong>{{ current_user.get_subject_display() }}</strong> assessments
             {% elif current_user.is_admin() %}

@@ -17,7 +17,7 @@ INSTALLATION (3 steps in app.py):
                   'ASSESSMENT_WEIGHTS': app.config['ASSESSMENT_WEIGHTS'],
                   'LEARNING_AREAS':     app.config['LEARNING_AREAS'],
                   'CLASS_LEVELS':       app.config['CLASS_LEVELS'],
-                  'now':                datetime.utcnow(),
+                  'now':                datetime.now(timezone.utc),
               }
 
   4.  Copy admin_promote_class.html and order_of_merit.html

@@ -5,11 +5,8 @@
 {% block content %}
 <div class="page-header animate-in">
     <div>
-        <h1 class="page-title">Parent Dashboard</h1>
+        <h1 class="page-title">{{ time_greeting(current_user.username) }}</h1>
         <p class="page-subtitle">Monitor your children's academic progress</p>
-    </div>
-    <div style="font-size:.78rem;color:var(--ink-4);">
-        Welcome back, <strong style="color:var(--ink);">{{ current_user.username }}</strong>
     </div>
 </div>
 

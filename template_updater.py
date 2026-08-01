@@ -133,6 +133,8 @@ _GPA_TABLE = [
     (0,  0.0, 'F9'),
 ]
 
+_GRADE_POINT_MAP = {grade: i + 1 for i, (_, _, grade) in enumerate(_GPA_TABLE)}
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Public helpers  (imported by models.py)
@@ -211,6 +213,7 @@ def calculate_scores_from_template(raw_scores: dict) -> dict:
         'percentage':        percentage,
         'gpa':               gpa,
         'grade':             grade,
+        'grade_point':       _GRADE_POINT_MAP.get(grade),
     }
 
 
@@ -246,6 +249,9 @@ class _ZipSheetDuplicator:
         self._sheet_paths: list[str] = []
         self._sheet_names: list[str] = []
         self._sheet_trees: dict[str, etree._Element] = {}
+        # Next free xl/tables/tableN.xml number — starts past whatever
+        # table parts already exist in the template (e.g. table1.xml).
+        self._next_table_num = 1
 
     # ── preparation ─────────────────────────────────────────────────────────
 
@@ -253,6 +259,18 @@ class _ZipSheetDuplicator:
         with zipfile.ZipFile(self._tpl, 'r') as z:
             for name in z.namelist():
                 self._files[name] = z.read(name)
+
+        # Find the highest existing xl/tables/tableN.xml number so cloned
+        # tables never collide with the template's own table part(s).
+        existing_nums = [
+            int(m.group(1))
+            for name in self._files
+            for m in [re.match(r'xl/tables/table(\d+)\.xml$', name)]
+            if m
+        ]
+        self._next_table_num = max(existing_nums, default=0) + 1
+
+        self._force_full_recalc()
 
         wb_tree = etree.fromstring(self._files['xl/workbook.xml'])
         ns = {'ns': _NS_WB, 'r': _NS_R}
@@ -295,6 +313,115 @@ class _ZipSheetDuplicator:
             self._sheet_names[0] = extra_sheet_labels[0]
             self._rename_sheet_in_workbook(1, extra_sheet_labels[0])
 
+    def _force_full_recalc(self) -> None:
+        """
+        Written score cells are updated by editing raw XML, so the cached
+        <v> results already sitting inside the template's formula cells
+        (J, M, P, S, T, U, W, X, Y, Z, AA …) are stale — Excel may trust
+        those stale cached values and skip recalculation on open, showing
+        old/zero totals until the user manually forces a recalc.
+
+        Two fixes, both standard practice for programmatically-edited
+        xlsx files:
+          1. Set calcPr fullCalcOnLoad="1" so every compliant reader
+             (Excel, LibreOffice, Google Sheets import) recalculates the
+             whole workbook the moment it opens, ignoring cached values.
+          2. Drop calcChain.xml — it only describes dependencies for the
+             single original sheet, and a chain that doesn't account for
+             newly cloned sheets is a common cause of Excel's "we found
+             a problem with some content" repair prompt. Every reader
+             rebuilds this file automatically; it's an optimization
+             cache, not required data.
+        """
+        wb_tree = etree.fromstring(self._files['xl/workbook.xml'])
+        ns = {'ns': _NS_WB}
+        calc_pr = wb_tree.find('ns:calcPr', ns)
+        if calc_pr is None:
+            calc_pr = etree.SubElement(wb_tree, '{%s}calcPr' % _NS_WB)
+        calc_pr.set('fullCalcOnLoad', '1')
+        self._files['xl/workbook.xml'] = etree.tostring(
+            wb_tree, xml_declaration=True, encoding='UTF-8', standalone=True
+        )
+
+        if 'xl/calcChain.xml' in self._files:
+            del self._files['xl/calcChain.xml']
+
+            ct_tree = etree.fromstring(self._files['[Content_Types].xml'])
+            for ov in ct_tree.findall('{%s}Override' % _NS_CT):
+                if ov.get('PartName') == '/xl/calcChain.xml':
+                    ct_tree.remove(ov)
+            self._files['[Content_Types].xml'] = etree.tostring(
+                ct_tree, xml_declaration=True, encoding='UTF-8', standalone=True
+            )
+
+            rels_tree = etree.fromstring(self._files['xl/_rels/workbook.xml.rels'])
+            ns_rels = {'r': _NS_RELS}
+            for rel in rels_tree.findall('r:Relationship', ns_rels):
+                if rel.get('Target') == 'calcChain.xml':
+                    rels_tree.remove(rel)
+            self._files['xl/_rels/workbook.xml.rels'] = etree.tostring(
+                rels_tree, xml_declaration=True, encoding='UTF-8', standalone=True
+            )
+
+    def _clone_table_parts_in_rels(self, rels_bytes: bytes) -> bytes:
+        """
+        A cloned sheet's .rels file (copied verbatim from the source
+        sheet) still points at the *same* xl/tables/tableN.xml part as
+        the original sheet. In OOXML a table part belongs to exactly one
+        worksheet, so every clone sharing it produces duplicate table
+        ids/names — this is what made the exported workbook unreadable
+        (openpyxl: "Table with name Table2 already exists"; Excel would
+        show a repair prompt too).
+
+        Give each cloned sheet its own copy of every table part it
+        references, with a fresh, unique id/name/displayName.
+        """
+        TABLE_REL_TYPE = ("http://schemas.openxmlformats.org/officeDocument"
+                          "/2006/relationships/table")
+        rels_tree = etree.fromstring(rels_bytes)
+        ns_rels = {'r': _NS_RELS}
+
+        for rel in rels_tree.findall('r:Relationship', ns_rels):
+            if rel.get('Type') != TABLE_REL_TYPE:
+                continue
+
+            target = rel.get('Target', '').lstrip('/')
+            if not target.startswith('xl/'):
+                target = 'xl/' + target.replace('../', '')
+            if target not in self._files:
+                continue
+
+            new_num = self._next_table_num
+            self._next_table_num += 1
+            new_target = f'xl/tables/table{new_num}.xml'
+
+            table_tree = etree.fromstring(self._files[target])
+            base_name = table_tree.get('name', 'Table')
+            new_name = f'{base_name}_{new_num}'
+            table_tree.set('id', str(new_num))
+            table_tree.set('name', new_name)
+            table_tree.set('displayName', new_name)
+            self._files[new_target] = etree.tostring(
+                table_tree, xml_declaration=True, encoding='UTF-8', standalone=True
+            )
+
+            rel.set('Target', '../tables/' + os.path.basename(new_target))
+
+            ct_tree = etree.fromstring(self._files['[Content_Types].xml'])
+            new_ov = etree.SubElement(ct_tree, '{%s}Override' % _NS_CT)
+            new_ov.set('PartName', '/' + new_target)
+            new_ov.set(
+                'ContentType',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml'
+            )
+            self._files['[Content_Types].xml'] = etree.tostring(
+                ct_tree, xml_declaration=True, encoding='UTF-8', standalone=True
+            )
+
+        return etree.tostring(
+            rels_tree, xml_declaration=True, encoding='UTF-8', standalone=True
+        )
+
     def _clone_sheet(self, sheet_index: int, display_name: str) -> None:
         new_path      = f'xl/worksheets/sheet{sheet_index}.xml'
         new_rels_path = f'xl/worksheets/_rels/sheet{sheet_index}.xml.rels'
@@ -307,7 +434,9 @@ class _ZipSheetDuplicator:
         self._files[new_path] = src_xml
 
         if self._src_rels_path in self._files:
-            self._files[new_rels_path] = self._files[self._src_rels_path]
+            self._files[new_rels_path] = self._clone_table_parts_in_rels(
+                self._files[self._src_rels_path]
+            )
         else:
             self._files[new_rels_path] = (
                 b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -596,6 +725,10 @@ class AssessmentTemplateUpdater:
         dirpart = os.path.dirname(output_path)
         if dirpart:
             os.makedirs(dirpart, exist_ok=True)
+        # Same reasoning as _ZipSheetDuplicator._force_full_recalc(): force
+        # every reader to recompute formulas on open instead of trusting
+        # whatever cached values happen to be sitting in the template.
+        self.wb.calculation.fullCalcOnLoad = True
         self.wb.save(output_path)
         self._cleanup()
         return output_path

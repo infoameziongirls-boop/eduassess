@@ -313,10 +313,18 @@ def _get_assessment_template_path(filename=None):
     filename = filename or app.config.get('ASSESSMENT_TEMPLATE_FILE', 'student_template.xlsx')
     runtime_path = os.path.join(app.config['TEMPLATE_FOLDER'], filename)
     repo_path = os.path.join(app.config['REPO_TEMPLATE_FOLDER'], filename)
-    if os.path.exists(repo_path):
-        if not os.path.exists(runtime_path) or not filecmp.cmp(runtime_path, repo_path, shallow=False):
-            shutil.copy2(repo_path, runtime_path)
+
+    os.makedirs(os.path.dirname(runtime_path), exist_ok=True)
+
+    # Prefer the runtime-uploaded template so a school-specific workbook
+    # with custom formulas, merged cells, colours and layout remains the
+    # single source of truth for exports and downloads.
+    if os.path.exists(runtime_path):
         return runtime_path
+
+    if os.path.exists(repo_path):
+        shutil.copy2(repo_path, runtime_path)
+
     return runtime_path
 
 
@@ -420,7 +428,15 @@ def canonical_subject_key(raw_value):
         return None
     subject_map = {normalize_label(k): k for k, _ in app.config['LEARNING_AREAS']}
     subject_map.update({normalize_label(l): k for k, l in app.config['LEARNING_AREAS']})
-    return subject_map.get(normalized, normalized.replace(' ', '_') if normalized else None)
+    alias_map = {
+        'integrated science': 'general_science',
+        'integrated_science': 'general_science',
+    }
+    if normalized in subject_map:
+        return subject_map[normalized]
+    if normalized in alias_map:
+        return alias_map[normalized]
+    return normalized.replace(' ', '_') if normalized else None
 
 
 def normalize_student_records():
@@ -464,7 +480,21 @@ def utility_processor():
             return url_for(endpoint, **values)
         except Exception:
             return None
-    return dict(safe_url_for=safe_url_for)
+
+    def time_greeting(name=None):
+        now = datetime.now()
+        hour = now.hour
+        if hour < 12:
+            period = 'morning'
+        elif hour < 18:
+            period = 'afternoon'
+        else:
+            period = 'evening'
+        if name:
+            return f'Good {period}, {name}!'
+        return f'Good {period}!'
+
+    return dict(safe_url_for=safe_url_for, time_greeting=time_greeting)
 
 # ---------------------------------------------------------------------------
 # Import models and helpers AFTER app is created
@@ -477,7 +507,9 @@ from excel_utils import (ExcelTemplateHandler, ExcelBulkImporter,
                          QuestionBulkImporter, create_default_template,
                          create_student_import_template,
                          create_teacher_import_template,
-                         create_question_import_template)
+                         create_question_import_template,
+                         ClassScoreSheetImporter,
+                         create_class_scoresheet_template)
 from analytics import get_class_performance_summary, get_grade_distribution
 from api_v1 import api_bp
 from promotion_routes import promotion_bp
@@ -637,46 +669,106 @@ GRADE_POINT_MAP = {entry['grade']: entry['grade_point'] for entry in GRADE_SCALE
 
 
 def calculate_gpa_and_grade(percent):
-    if percent is None:
-        return {'gpa': 'N/A', 'grade': 'N/A'}
-    if percent >= 80:   return {'gpa': 4.0, 'grade': 'A1'}
-    if percent >= 70:   return {'gpa': 3.5, 'grade': 'B2'}
-    if percent >= 60:   return {'gpa': 3.0, 'grade': 'B3'}
-    if percent >= 55:   return {'gpa': 2.5, 'grade': 'C4'}
-    if percent >= 50:   return {'gpa': 2.0, 'grade': 'C5'}
-    if percent >= 45:   return {'gpa': 1.5, 'grade': 'C6'}
-    if percent >= 40:   return {'gpa': 1.0, 'grade': 'D7'}
-    if percent >= 35:   return {'gpa': 0.5, 'grade': 'E8'}
-    return {'gpa': 0.0, 'grade': 'F9'}
+    from template_updater import _grade
+    return _grade(percent)
 
 
 def get_grade_point_for_grade(grade):
     return GRADE_POINT_MAP.get(grade)
 
 
+def build_student_aggregate_metrics(student):
+    subject_results = student.calculate_subject_final_grades()
+    if subject_results:
+        final_pct = round(
+            sum(data['final_percent'] for data in subject_results.values()) / len(subject_results),
+            2,
+        )
+        gr = calculate_gpa_and_grade(final_pct)
+        letter_grade = gr['grade']
+        gpa = gr['gpa']
+    else:
+        try:
+            overall_pct = student.calculate_final_grade()
+        except Exception:
+            overall_pct = None
+
+        if overall_pct is not None:
+            final_pct = round(float(overall_pct), 2)
+            gr = calculate_gpa_and_grade(final_pct)
+            letter_grade = gr['grade']
+            gpa = gr['gpa']
+        else:
+            final_pct = None
+            letter_grade = 'N/A'
+            gpa = 'N/A'
+
+    grade_point = calculate_total_grade_points(student)
+    grading_class = get_grade_class_division(gpa) if gpa not in ('N/A', None) else None
+    comment = _get_comment(gpa) if gpa not in ('N/A', None) else None
+
+    overall_summary = {
+        'final_score': final_pct,
+        'gpa': gpa,
+        'grade': letter_grade,
+    }
+
+    return {
+        'final_percent': final_pct,
+        'letter_grade': letter_grade,
+        'gpa': gpa,
+        'grade_point': grade_point,
+        'grading_class': grading_class,
+        'comment': comment,
+        'overall_summary': overall_summary,
+    }
+
+
 def calculate_total_grade_points(student):
-    from template_updater import calculate_scores_from_template, scores_from_assessments
-
-    subject_groups = {}
-    for assessment in student.assessments:
-        if assessment.archived or not assessment.subject:
-            continue
-        norm_subject = normalize_label(assessment.subject)
-        if not norm_subject:
-            continue
-        subject_groups.setdefault(norm_subject, []).append(assessment)
-
-    if not subject_groups:
+    subject_results = student.calculate_subject_final_grades()
+    if not subject_results:
         return None
 
-    total_points = 0
-    for assessments in subject_groups.values():
-        raw_scores = scores_from_assessments(assessments)
-        if not raw_scores:
-            continue
-        result = calculate_scores_from_template(raw_scores)
-        total_points += get_grade_point_for_grade(result['grade']) or 0
-    return total_points
+    subject_grade_points = {}
+    for subject_result in subject_results.values():
+        subject_key = canonical_subject_key(subject_result.get('subject') or subject_result.get('subject_key'))
+        grade_point = subject_result.get('grade_point')
+        if subject_key and grade_point is not None:
+            subject_grade_points[subject_key] = grade_point
+
+    if not subject_grade_points:
+        return None
+
+    core_candidates = []
+    for key in ['english_language', 'mathematics', 'social_studies']:
+        if key in subject_grade_points:
+            core_candidates.append((key, subject_grade_points[key]))
+
+    if 'general_science' in subject_grade_points:
+        core_candidates.append(('general_science', subject_grade_points['general_science']))
+    else:
+        replacement_candidates = [
+            (key, subject_grade_points[key])
+            for key in ('ict', 'physical_education_health')
+            if key in subject_grade_points
+        ]
+        if replacement_candidates:
+            replacement_candidates.sort(key=lambda item: item[1])
+            core_candidates.append(replacement_candidates[0])
+
+    core_candidates.sort(key=lambda item: item[1], reverse=True)
+    selected_core = core_candidates[:4]
+    core_points = [point for _, point in selected_core]
+    used_core_keys = {key for key, _ in selected_core}
+
+    elective_points = sorted(
+        [point for key, point in subject_grade_points.items() if key not in used_core_keys]
+    )[:4]
+
+    if core_points or elective_points:
+        return sum(core_points) + sum(elective_points)
+
+    return sum(subject_grade_points.values())
 
 
 def get_grade_class_division(gpa):
@@ -835,7 +927,7 @@ class AssessmentForm(FlaskForm):
     score     = FloatField('Score', validators=[InputRequired(), NumberRange(min=0)])
     max_score = SelectField('Max Score', choices=[(50, '50'), (100, '100')],
                             coerce=int, validators=[InputRequired()], default=100)
-    term          = SelectField('Term', choices=app.config['TERMS'],
+    term          = SelectField('Semester', choices=app.config['TERMS'],
                                 validators=[InputRequired()])
     academic_year = StringField('Academic Year', validators=[Optional()])
     session       = StringField('Session',       validators=[Optional()])
@@ -891,8 +983,27 @@ class QuestionBulkImportForm(FlaskForm):
     ])
 
 
+class ClassScoreSheetForm(FlaskForm):
+    """One-row-per-student, all-categories-at-once bulk assessment upload."""
+    subject   = SelectField('Subject',
+                            choices=[('', '-- Select Subject --')] + app.config['LEARNING_AREAS'],
+                            validators=[InputRequired()])
+    class_name = SelectField('Class',
+                             choices=[('', '-- Select Class --')] + app.config['CLASS_LEVELS'],
+                             validators=[InputRequired()])
+    term          = SelectField('Semester', choices=app.config['TERMS'],
+                                validators=[InputRequired()])
+    academic_year = StringField('Academic Year', validators=[Optional()])
+    session       = StringField('Session',       validators=[Optional()])
+    update_existing = BooleanField('Overwrite existing scores for these categories', default=False)
+    excel_file = FileField('Class Scoresheet (Excel)', validators=[
+        InputRequired(), FileAllowed(['xlsx', 'xls'], 'Excel files only!'),
+        validate_excel_file,
+    ])
+
+
 class SettingsForm(FlaskForm):
-    current_term         = SelectField('Current Term', choices=app.config['TERMS'],
+    current_term         = SelectField('Current Semester', choices=app.config['TERMS'],
                                        validators=[InputRequired()])
     current_academic_year = StringField('Current Academic Year',
                                         validators=[InputRequired()])
@@ -1010,6 +1121,15 @@ def not_found(e):
 
 @app.errorhandler(500)
 def internal_error(e):
+    msg = f'Unhandled internal server error on {request.method} {request.path}: {e}\n'
+    app.logger.exception(msg)
+    try:
+        with open('tmp_flask_error.log', 'a', encoding='utf-8') as f:
+            f.write(msg)
+            traceback.print_exc(file=f)
+            f.write('\n')
+    except Exception:
+        pass
     db.session.rollback()
     return render_template('500.html'), 500
 
@@ -1249,7 +1369,9 @@ def student_dashboard():
 
     # ── Apply filters to produce the visible table rows ────────────────────
     assessments = all_assessments
-    if subject_f:   assessments = [a for a in assessments if a.subject    == subject_f]
+    if subject_f:
+        subject_key = canonical_subject_key(subject_f)
+        assessments = [a for a in assessments if canonical_subject_key(a.subject) == subject_key]
     if class_f:     assessments = [a for a in assessments if a.class_name == class_f]
     if category_f:  assessments = [a for a in assessments if a.category   == category_f]
 
@@ -1281,25 +1403,44 @@ def student_dashboard():
             }
 
     # ── Summary and overall grades (always from full list) ─────────────────
-    summary   = student.get_assessment_summary_from_list(all_assessments)
-    final_pct = student.calculate_final_grade()
-    gpa_grade = student.get_gpa_and_grade()
+    summary = student.get_assessment_summary_from_list(all_assessments)
+    aggregate_metrics = build_student_aggregate_metrics(student)
+    final_pct = aggregate_metrics['final_percent']
+    gpa_grade = {'gpa': aggregate_metrics['gpa'], 'grade': aggregate_metrics['letter_grade']}
+    overall_summary = aggregate_metrics.get(
+        'overall_summary',
+        {'final_score': final_pct, 'gpa': gpa_grade['gpa'], 'grade': gpa_grade['grade']}
+    )
 
     # ── Final score and grade from the school-template formula chain ───────
-    if assessments:
+    # Only use the template-composition path when a specific subject filter is
+    # actually selected. For the full all-subjects dashboard view, the page must
+    # render the same authoritative aggregate summary already produced by the
+    # business layer instead of a cross-subject best-score collage.
+    if subject_f and assessments:
         raw_filtered = scores_from_assessments(assessments)
         filtered_result = calculate_scores_from_template(raw_filtered)
         avg_score = filtered_result['final_score']
         filt_res = {'gpa': filtered_result['gpa'], 'grade': filtered_result['grade']}
+        filtered_grade_point = GRADE_POINT_MAP.get(filtered_result['grade'])
     else:
-        avg_score = 0.0
-        filt_res = {'gpa': 'N/A', 'grade': 'N/A'}
+        avg_score = final_pct if final_pct is not None else 0.0
+        filt_res = {'gpa': gpa_grade['gpa'], 'grade': gpa_grade['grade']}
+        filtered_grade_point = GRADE_POINT_MAP.get(gpa_grade['grade'])
 
-    # Use the overall final percent to determine aggregate grade/division
-    overall_grade = calculate_gpa_and_grade(final_pct)
-    grade_point   = calculate_total_grade_points(student)
-    grading_class = get_grade_class_division(overall_grade['gpa'])
-    comment       = _get_comment(overall_grade['gpa']) if overall_grade['gpa'] != 'N/A' else None
+    # Use the exact template aggregate summary for overall class division
+    grade_point = aggregate_metrics['grade_point']
+    aggregate = grade_point  # explicit alias — this is the WASSCE-style
+                             # best-4-core + best-4-elective sum, e.g. 20.
+                             # It is NOT the same thing as filtered_grade_point.
+    grading_class = aggregate_metrics['grading_class']
+    comment = aggregate_metrics['comment']
+
+    # When no specific subject is selected ("all subjects"), the dashboard
+    # must show ONLY the aggregate — never filtered_grade_point, since that
+    # value (derived from the average score's own letter grade) is not a
+    # per-subject grade point and must not be confused with one.
+    show_aggregate = not bool(subject_f)
 
     # ── Quiz attempts ──────────────────────────────────────────────────────
     quiz_attempts = (
@@ -1321,6 +1462,8 @@ def student_dashboard():
         final_percent=final_pct,
         gpa_grade=gpa_grade,
         grade_point=grade_point,
+        aggregate=aggregate,
+        show_aggregate=show_aggregate,
         grading_class=grading_class,
         comment=comment,
         subjects=subjects,
@@ -1332,9 +1475,10 @@ def student_dashboard():
         average_score=avg_score,
         filtered_gpa=filt_res['gpa'],
         filtered_grade=filt_res['grade'],
+        filtered_grade_point=filtered_grade_point,
         quiz_attempts=quiz_attempts,
         quiz_details=quiz_details,
-        overall_gpa=overall_grade['gpa'],
+        overall_gpa=overall_summary.get('gpa'),
         CATEGORY_LABELS=CATEGORY_LABELS,
     )
 
@@ -1560,12 +1704,35 @@ def student_view(student_id):
     # silently overwrote the filtered value computed above with an unfiltered
     # query ignoring teacher_id.  That second assignment has been removed.
 
-    gr = calculate_gpa_and_grade(final_pct)
-    letter_grade = gr['grade'] if final_pct is not None else None
-    gpa          = gr['gpa']   if final_pct is not None else None
-    grade_point  = get_grade_point_for_grade(letter_grade)
-    grading_class = get_grade_class_division(gpa)
-    comment      = _get_comment(gpa)
+    aggregate_metrics = build_student_aggregate_metrics(student)
+    final_pct = aggregate_metrics['final_percent']
+    letter_grade = aggregate_metrics['letter_grade']
+    gpa = aggregate_metrics['gpa']
+    grade_point = aggregate_metrics['grade_point']
+    aggregate = grade_point  # explicit alias — WASSCE best-4-core + best-4-elective sum
+    grading_class = aggregate_metrics['grading_class']
+    comment = aggregate_metrics['comment']
+
+    # ── Individual subject grade point vs. whole-record aggregate ──────────
+    # A single subject (e.g. Mathematics = B3) has a grade point of 3.
+    # The aggregate (best 4 core + best 4 elective grade points summed) is
+    # a completely different number and must never be shown side-by-side
+    # with, or mistaken for, a single subject's grade point.
+    if effective_subject:
+        subject_result = student.calculate_subject_final_grades(teacher_id=tid).get(
+            normalize_label(effective_subject)
+        )
+        if subject_result:
+            final_pct = subject_result['final_percent']
+            letter_grade = subject_result['grade']
+            gpa = subject_result['gpa']
+            filtered_grade_point = subject_result['grade_point']
+        else:
+            filtered_grade_point = None
+        show_aggregate = False
+    else:
+        filtered_grade_point = None
+        show_aggregate = True
 
     teacher_results = None
     if current_user.is_admin():
@@ -1574,7 +1741,7 @@ def student_view(student_id):
             ts.setdefault(a.teacher_id, {}).setdefault(a.subject, []).append(a)
         teacher_results = {}
         for tid2, sd in ts.items():
-            t2 = User.query.get(tid2)
+            t2 = db.session.get(User, tid2)
             tname = t2.username if t2 else f'Teacher {tid2}'
             teacher_results[tname] = {}
             for sname, alist in sd.items():
@@ -1595,6 +1762,9 @@ def student_view(student_id):
         study_areas_dict=dict(app.config['STUDY_AREAS']),
         CATEGORY_LABELS=app.config['CATEGORY_LABELS'],
         grade_point=grade_point,
+        aggregate=aggregate,
+        filtered_grade_point=filtered_grade_point,
+        show_aggregate=show_aggregate,
         grading_class=grading_class,
     )
 
@@ -2320,7 +2490,7 @@ def reset_password(user_id):
             return render_template('reset_password.html', form=form, user=user)
 
         db.session.expire(user)
-        confirmed_hash = User.query.get(user_id).password_hash
+        confirmed_hash = db.session.get(User, user_id).password_hash
         if confirmed_hash != new_hash:
             app.logger.error(
                 'reset_password verification mismatch for user_id=%s: ' \
@@ -3659,7 +3829,7 @@ def quiz_attempt_review(attempt_id):
     if not attempt:
         flash('Attempt not found', 'danger')
         return redirect(url_for('student_dashboard'))
-    quiz = Quiz.query.get(attempt.quiz_id)
+    quiz = db.session.get(Quiz, attempt.quiz_id)
     if not quiz:
         flash('Quiz not found', 'danger')
         return redirect(url_for('student_dashboard'))
@@ -3893,6 +4063,180 @@ def import_excel():
     return render_template('import_excel.html', form=form)
 
 
+@app.route('/download/class-scoresheet')
+@login_required
+def download_class_scoresheet():
+    """
+    Download a class scoresheet template pre-filled with every student's
+    number, name, reference number and study area for the selected class,
+    with one blank column per assessment category. The teacher only has to
+    type in scores and re-upload via /import/class-scoresheet.
+    """
+    if not (current_user.is_teacher() or current_user.is_admin()):
+        abort(403)
+
+    class_name = request.args.get('class_name', '').strip()
+    subject    = request.args.get('subject', '').strip()
+
+    if current_user.is_teacher():
+        students_query = get_teacher_students_query(current_user)
+        if students_query is None:
+            flash('Your teacher profile has no class/subject configured yet.', 'warning')
+            return redirect(url_for('import_class_scoresheet'))
+    else:
+        students_query = Student.query
+
+    if class_name:
+        students_query = students_query.filter_by(class_name=class_name)
+
+    students = students_query.order_by(Student.last_name).all()
+    if not students:
+        flash('No students found for that class.', 'warning')
+        return redirect(url_for('import_class_scoresheet'))
+
+    out_name = f'class_scoresheet_{class_name or "all"}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+    out_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(out_name))
+
+    create_class_scoresheet_template(
+        out_path,
+        students=students,
+        subject_label=subject,
+        class_label=class_name,
+        category_labels=app.config.get('CATEGORY_LABELS'),
+    )
+
+    return send_file(out_path, as_attachment=True, download_name=out_name,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.route('/import/class-scoresheet', methods=['GET', 'POST'])
+@login_required
+def import_class_scoresheet():
+    """
+    Bulk-upload assessments for an entire class in one go: one row per
+    student, one column per assessment category (ICA1, ICA2, ICP1, ICP2,
+    GP1, GP2, Practical, Mid Term, End Term). Much faster than entering
+    assessments one at a time, or uploading one row per category.
+    """
+    if not (current_user.is_teacher() or current_user.is_admin()):
+        abort(403)
+
+    form = ClassScoreSheetForm()
+    settings = Setting.query.first()
+    if request.method == 'GET':
+        if current_user.is_teacher() and current_user.subject:
+            form.subject.data = current_user.subject
+        if settings:
+            form.term.data          = settings.current_term
+            form.academic_year.data = settings.current_academic_year
+            form.session.data       = settings.current_session
+
+    if form.validate_on_submit():
+        file     = form.excel_file.data
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'],
+                                secure_filename(file.filename))
+        file.save(filepath)
+
+        subject         = form.subject.data
+        class_name      = form.class_name.data
+        term            = form.term.data
+        academic_year   = form.academic_year.data or (settings.current_academic_year if settings else None)
+        session         = form.session.data or (settings.current_session if settings else None)
+        update_existing = form.update_existing.data
+        category_max    = app.config['CATEGORY_MAX_SCORES']
+
+        try:
+            rows = ClassScoreSheetImporter(filepath).import_scoresheet()
+            students_ok = 0
+            scores_ok   = 0
+            errors      = []
+
+            for row in rows:
+                student = None
+                identifier = row.get('student_number') or row.get('reference_number') or 'Unknown'
+                if row.get('system_id'):
+                    student = Student.query.get(row['system_id'])
+                if not student and row.get('student_number'):
+                    student = Student.query.filter_by(student_number=row['student_number']).first()
+                if not student and row.get('reference_number'):
+                    student = Student.query.filter_by(reference_number=row['reference_number']).first()
+                if not student:
+                    errors.append(f"Student {identifier} not found")
+                    continue
+
+                if current_user.is_teacher() and not current_user.can_access_student(student, app.config):
+                    errors.append(f"No permission to update {identifier}")
+                    continue
+
+                row_had_score = False
+                for category, score in row['scores'].items():
+                    max_score = category_max.get(category, 100.0)
+                    if score < 0 or score > max_score:
+                        errors.append(
+                            f"{identifier}: {category} score {score} out of range (0-{max_score})"
+                        )
+                        continue
+
+                    existing = Assessment.query.filter_by(
+                        student_id=student.id, category=category, subject=subject,
+                        term=term, academic_year=academic_year, session=session,
+                    ).first()
+
+                    if existing:
+                        if update_existing:
+                            existing.score = float(score)
+                            existing.max_score = max_score
+                            existing.assessor = current_user.username
+                            existing.teacher_id = current_user.id if current_user.is_teacher() else existing.teacher_id
+                            scores_ok += 1
+                            row_had_score = True
+                        else:
+                            errors.append(f"{identifier}: {category} already recorded (skipped)")
+                        continue
+
+                    db.session.add(Assessment(
+                        student=student, category=category, subject=subject,
+                        class_name=class_name or student.class_name,
+                        score=float(score), max_score=max_score,
+                        term=term, academic_year=academic_year, session=session,
+                        assessor=current_user.username,
+                        teacher_id=current_user.id if current_user.is_teacher() else None,
+                    ))
+                    scores_ok += 1
+                    row_had_score = True
+
+                if row_had_score:
+                    students_ok += 1
+
+            cache.delete("incomplete_assessments")
+            db.session.commit()
+            try:
+                os.remove(filepath)
+            except OSError:
+                pass
+
+            log_activity(current_user, 'bulk_import_class_scoresheet',
+                        f'Imported {scores_ok} scores for {students_ok} students '
+                        f'({subject}, {class_name}, {term})')
+
+            flash(f'Imported {scores_ok} score(s) across {students_ok} student(s).', 'success')
+            if errors:
+                flash(f'{len(errors)} issue(s): {"; ".join(errors[:5])}'
+                     + (' ...' if len(errors) > 5 else ''), 'warning')
+            return redirect(url_for('assessments_list'))
+
+        except Exception as exc:
+            db.session.rollback()
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                except OSError:
+                    pass
+            flash(f'Error: {exc}', 'danger')
+
+    return render_template('class_scoresheet_import.html', form=form)
+
+
 @app.route('/download/template/<template_type>')
 @login_required
 def download_template(template_type):
@@ -4090,6 +4434,7 @@ def admin_teacher_tracking():
     selected_class   = request.args.get('class_filter', '').strip()
     selected_status  = request.args.get('status', '').strip()
     search_query     = request.args.get('search', '').strip()
+    selected_subject_key = canonical_subject_key(selected_subject) if selected_subject else None
 
     # ── Required categories (same set used in get_incomplete_assessments) ─
     REQUIRED_CATS = [
@@ -4108,8 +4453,8 @@ def admin_teacher_tracking():
     teacher_q = User.query.filter_by(role='teacher').order_by(User.username)
     if search_query:
         teacher_q = teacher_q.filter(User.username.ilike(f'%{search_query}%'))
-    if selected_subject:
-        teacher_q = teacher_q.filter_by(subject=selected_subject)
+    if selected_subject_key:
+        teacher_q = teacher_q.filter_by(subject=selected_subject_key)
     teachers = teacher_q.all()
 
     # ── Build subject label map ───────────────────────────────────────────
@@ -4174,8 +4519,8 @@ def admin_teacher_tracking():
 
         # Filter assessments to this teacher + optionally a subject
         rows = assess_by_teacher.get(teacher.id, [])
-        if selected_subject:
-            rows = [r for r in rows if r.subject == selected_subject]
+        if selected_subject_key:
+            rows = [r for r in rows if canonical_subject_key(r.subject) == selected_subject_key]
         # Only keep rows for students in this teacher's scope
         rows = [r for r in rows if r.student_id in sids]
 
@@ -4316,7 +4661,7 @@ def admin_send_prompt():
         flash('Invalid prompt request.', 'danger')
         return redirect(url_for('admin_teacher_tracking'))
 
-    teacher = User.query.get(teacher_id)
+    teacher = db.session.get(User, teacher_id)
     if not teacher or not teacher.is_teacher():
         flash('Teacher not found.', 'danger')
         return redirect(url_for('admin_teacher_tracking'))

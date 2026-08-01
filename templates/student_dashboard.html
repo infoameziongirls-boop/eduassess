@@ -101,6 +101,46 @@
   position:absolute; bottom:0; left:0; right:0; height:3px;
   border-radius:0 0 var(--card-radius) var(--card-radius);
 }
+
+.scrollable-tabs {
+  overflow-x:auto;
+  overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  width:100%;
+}
+
+.scrollable-tabs ul {
+  min-width:100%;
+}
+
+.scrollable-tabs::-webkit-scrollbar {
+  height:6px;
+}
+
+.scrollable-tabs::-webkit-scrollbar-thumb {
+  background:rgba(0,0,0,.16);
+  border-radius:999px;
+}
+
+.scrollable-tabs::-webkit-scrollbar-track {
+  background:rgba(255,255,255,.08);
+}
+
+.nav-pills .nav-link.active {
+  font-weight:700;
+  box-shadow:0 0 0 1px rgba(31,41,55,.12);
+  background-color: rgba(59,130,246,.15);
+  color: #1e3a8a;
+  border: 1px solid rgba(59,130,246,.28);
+}
+
+.nav-pills .nav-link {
+  transition:box-shadow .2s ease, transform .2s ease, background-color .2s ease;
+}
+
+.nav-pills .nav-link:hover {
+  transform:translateY(-1px);
+}
 /* grade pill — coloured pill inside the grade stat card */
 .grade-pill {
   font-size:1.55rem; font-weight:800; line-height:1;
@@ -232,7 +272,7 @@
                   <i class="bi bi-person-fill"></i>
                 </div>
                 <div>
-                  <h2 class="hero-title mb-0">Welcome, {{ student.first_name }}!</h2>
+                  <h2 class="hero-title mb-0">{{ time_greeting(student.first_name) }}</h2>
                   <p class="hero-meta mb-0">{{ student.full_name() }}</p>
                 </div>
               </div>
@@ -279,9 +319,9 @@
     </div>
   </div>
 
-  <div class="row mb-4 anim-2">
-    <div class="col-12">
-      <div class="section-card card">
+  <div class="row mb-4 g-4">
+    <div class="col-xl-8">
+      <div class="section-card card h-100">
         <div class="section-hdr">
           <div class="d-flex align-items-center gap-2">
             <div class="sec-icon" style="background:rgba(5,150,105,.12);color:#059669;">
@@ -289,7 +329,7 @@
             </div>
             <div>
               <h5 class="mb-0">Your Grade Summary</h5>
-              <p class="mb-0" style="font-size:.82rem;color:#6b7280;">Quick access to your grade point and class division.</p>
+              <p class="mb-0" style="font-size:.82rem;color:#6b7280;">Quick access to your cumulative performance metrics.</p>
             </div>
           </div>
           <span class="sec-count">Updated after each assessment</span>
@@ -297,20 +337,26 @@
         <div class="card-body py-4 px-4">
           <div class="row g-3">
             <div class="col-md-4">
-              <div class="stat-edu" style="border:1px solid rgba(5,150,105,.12);">
+              <div class="stat-edu h-100" style="border:1px solid rgba(5,150,105,.12);">
                 <div class="stat-stripe" style="background:#059669;"></div>
                 <div class="card-body py-3 px-3 text-center">
                   <div class="stat-icon-wrap" style="background:rgba(5,150,105,.1);color:#059669;">
                     <i class="bi bi-calculator-fill"></i>
                   </div>
-                  <div class="stat-value mt-2">{{ grade_point if grade_point is not none else 'N/A' }}</div>
-                  <div class="stat-label">Grade Point</div>
-                  <span class="badge bg-success">Aggregate</span>
+                  {% if show_aggregate %}
+                  <div class="stat-value mt-2">{{ aggregate if aggregate is not none else 'N/A' }}</div>
+                  <div class="stat-label">Aggregate</div>
+                  <span class="badge bg-success">Best 4 core + best 4 elective</span>
+                  {% else %}
+                  <div class="stat-value mt-2">{{ filtered_grade_point if filtered_grade_point is not none else 'N/A' }}</div>
+                  <div class="stat-label">Grade Point — {{ (selected_subject or '')|replace('_', ' ')|title }}</div>
+                  <span class="badge bg-info">This subject only</span>
+                  {% endif %}
                 </div>
               </div>
             </div>
             <div class="col-md-4">
-              <div class="stat-edu" style="border:1px solid rgba(26,86,160,.12);">
+              <div class="stat-edu h-100" style="border:1px solid rgba(26,86,160,.12);">
                 <div class="stat-stripe" style="background:#1a56a0;"></div>
                 <div class="card-body py-3 px-3 text-center">
                   <div class="stat-icon-wrap" style="background:rgba(26,86,160,.1);color:#1a56a0;">
@@ -323,14 +369,14 @@
               </div>
             </div>
             <div class="col-md-4">
-              <div class="stat-edu" style="border:1px solid rgba(245,158,11,.12);">
+              <div class="stat-edu h-100" style="border:1px solid rgba(245,158,11,.12);">
                 <div class="stat-stripe" style="background:#f59e0b;"></div>
                 <div class="card-body py-3 px-3 text-center">
                   <div class="stat-icon-wrap" style="background:rgba(245,158,11,.1);color:#f59e0b;">
                     <i class="bi bi-book-half"></i>
                   </div>
                   <div class="stat-value mt-2">{{ "%.1f"|format(overall_gpa|float) if overall_gpa != 'N/A' else 'N/A' }}</div>
-                  <div class="stat-label">GPA</div>
+                  <div class="stat-label">Overall GPA</div>
                   <span class="badge bg-warning">Overall</span>
                 </div>
               </div>
@@ -338,107 +384,80 @@
           </div>
           <div class="mt-3 d-flex flex-wrap gap-2">
             <a href="#" class="btn btn-sm btn-outline-primary">View Class Division</a>
-            <a href="#" class="btn btn-sm btn-outline-secondary">View Grade Points</a>
+            <a href="#" class="btn btn-sm btn-outline-secondary">{{ 'Aggregate View' if show_aggregate else 'Subject View' }}</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-xl-4">
+      <div class="row g-3">
+        <div class="col-12">
+          <div class="stat-edu card h-100">
+            <div class="stat-stripe" style="background:var(--edu-blue);"></div>
+            <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
+              <div class="stat-icon-wrap" style="background:rgba(26,86,160,.1);color:var(--edu-blue);">
+                <i class="bi bi-clipboard-check-fill"></i>
+              </div>
+              <div>
+                <div class="stat-value" style="animation:countUp .5s ease both .4s;">{{ assessments|length }}</div>
+                <div class="stat-label">Assessments</div>
+                <div class="stat-sub">{% if selected_subject or selected_class or selected_category %}filtered view{% else %}all records{% endif %}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="stat-edu card h-100">
+            <div class="stat-stripe" style="background:var(--edu-success);"></div>
+            <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
+              <div class="stat-icon-wrap" style="background:rgba(5,150,105,.1);color:var(--edu-success);">
+                <i class="bi bi-trophy-fill"></i>
+              </div>
+              <div>
+                <div class="stat-value">{{ "%.1f"|format(average_score) if average_score else '0.0' }}%</div>
+                <div class="stat-label">Average Score</div>
+                <div class="stat-sub">filtered selection</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="stat-edu card h-100">
+            <div class="stat-stripe" style="background:var(--edu-accent);"></div>
+            <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
+              <div class="stat-icon-wrap" style="background:rgba(245,158,11,.1);color:var(--edu-accent);">
+                <i class="bi bi-graph-up-arrow"></i>
+              </div>
+              <div>
+                <div class="stat-value">{% if filtered_gpa and filtered_gpa != 'N/A' %}{{ "%.1f"|format(filtered_gpa|float) }}{% else %}N/A{% endif %}</div>
+                <div class="stat-label">Filtered GPA</div>
+                <div class="stat-sub">filtered selection</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% set g = filtered_grade %}
+        <div class="col-12">
+          <div class="stat-edu card h-100">
+            <div class="stat-stripe" style="background:{{ 'var(--edu-success)' if g == 'A1' else 'var(--edu-blue)' if g in ['B2','B3'] else 'var(--edu-warning)' if g in ['C4','C5','C6'] else 'var(--edu-danger)' if g in ['D7','E8'] else 'rgba(220,38,38,.5)'}};"></div>
+            <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
+              <div class="stat-icon-wrap" style="background:rgba(59,130,246,.1);color:var(--edu-blue);">
+                <i class="bi bi-award-fill"></i>
+              </div>
+              <div>
+                <div style="margin-bottom:2px;">
+                  <span class="grade-pill" style="background:rgba(59,130,246,.08);color:var(--edu-blue);">{{ g or 'N/A' }}</span>
+                </div>
+                <div class="stat-label">Selected Grade</div>
+                <div class="stat-sub">filtered selection</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     </div>
   </div>
-
-  {# ══ 2. STAT CARDS ══════════════════════════════════════════════════ #}
-  <div class="row mb-4 g-3">
-
-    <div class="col-xl-3 col-md-6 anim-2">
-      <div class="stat-edu card h-100">
-        <div class="stat-stripe" style="background:var(--edu-blue);"></div>
-        <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
-          <div class="stat-icon-wrap" style="background:rgba(26,86,160,.1);color:var(--edu-blue);">
-            <i class="bi bi-clipboard-check-fill"></i>
-          </div>
-          <div>
-            <div class="stat-value" style="animation:countUp .5s ease both .4s;">{{ assessments|length }}</div>
-            <div class="stat-label">Assessments</div>
-            <div class="stat-sub">{% if selected_subject or selected_class or selected_category %}filtered view{% else %}all records{% endif %}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-xl-3 col-md-6 anim-3">
-      <div class="stat-edu card h-100">
-        <div class="stat-stripe" style="background:var(--edu-success);"></div>
-        <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
-          <div class="stat-icon-wrap" style="background:rgba(5,150,105,.1);color:var(--edu-success);">
-            <i class="bi bi-trophy-fill"></i>
-          </div>
-          <div>
-            <div class="stat-value">{{ "%.1f"|format(average_score) if average_score else '0.0' }}%</div>
-            <div class="stat-label">Average Score</div>
-            <div class="stat-sub">filtered selection</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-xl-3 col-md-6 anim-4">
-      <div class="stat-edu card h-100">
-        <div class="stat-stripe" style="background:var(--edu-accent);"></div>
-        <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
-          <div class="stat-icon-wrap" style="background:rgba(245,158,11,.1);color:var(--edu-accent);">
-            <i class="bi bi-graph-up-arrow"></i>
-          </div>
-          <div>
-            <div class="stat-value">
-              {% if filtered_gpa and filtered_gpa != 'N/A' %}{{ "%.1f"|format(filtered_gpa|float) }}{% else %}N/A{% endif %}
-            </div>
-            <div class="stat-label">GPA</div>
-            <div class="stat-sub">filtered selection</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    {#
-      BUG 6 FIX (grade stat card):
-      filtered_grade comes from calculate_gpa_and_grade() → returns A1/B2/B3…
-      BUT Assessment.get_grade_letter() returns A+/A/B+/B… — they are DIFFERENT.
-      The stat card grade (filtered_grade) is the GPA-style label from
-      calculate_gpa_and_grade(), so A1/B2/B3/C4/C5/C6/D7/E8/F9 IS correct here.
-      (The table rows are different — see below.)
-    #}
-    {% set g = filtered_grade %}
-    {% if g == 'A1' %}
-      {% set gcol='#059669' %}{% set gbg='rgba(5,150,105,.1)'  %}{% set gst='var(--edu-success)' %}
-    {% elif g == 'B2' %}
-      {% set gcol='#0369a1' %}{% set gbg='rgba(3,105,161,.1)'  %}{% set gst='#0369a1' %}
-    {% elif g == 'B3' %}
-      {% set gcol='#0369a1' %}{% set gbg='rgba(3,105,161,.1)'  %}{% set gst='#0369a1' %}
-    {% elif g in ['C4','C5','C6'] %}
-      {% set gcol='#d97706' %}{% set gbg='rgba(217,119,6,.1)'  %}{% set gst='var(--edu-warning)' %}
-    {% elif g in ['D7','E8'] %}
-      {% set gcol='#ea580c' %}{% set gbg='rgba(234,88,12,.1)'  %}{% set gst='#ea580c' %}
-    {% else %}
-      {% set gcol='#dc2626' %}{% set gbg='rgba(220,38,38,.1)'  %}{% set gst='var(--edu-danger)' %}
-    {% endif %}
-    <div class="col-xl-3 col-md-6 anim-5">
-      <div class="stat-edu card h-100">
-        <div class="stat-stripe" style="background:{{ gst }};"></div>
-        <div class="card-body d-flex align-items-center gap-3 py-3 px-3">
-          <div class="stat-icon-wrap" style="background:{{ gbg }};color:{{ gcol }};">
-            <i class="bi bi-award-fill"></i>
-          </div>
-          <div>
-            <div style="margin-bottom:2px;">
-              <span class="grade-pill" style="background:{{ gbg }};color:{{ gcol }};">{{ g or 'N/A' }}</span>
-            </div>
-            <div class="stat-label">Grade</div>
-            <div class="stat-sub">filtered selection</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-  </div>{# /stat row #}
 
   {# ══ 3. FILTERS ═════════════════════════════════════════════════════ #}
   {#
@@ -533,65 +552,124 @@
           </span>
         </div>
         <div class="card-body px-4 py-4">
-          {% for teacher_name, subj_data in teacher_results.items() %}
-          <div class="{% if not loop.last %}mb-4 pb-4{% endif %}"
-               style="{% if not loop.last %}border-bottom:1px solid rgba(0,0,0,.06);{% endif %}">
-            <div class="d-flex align-items-center gap-2 mb-3">
-              <div style="width:34px;height:34px;border-radius:50%;
-                          background:linear-gradient(135deg,#1a56a0,#2d74c4);
-                          display:flex;align-items:center;justify-content:center;
-                          color:#fff;font-size:.85rem;font-weight:700;flex-shrink:0;">
-                {{ teacher_name[0]|upper }}
-              </div>
-              <h6 class="text-primary mb-0 fw-bold">{{ teacher_name }}</h6>
+          <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3 mb-3">
+            <div class="scrollable-tabs">
+              <ul class="nav nav-pills flex-nowrap gap-2 mb-0" role="tablist">
+                {% for teacher_name, subj_data in teacher_results.items() %}
+                <li class="nav-item" role="presentation">
+                  <button class="nav-link py-1 px-2 small rounded-pill {% if loop.first %}active{% endif %}" id="teacher-tab-{{ loop.index }}" data-bs-toggle="pill" data-bs-target="#teacher-panel-{{ loop.index }}" type="button" role="tab" aria-controls="teacher-panel-{{ loop.index }}" aria-selected="{{ 'true' if loop.first else 'false' }}">
+                    <span class="d-inline-block text-truncate" style="max-width:120px;">{{ teacher_name }}</span>
+                    <span class="badge bg-white text-secondary ms-1 small">{{ subj_data|length }}</span>
+                  </button>
+                </li>
+                {% endfor %}
+              </ul>
             </div>
-            <div class="row g-3">
-              {% for subj_key, data in subj_data.items() %}
-              {% set fp = data.final_percent %}
-              {% set dg = data.grade %}
-              {#
-                data.grade is set from calculate_gpa_and_grade() in the route
-                → returns A1/B2/B3/C4/C5/C6/D7/E8/F9 style labels.
-              #}
-              {% if dg == 'A1' %}
-                {% set rc='#059669' %}{% set rbg='#d1fae5' %}{% set rbd='#059669' %}
-              {% elif dg in ['B2','B3'] %}
-                {% set rc='#1e40af' %}{% set rbg='#dbeafe' %}{% set rbd='#1e40af' %}
-              {% elif dg in ['C4','C5','C6'] %}
-                {% set rc='#92400e' %}{% set rbg='#fef3c7' %}{% set rbd='#d97706' %}
-              {% elif dg in ['D7','E8'] %}
-                {% set rc='#9a3412' %}{% set rbg='#ffedd5' %}{% set rbd='#ea580c' %}
-              {% else %}
-                {% set rc='#991b1b' %}{% set rbg='#fee2e2' %}{% set rbd='#dc2626' %}
-              {% endif %}
-              <div class="col-xl-2 col-lg-3 col-md-4 col-6">
-                <div class="subj-card p-3 text-center h-100">
-                  <p class="mb-3 fw-bold text-uppercase"
-                     style="font-size:.69rem;letter-spacing:.5px;color:#6b7280;line-height:1.3;">
-                    {{ subj_key.replace('_',' ')|title }}
-                  </p>
-                  <div class="score-ring" style="border-color:{{ rbd }};color:{{ rc }};background:{{ rbg }};">
-                    {{ "%.0f"|format(fp) }}%
-                  </div>
-                  <div class="mt-2">
-                    <span class="gb
-                      {% if dg == 'A1' %}gb-aplus
-                      {% elif dg in ['B2','B3'] %}gb-b
-                      {% elif dg in ['C4','C5','C6'] %}gb-c
-                      {% elif dg in ['D7','E8'] %}gb-d
-                      {% else %}gb-f{% endif %}">
-                      {{ dg }}
-                    </span>
-                  </div>
-                  <p class="text-muted mt-1 mb-0" style="font-size:.71rem;">
-                    GPA {{ data.gpa }} &middot; {{ data.assessments|length }} rec.
-                  </p>
+            <button class="btn btn-sm btn-outline-primary mt-2 mt-md-0" type="button" data-bs-toggle="pill" data-bs-target="#teacher-panel-all" aria-controls="teacher-panel-all" aria-selected="false">
+              Show all teachers
+            </button>
+          </div>
+
+          <div class="tab-content">
+            {% for teacher_name, subj_data in teacher_results.items() %}
+            <div class="tab-pane fade {% if loop.first %}show active{% endif %}" id="teacher-panel-{{ loop.index }}" role="tabpanel" aria-labelledby="teacher-tab-{{ loop.index }}">
+              <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3 mb-4">
+                <div>
+                  <h6 class="mb-1 text-primary">{{ teacher_name }}</h6>
+                  <p class="mb-0 text-muted">{{ subj_data|length }} subject{{ 's' if subj_data|length != 1 }} evaluated</p>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                  <span class="badge bg-primary">{{ subj_data|length }} Subjects</span>
+                  <span class="badge bg-secondary">All results shown</span>
                 </div>
               </div>
-              {% endfor %}
+              <div class="row g-3">
+                {% for subj_key, data in subj_data.items() %}
+                {% set fp = data.final_percent %}
+                {% set dg = data.grade %}
+                {% if dg == 'A1' %}
+                  {% set rc='#059669' %}{% set rbg='#d1fae5' %}{% set rbd='#059669' %}
+                {% elif dg in ['B2','B3'] %}
+                  {% set rc='#1e40af' %}{% set rbg='#dbeafe' %}{% set rbd='#1e40af' %}
+                {% elif dg in ['C4','C5','C6'] %}
+                  {% set rc='#92400e' %}{% set rbg='#fef3c7' %}{% set rbd='#d97706' %}
+                {% elif dg in ['D7','E8'] %}
+                  {% set rc='#9a3412' %}{% set rbg='#ffedd5' %}{% set rbd='#ea580c' %}
+                {% else %}
+                  {% set rc='#991b1b' %}{% set rbg='#fee2e2' %}{% set rbd='#dc2626' %}
+                {% endif %}
+                <div class="col-xl-2 col-lg-3 col-md-4 col-sm-6">
+                  <div class="subj-card p-3 text-center h-100">
+                    <p class="mb-3 fw-bold text-uppercase" style="font-size:.72rem;letter-spacing:.5px;color:#6b7280;line-height:1.3;">
+                      {{ subj_key.replace('_',' ')|title }}
+                    </p>
+                    <div class="score-ring" style="border-color:{{ rbd }};color:{{ rc }};background:{{ rbg }};">
+                      {{ "%.0f"|format(fp) }}%
+                    </div>
+                    <div class="mt-2">
+                      <span class="gb {% if dg == 'A1' %}gb-aplus{% elif dg in ['B2','B3'] %}gb-b{% elif dg in ['C4','C5','C6'] %}gb-c{% elif dg in ['D7','E8'] %}gb-d{% else %}gb-f{% endif %}">
+                        {{ dg }}
+                      </span>
+                    </div>
+                    <p class="text-muted mt-1 mb-0" style="font-size:.72rem;">
+                      GPA {{ data.gpa }} · {{ data.assessments|length }} rec.
+                    </p>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endfor %}
+            <div class="tab-pane fade" id="teacher-panel-all" role="tabpanel" aria-labelledby="teacher-tab-all">
+              <div class="row g-3">
+                {% for teacher_name, subj_data in teacher_results.items() %}
+                <div class="col-lg-6">
+                  <div class="section-card card p-3 h-100">
+                    <div class="d-flex align-items-center justify-content-between mb-3 gap-3">
+                      <div>
+                        <h6 class="mb-1 text-primary">{{ teacher_name }}</h6>
+                        <p class="mb-0 text-muted">{{ subj_data|length }} subject{{ 's' if subj_data|length != 1 }} evaluated</p>
+                      </div>
+                      <span class="badge bg-secondary">{{ subj_data|length }}</span>
+                    </div>
+                    <div class="row g-3">
+                      {% for subj_key, data in subj_data.items() %}
+                      {% set fp = data.final_percent %}
+                      {% set dg = data.grade %}
+                      {% if dg == 'A1' %}
+                        {% set rc='#059669' %}{% set rbg='#d1fae5' %}{% set rbd='#059669' %}
+                      {% elif dg in ['B2','B3'] %}
+                        {% set rc='#1e40af' %}{% set rbg='#dbeafe' %}{% set rbd='#1e40af' %}
+                      {% elif dg in ['C4','C5','C6'] %}
+                        {% set rc='#92400e' %}{% set rbg='#fef3c7' %}{% set rbd='#d97706' %}
+                      {% elif dg in ['D7','E8'] %}
+                        {% set rc='#9a3412' %}{% set rbg='#ffedd5' %}{% set rbd='#ea580c' %}
+                      {% else %}
+                        {% set rc='#991b1b' %}{% set rbg='#fee2e2' %}{% set rbd='#dc2626' %}
+                      {% endif %}
+                      <div class="col-6 col-sm-4 col-xl-6">
+                        <div class="subj-card p-3 text-center h-100">
+                          <p class="mb-2 fw-bold text-uppercase" style="font-size:.68rem;letter-spacing:.5px;color:#6b7280;line-height:1.3;">
+                            {{ subj_key.replace('_',' ')|title }}
+                          </p>
+                          <div class="score-ring" style="border-color:{{ rbd }};color:{{ rc }};background:{{ rbg }};">
+                            {{ "%.0f"|format(fp) }}%
+                          </div>
+                          <div class="mt-2">
+                            <span class="gb {% if dg == 'A1' %}gb-aplus{% elif dg in ['B2','B3'] %}gb-b{% elif dg in ['C4','C5','C6'] %}gb-c{% elif dg in ['D7','E8'] %}gb-d{% else %}gb-f{% endif %}">
+                              {{ dg }}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      {% endfor %}
+                    </div>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
             </div>
           </div>
-          {% endfor %}
         </div>
       </div>
     </div>

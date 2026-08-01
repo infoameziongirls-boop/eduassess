@@ -11,7 +11,7 @@ import os
 import unittest
 import random
 import string
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch, PropertyMock
 
 # ─── Bootstrap a tiny in-memory Flask app ──────────────────────────────────
@@ -107,7 +107,7 @@ def _generate_ticket_number():
         num = f"TKT-{suffix}"
         if not SupportTicket.query.filter_by(ticket_number=num).first():
             return num
-    return f"TKT-{int(datetime.utcnow().timestamp())}"
+    return f"TKT-{int(datetime.now(timezone.utc).timestamp())}"
 
 
 # ─── Test cases ────────────────────────────────────────────────────────────
@@ -263,7 +263,7 @@ class TestSupportTicketModel(unittest.TestCase):
         db.session.add(reply)
         db.session.commit()
 
-        fetched = SupportTicket.query.get(ticket.id)
+        fetched = db.session.get(SupportTicket, ticket.id)
         self.assertEqual(len(fetched.replies), 1)
         self.assertEqual(fetched.replies[0].message, "We are looking into this.")
         print("  ✓ Reply added and linked correctly")
@@ -286,7 +286,7 @@ class TestSupportTicketModel(unittest.TestCase):
         db.session.add(reply)
         db.session.commit()
 
-        fetched = SupportTicket.query.get(ticket.id)
+        fetched = db.session.get(SupportTicket, ticket.id)
         internal = [r for r in fetched.replies if r.is_internal]
         self.assertEqual(len(internal), 1)
         print("  ✓ Internal note flag preserved")
@@ -326,10 +326,10 @@ class TestSupportTicketModel(unittest.TestCase):
         db.session.commit()
 
         ticket.status     = "resolved"
-        ticket.resolved_at = datetime.utcnow()
+        ticket.resolved_at = datetime.now(timezone.utc)
         db.session.commit()
 
-        fetched = SupportTicket.query.get(ticket.id)
+        fetched = db.session.get(SupportTicket, ticket.id)
         self.assertEqual(fetched.status, "resolved")
         self.assertIsNotNone(fetched.resolved_at)
         print("  ✓ Status transition open → resolved works")
@@ -364,7 +364,7 @@ class TestSupportTicketModel(unittest.TestCase):
         ticket.assigned_to = self._admin.id
         db.session.commit()
 
-        fetched = SupportTicket.query.get(ticket.id)
+        fetched = db.session.get(SupportTicket, ticket.id)
         self.assertEqual(fetched.assigned_to, self._admin.id)
         self.assertEqual(fetched.assignee.username, "admin_test")
         print("  ✓ Ticket assignment to admin works")
@@ -469,7 +469,7 @@ class TestSupportTicketModel(unittest.TestCase):
         db.session.add(ticket)
         db.session.commit()
 
-        fetched = SupportTicket.query.get(ticket.id)
+        fetched = db.session.get(SupportTicket, ticket.id)
         self.assertIsNotNone(fetched.submitter)
         self.assertEqual(fetched.submitter.username, "teacher_test")
         print("  ✓ submitter relationship resolves correctly")
@@ -486,7 +486,7 @@ class TestSupportTicketModel(unittest.TestCase):
         db.session.add(ticket)
         db.session.commit()
 
-        fetched = SupportTicket.query.get(ticket.id)
+        fetched = db.session.get(SupportTicket, ticket.id)
         self.assertIn("Mozilla", fetched.browser_info)
         self.assertIn("assessments", fetched.page_url)
         print("  ✓ Browser info and page URL stored correctly")

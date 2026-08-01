@@ -251,6 +251,38 @@ def test_download_template_student_route_serves_template(tmp_path):
         assert 'attachment' in response.headers.get('Content-Disposition', '')
 
 
+def test_get_assessment_template_path_prefers_runtime_template_over_repo(tmp_path):
+    repo_template_dir = tmp_path / 'repo_templates_excel'
+    runtime_template_dir = tmp_path / 'runtime_templates_excel'
+    upload_dir = tmp_path / 'uploads'
+    repo_template_dir.mkdir()
+    runtime_template_dir.mkdir()
+    upload_dir.mkdir()
+
+    repo_template_path = repo_template_dir / 'student_template.xlsx'
+    runtime_template_path = runtime_template_dir / 'student_template.xlsx'
+
+    _create_minimal_school_template(str(repo_template_path))
+    _create_minimal_school_template(str(runtime_template_path))
+
+    # Inject a custom runtime workbook value to prove the runtime copy is kept.
+    runtime_wb = load_workbook(str(runtime_template_path), data_only=False)
+    runtime_ws = runtime_wb.active
+    runtime_ws['B2'] = 'Runtime Custom School'
+    runtime_wb.save(str(runtime_template_path))
+
+    app.config['REPO_TEMPLATE_FOLDER'] = str(repo_template_dir)
+    app.config['TEMPLATE_FOLDER'] = str(runtime_template_dir)
+    app.config['UPLOAD_FOLDER'] = str(upload_dir)
+    app.config['TESTING'] = True
+
+    copied_path = _get_assessment_template_path('student_template.xlsx')
+    assert copied_path == str(runtime_template_path)
+
+    runtime_wb_after = load_workbook(str(runtime_template_path), data_only=False)
+    assert runtime_wb_after['B2'].value == 'Runtime Custom School'
+
+
 def test_get_assessment_template_path_copies_repo_template_and_exports(tmp_path):
     repo_template_dir = tmp_path / 'repo_templates_excel'
     runtime_template_dir = tmp_path / 'runtime_templates_excel'

@@ -6,7 +6,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from models import Student, Assessment, User, Quiz, Question, QuizAttempt, db
-from app import app
+from app import app, canonical_subject_key, build_student_aggregate_metrics
 import tempfile
 
 
@@ -164,6 +164,149 @@ class TestGradeCalculation:
         # Final: 48
         assert final_grade == 48.0
 
+    def test_calculate_final_grade_averages_subject_scores(self, sample_student):
+        """Overall final grade should be the average of the subject-level final grades."""
+        self.create_assessment(sample_student, 'end_term', 66, subject='Music')
+        self.create_assessment(sample_student, 'end_term', 90, subject='Mathematics')
+        self.create_assessment(sample_student, 'end_term', 68, subject='ICT')
+
+        final_grade = sample_student.calculate_final_grade()
+        assert final_grade == 37.33
+
+    def test_build_student_aggregate_metrics_uses_subject_average(self, sample_student):
+        """Aggregate metrics should be based on the average of the subject-level final grades."""
+        self.create_assessment(sample_student, 'ica1', 80, subject='Mathematics')
+        self.create_assessment(sample_student, 'end_term', 65, subject='Mathematics')
+        self.create_assessment(sample_student, 'ica1', 40, subject='English Language')
+        self.create_assessment(sample_student, 'end_term', 80, subject='English Language')
+
+        metrics = build_student_aggregate_metrics(sample_student)
+        subject_results = sample_student.calculate_subject_final_grades()
+        expected_final_percent = round(
+            sum(data['final_percent'] for data in subject_results.values()) / len(subject_results),
+            2,
+        )
+
+        assert metrics['final_percent'] == expected_final_percent
+        assert metrics['grade_point'] is not None
+
+    def test_total_grade_points_uses_core_and_best_electives(self, sample_student):
+        """Aggregate grade points should sum the best 4 core subjects plus the best 4 electives."""
+        def build_subject(subject, final_score):
+            if final_score >= 72:
+                class_scores = [45, 45, 45, 45, 45, 45, 45, 45]
+                self.create_assessment(sample_student, 'ica1', 45, subject=subject)
+                self.create_assessment(sample_student, 'ica2', 45, subject=subject)
+                self.create_assessment(sample_student, 'icp1', 45, subject=subject)
+                self.create_assessment(sample_student, 'icp2', 45, subject=subject)
+                self.create_assessment(sample_student, 'gp1', 45, subject=subject)
+                self.create_assessment(sample_student, 'gp2', 45, subject=subject)
+                self.create_assessment(sample_student, 'practical', 45, subject=subject)
+                self.create_assessment(sample_student, 'mid_term', 45, subject=subject)
+            elif final_score >= 68:
+                self.create_assessment(sample_student, 'ica1', 40, subject=subject)
+                self.create_assessment(sample_student, 'ica2', 40, subject=subject)
+                self.create_assessment(sample_student, 'icp1', 40, subject=subject)
+                self.create_assessment(sample_student, 'icp2', 40, subject=subject)
+                self.create_assessment(sample_student, 'gp1', 40, subject=subject)
+                self.create_assessment(sample_student, 'gp2', 40, subject=subject)
+                self.create_assessment(sample_student, 'practical', 50, subject=subject)
+                self.create_assessment(sample_student, 'mid_term', 50, subject=subject)
+            else:
+                self.create_assessment(sample_student, 'ica1', 30, subject=subject)
+                self.create_assessment(sample_student, 'ica2', 30, subject=subject)
+                self.create_assessment(sample_student, 'icp1', 30, subject=subject)
+                self.create_assessment(sample_student, 'icp2', 30, subject=subject)
+                self.create_assessment(sample_student, 'gp1', 30, subject=subject)
+                self.create_assessment(sample_student, 'gp2', 30, subject=subject)
+                self.create_assessment(sample_student, 'practical', 30, subject=subject)
+                self.create_assessment(sample_student, 'mid_term', 30, subject=subject)
+            self.create_assessment(sample_student, 'end_term', final_score, subject=subject)
+
+        build_subject('English Language', 72)
+        build_subject('Mathematics', 68)
+        build_subject('Integrated Science', 60)
+        build_subject('Social Studies', 72)
+        build_subject('Elective 1', 80)
+        build_subject('Elective 2', 72)
+        build_subject('Elective 3', 68)
+        build_subject('Elective 4', 68)
+
+        from app import calculate_total_grade_points, canonical_subject_key
+        total_points = calculate_total_grade_points(sample_student)
+        subject_results = sample_student.calculate_subject_final_grades()
+        subject_grade_points = {
+            canonical_subject_key(subject_result['subject']): subject_result['grade_point']
+            for subject_result in subject_results.values()
+            if subject_result.get('grade_point') is not None
+        }
+        core_keys = ['english_language', 'mathematics', 'social_studies', 'general_science']
+        core_points = sorted(
+            [subject_grade_points[k] for k in core_keys if k in subject_grade_points],
+            reverse=False,
+        )[:4]
+        elective_points = sorted(
+            [point for key, point in subject_grade_points.items() if key not in core_keys],
+            reverse=False,
+        )[:4]
+        expected_total = sum(core_points) + sum(elective_points)
+        assert total_points == expected_total
+
+    def test_total_grade_points_uses_best_common_core_for_science_students(self, sample_student):
+        """Science students should replace the missing integrated science core with the best ICT/PEH core subject."""
+        def build_subject(subject, final_score):
+            self.create_assessment(sample_student, 'ica1', 45, subject=subject)
+            self.create_assessment(sample_student, 'ica2', 45, subject=subject)
+            self.create_assessment(sample_student, 'icp1', 45, subject=subject)
+            self.create_assessment(sample_student, 'icp2', 45, subject=subject)
+            self.create_assessment(sample_student, 'gp1', 45, subject=subject)
+            self.create_assessment(sample_student, 'gp2', 45, subject=subject)
+            self.create_assessment(sample_student, 'practical', 45, subject=subject)
+            self.create_assessment(sample_student, 'mid_term', 45, subject=subject)
+            self.create_assessment(sample_student, 'end_term', final_score, subject=subject)
+
+        build_subject('English Language', 72)
+        build_subject('Mathematics', 68)
+        build_subject('Social Studies', 72)
+        build_subject('ICT', 60)
+        build_subject('Physics', 80)
+        build_subject('Biology', 72)
+        build_subject('Chemistry', 68)
+        build_subject('Additional Mathematics', 68)
+
+        from app import calculate_total_grade_points, canonical_subject_key
+        total_points = calculate_total_grade_points(sample_student)
+        subject_results = sample_student.calculate_subject_final_grades()
+        subject_grade_points = {
+            canonical_subject_key(subject_result['subject']): subject_result['grade_point']
+            for subject_result in subject_results.values()
+            if subject_result.get('grade_point') is not None
+        }
+        core_candidates = []
+        for key in ['english_language', 'mathematics', 'social_studies']:
+            if key in subject_grade_points:
+                core_candidates.append((key, subject_grade_points[key]))
+        if 'general_science' in subject_grade_points:
+            core_candidates.append(('general_science', subject_grade_points['general_science']))
+        else:
+            replacement_candidates = [
+                (key, subject_grade_points[key])
+                for key in ('ict', 'physical_education_health')
+                if key in subject_grade_points
+            ]
+            if replacement_candidates:
+                replacement_candidates.sort(key=lambda item: item[1], reverse=True)
+                core_candidates.append(replacement_candidates[0])
+        core_candidates.sort(key=lambda item: item[1], reverse=True)
+        selected_core = core_candidates[:4]
+        selected_core_points = [point for _, point in selected_core]
+        elective_points = sorted(
+            [point for key, point in subject_grade_points.items() if key not in {k for k, _ in selected_core}],
+            reverse=True,
+        )[:4]
+        expected_total = sum(selected_core_points) + sum(elective_points)
+        assert total_points == expected_total
+
     def test_calculate_final_grade_teacher_filter(self, sample_student):
         """Test final grade calculation with teacher filtering"""
         # Create assessments from different teachers
@@ -188,6 +331,13 @@ class TestGradeCalculation:
         assert final_grade == 20.0
         assert isinstance(final_grade, float)
 
+    def test_canonical_subject_key_is_case_insensitive(self):
+        assert canonical_subject_key('Mathematics') == 'mathematics'
+        assert canonical_subject_key('mathEMatIcs') == 'mathematics'
+        assert canonical_subject_key('English Language') == 'english_language'
+        assert canonical_subject_key('english_language') == 'english_language'
+        assert canonical_subject_key('Integrated Science') == 'general_science'
+
     def test_get_gpa_and_grade_a1(self, sample_student):
         """Test GPA and grade mapping for A1 (80-100%)"""
         # Create enough class and exam scores to reach A1
@@ -201,6 +351,27 @@ class TestGradeCalculation:
         result = sample_student.get_gpa_and_grade()
         assert result["gpa"] == 4.0
         assert result["grade"] == "A1"
+
+    def test_get_overall_summary_uses_template_formula(self, sample_student):
+        """Overall summary should use the same template score formula as filtered results."""
+        from template_updater import calculate_scores_from_template, scores_from_assessments
+
+        categories_scores = {
+            'ica1': 40, 'ica2': 40, 'icp1': 40, 'icp2': 40,
+            'gp1': 40, 'gp2': 40, 'practical': 80, 'mid_term': 80,
+            'end_term': 80
+        }
+        for category, score in categories_scores.items():
+            self.create_assessment(sample_student, category, score)
+
+        raw_scores = scores_from_assessments(sample_student.assessments)
+        expected = calculate_scores_from_template(raw_scores)
+        result = sample_student.get_overall_summary()
+
+        assert result['final_score'] == expected['final_score']
+        assert result['percentage'] == expected['percentage']
+        assert result['gpa'] == expected['gpa']
+        assert result['grade'] == expected['grade']
 
     def test_get_gpa_and_grade_b2(self, sample_student):
         """Test GPA and grade mapping for B2 (70-79%)"""

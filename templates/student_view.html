@@ -58,13 +58,15 @@
     </div>
 
     <!-- KPI Row -->
+    {% set gp_label = 'Aggregate' if show_aggregate else 'Grade Point' %}
+    {% set gp_value = aggregate if show_aggregate else filtered_grade_point %}
     <div style="display:grid;grid-template-columns:repeat(4,1fr);border-top:none;border-bottom:1px solid var(--border);">
         {% set metrics = [
             ('Total Assessments', assessments|length, 'bi-clipboard-check-fill', 'brand'),
             ('Final Grade', ("%.1f"|format(final_percent) + '%') if final_percent else '0.0%', 'bi-percent', 'teal'),
-            ('GPA', ("%.1f"|format(gpa)) if gpa else '0.0', 'bi-graph-up', 'amber'),
+            ('GPA', ('%.1f'|format(gpa|float)) if gpa is not none and gpa != 'N/A' else 'N/A', 'bi-graph-up', 'amber'),
             ('Letter Grade', letter_grade or 'N/A', 'bi-star-fill', 'rose'),
-            ('Grade Point', grade_point if grade_point is not none else 'N/A', 'bi-hash', 'violet'),
+            (gp_label, gp_value if gp_value is not none else 'N/A', 'bi-hash', 'violet'),
             ('Class Division', grading_class or 'N/A', 'bi-award', 'green'),
         ] %}
         {% for label, val, icon, color in metrics %}
@@ -83,6 +85,54 @@
         <span style="font-size:.78rem;font-weight:600;color:var(--brand);"><i class="bi bi-info-circle-fill me-2"></i>{{ comment }}</span>
     </div>
     {% endif %}
+</div>
+
+<div class="card animate-in delay-2" style="margin-bottom:20px;">
+    <div class="card-header">
+        <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:32px;height:32px;background:var(--teal-dim);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--teal);">
+                <i class="bi bi-mortarboard-fill"></i>
+            </div>
+            <span class="card-title">
+                {% if show_aggregate %}
+                    Aggregate Grade Point Card
+                {% else %}
+                    Grade Point — {{ (subject or '')|replace('_', ' ')|title }}
+                {% endif %}
+            </span>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <div style="border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center;background:var(--surface);">
+                    <div style="font-size:.72rem;font-weight:700;color:var(--ink-4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">{{ gp_label }}</div>
+                    <div style="font-family:var(--font-display);font-weight:800;font-size:1.2rem;color:var(--ink);">{{ gp_value if gp_value is not none else 'N/A' }}</div>
+                    {% if not show_aggregate %}
+                    <div style="font-size:.66rem;color:var(--ink-4);margin-top:4px;">this subject only</div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div style="border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center;background:var(--surface);">
+                    <div style="font-size:.72rem;font-weight:700;color:var(--ink-4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Overall GPA</div>
+                    <div style="font-family:var(--font-display);font-weight:800;font-size:1.2rem;color:var(--ink);">{{ '%.1f'|format(gpa|float) if gpa is not none and gpa != 'N/A' else 'N/A' }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div style="border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center;background:var(--surface);">
+                    <div style="font-size:.72rem;font-weight:700;color:var(--ink-4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Letter Grade</div>
+                    <div style="font-family:var(--font-display);font-weight:800;font-size:1.2rem;color:var(--ink);">{{ letter_grade or 'N/A' }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div style="border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center;background:var(--surface);">
+                    <div style="font-size:.72rem;font-weight:700;color:var(--ink-4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Class Division</div>
+                    <div style="font-family:var(--font-display);font-weight:800;font-size:1.2rem;color:var(--ink);">{{ grading_class or 'N/A' }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Subject Filter -->

@@ -5,7 +5,7 @@ import os
 import tempfile
 import shutil
 from openpyxl import load_workbook, Workbook
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Font, PatternFill, Protection
 from datetime import datetime
 
 
@@ -200,6 +200,156 @@ class ExcelBulkImporter:
             wb.close()
 
 
+class ClassScoreSheetImporter:
+    """
+    Imports a 'wide format' class scoresheet: ONE ROW PER STUDENT with all
+    assessment categories (ica1, ica2, icp1, icp2, gp1, gp2, practical,
+    mid_term, end_term) as columns, instead of one row per category like
+    ExcelBulkImporter expects. This is what lets a teacher fill in scores
+    for an entire class, every category, in a single spreadsheet.
+    """
+
+    CATEGORY_HEADER_ALIASES = {
+        'ica1': ('ica1', 'ica 1', 'individual class assessment 1'),
+        'ica2': ('ica2', 'ica 2', 'individual class assessment 2'),
+        'icp1': ('icp1', 'icp 1', 'individual class project 1'),
+        'icp2': ('icp2', 'icp 2', 'individual class project 2'),
+        'gp1': ('gp1', 'gp 1', 'group project/research 1', 'group project 1'),
+        'gp2': ('gp2', 'gp 2', 'group project/research 2', 'group project 2'),
+        'practical': ('practical', 'practical portfolio'),
+        'mid_term': ('mid term', 'mid-term', 'mid term exam', 'mid-term exam'),
+        'end_term': ('end term', 'end of term', 'end term exam', 'end of term exam'),
+    }
+
+    # Order used when a category can't be matched by header text (fallback
+    # positional layout produced by create_class_scoresheet_template()).
+    CATEGORY_ORDER = ['ica1', 'ica2', 'icp1', 'icp2', 'gp1', 'gp2',
+                      'practical', 'mid_term', 'end_term']
+
+    def __init__(self, file_path):
+        self.file_path = file_path
+
+    def import_scoresheet(self, start_row=2):
+        """
+        Returns a list of dicts:
+            {
+              'system_id': int or None,        # authoritative match, from the
+                                                # hidden/protected internal ID
+                                                # column — teachers cannot edit
+                                                # or forge this in Excel
+              'student_number': str or None,   # display-only, NOT used to
+                                                # resolve identity if system_id
+                                                # is present
+              'reference_number': str or None, # same — display-only
+              'name': str or None,
+              'scores': {category: float, ...}   # only categories with a value
+            }
+        """
+        wb = load_workbook(self.file_path, data_only=True)
+        try:
+            ws = wb.active
+
+            def normalize(value):
+                if value is None:
+                    return None
+                if isinstance(value, float) and value.is_integer():
+                    value = int(value)
+                return str(value).strip()
+
+            def normalize_header(value):
+                if value is None:
+                    return ''
+                return str(value).strip().lower().replace('.', '').replace('_', ' ')
+
+            header_row = None
+            header_map = {}
+            category_cols = {}
+            for idx, row in enumerate(ws.iter_rows(min_row=1,
+                                                 max_row=min(15, ws.max_row),
+                                                 values_only=True), start=1):
+                if not any(row):
+                    continue
+                normalized = [normalize_header(cell) for cell in row]
+                if any(label in normalized for label in (
+                        'student number', 'reference number', 'ref id', 'ref no')):
+                    header_row = idx
+                    for col_idx, label in enumerate(normalized):
+                        if label in ('student number', 'student no'):
+                            header_map['student_number'] = col_idx
+                        elif label in ('reference number', 'reference no', 'ref id', 'ref no'):
+                            header_map['reference_number'] = col_idx
+                        elif label in ('name of students', 'name', 'student name', 'full name'):
+                            header_map['name'] = col_idx
+                        elif label in ('system id', 'record id', 'db id', 'student db id',
+                                       'internal id'):
+                            header_map['system_id'] = col_idx
+                        else:
+                            for cat, aliases in self.CATEGORY_HEADER_ALIASES.items():
+                                if label in aliases:
+                                    category_cols[cat] = col_idx
+                                    break
+                    break
+
+            if header_row is None:
+                raise ValueError(
+                    'Could not find a header row. The scoresheet must include '
+                    'a "Student Number" or "Reference Number" column.'
+                )
+
+            if not category_cols:
+                raise ValueError(
+                    'No recognizable category columns found (ICA1, ICA2, ICP1, '
+                    'ICP2, GP1, GP2, Practical, Mid Term, End Term).'
+                )
+
+            students = []
+            for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+                if not any(row):
+                    continue
+
+                def cell(col_idx):
+                    return row[col_idx] if col_idx is not None and len(row) > col_idx else None
+
+                system_id_raw = cell(header_map.get('system_id'))
+                system_id = None
+                if system_id_raw is not None and str(system_id_raw).strip() != '':
+                    try:
+                        system_id = int(float(system_id_raw))
+                    except (TypeError, ValueError):
+                        system_id = None
+
+                student_number = normalize(cell(header_map.get('student_number')))
+                reference_number = normalize(cell(header_map.get('reference_number')))
+                name = normalize(cell(header_map.get('name')))
+
+                if not system_id and not student_number and not reference_number:
+                    continue
+
+                scores = {}
+                for cat, col_idx in category_cols.items():
+                    raw_val = cell(col_idx)
+                    if raw_val is None or (isinstance(raw_val, str) and not raw_val.strip()):
+                        continue
+                    try:
+                        scores[cat] = float(raw_val)
+                    except (TypeError, ValueError):
+                        continue
+
+                if not scores:
+                    continue
+
+                students.append({
+                    'system_id': system_id,
+                    'student_number': student_number,
+                    'reference_number': reference_number,
+                    'name': name,
+                    'scores': scores,
+                })
+            return students
+        finally:
+            wb.close()
+
+
 class StudentBulkImporter:
     def __init__(self, file_path):
         self.file_path = file_path
@@ -364,6 +514,139 @@ def create_default_template(output_path):
     return output_path
 
 
+def create_class_scoresheet_template(output_path, students=None, subject_label=None,
+                                     class_label=None, category_labels=None):
+    """
+    Builds the wide-format 'class scoresheet' workbook: one row per student,
+    one column per assessment category. If `students` is provided (a list of
+    Student model objects or dicts with id/student_number/reference_number/
+    name/study_area), the roster is pre-filled so the teacher only has to
+    type in scores — nothing else.
+
+    Identity protection: when a roster is supplied, each student's database
+    ID is written into a hidden column, and the sheet is protected so that
+    only the score columns can be edited. Import always resolves identity
+    from that hidden ID column, never from the (locked, but still
+    tamper-resistant-in-depth) Student Number / Name / Reference Number
+    cells — so teachers cannot add students, rename them, or repoint a row
+    at a different student by editing those cells.
+
+    category_labels: optional dict of {category_key: column_header}. Falls
+    back to the standard 9 categories if not supplied.
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Class Scoresheet"
+
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    locked = Protection(locked=True)
+    unlocked = Protection(locked=False)
+    ws.protection.sheet = True
+    ws.protection.password = 'eduassess'
+
+    if subject_label or class_label:
+        ws['A1'] = "SUBJECT:"
+        ws['B1'] = subject_label or ""
+        ws['A2'] = "CLASS:"
+        ws['B2'] = class_label or ""
+
+    default_categories = [
+        ('ica1', 'ICA1'), ('ica2', 'ICA2'),
+        ('icp1', 'ICP1'), ('icp2', 'ICP2'),
+        ('gp1', 'GP1'), ('gp2', 'GP2'),
+        ('practical', 'Practical'), ('mid_term', 'Mid Term'), ('end_term', 'End Term'),
+    ]
+    categories = [(key, (category_labels or {}).get(key, label))
+                  for key, label in default_categories]
+
+    # Fixed column layout. "System ID" is the hidden identity column the
+    # importer trusts first; it is deliberately placed beyond the visible
+    # roster columns and then hidden so teachers cannot reliably alter it.
+    ID_COL = 4 + len(categories) + 1  # after Student Number/Name/Ref/Study Area + categories
+
+    header_row = 4
+    visible_headers = ['Student Number', 'Name of Student', 'Reference Number', 'Study Area'] + \
+                      [label for _, label in categories]
+    for idx, header in enumerate(visible_headers, start=1):
+        cell = ws.cell(row=header_row, column=idx, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+
+    id_header_cell = ws.cell(row=header_row, column=ID_COL, value='System ID')
+    id_header_cell.font = header_font
+    id_header_cell.fill = header_fill
+    ws.column_dimensions[get_column_letter_local(ID_COL)].hidden = True
+
+    def _get(obj, attr):
+        if obj is None:
+            return ''
+        if isinstance(obj, dict):
+            return obj.get(attr, '') or ''
+        return getattr(obj, attr, '') or ''
+
+    def _display_name(obj):
+        if isinstance(obj, dict):
+            if obj.get('name'):
+                return obj['name']
+            parts = [obj.get('first_name', ''), obj.get('middle_name', ''), obj.get('last_name', '')]
+            return ' '.join(p for p in parts if p).strip()
+        if hasattr(obj, 'full_name'):
+            return obj.full_name()
+        return ''
+
+    NAME_NUMBER_COLS = (1, 2, 3, 4)  # Student Number, Name, Reference Number, Study Area
+    CATEGORY_COLS = range(5, 5 + len(categories))
+
+    row_num = header_row + 1
+    if students:
+        for student in students:
+            student_id = _get(student, 'id') or _get(student, 'student_id')
+            ws.cell(row=row_num, column=1, value=_get(student, 'student_number'))
+            ws.cell(row=row_num, column=2, value=_display_name(student))
+            ws.cell(row=row_num, column=3, value=_get(student, 'reference_number'))
+            ws.cell(row=row_num, column=4, value=_get(student, 'study_area'))
+            ws.cell(row=row_num, column=ID_COL, value=student_id)
+
+            for col in NAME_NUMBER_COLS:
+                ws.cell(row=row_num, column=col).protection = locked
+            ws.cell(row=row_num, column=ID_COL).protection = locked
+            for col in CATEGORY_COLS:
+                ws.cell(row=row_num, column=col).protection = unlocked
+            row_num += 1
+    else:
+        # Blank template with a couple of sample rows for reference.
+        sample_rows = [
+            ["STU001", "John Doe", "REF001", "Mathematics"],
+            ["STU002", "Jane Smith", "REF002", "Mathematics"],
+        ]
+        for sample in sample_rows:
+            for col_idx, value in enumerate(sample, start=1):
+                ws.cell(row=row_num, column=col_idx, value=value)
+            ws.cell(row=row_num, column=ID_COL, value='')
+            for col in NAME_NUMBER_COLS:
+                ws.cell(row=row_num, column=col).protection = locked
+            ws.cell(row=row_num, column=ID_COL).protection = locked
+            for col in CATEGORY_COLS:
+                ws.cell(row=row_num, column=col).protection = unlocked
+            row_num += 1
+
+    widths = [15, 25, 15, 20] + [10] * len(categories)
+    for idx, width in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter_local(idx)].width = width
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True) if os.path.dirname(output_path) else None
+    wb.save(output_path)
+    return output_path
+
+
+def get_column_letter_local(idx):
+    """Small local helper so this module doesn't need an extra top-level import
+    if openpyxl.utils isn't already imported elsewhere in this file."""
+    from openpyxl.utils import get_column_letter
+    return get_column_letter(idx)
+
+
 def create_student_import_template(output_path):
     wb = Workbook()
     ws = wb.active
@@ -372,19 +655,23 @@ def create_student_import_template(output_path):
     header_font = Font(bold=True, color="FFFFFF", size=12)
     headers = ["Student Number", "First Name", "Last Name", "Middle Name", "Class", "Study Area"]
     for idx, header in enumerate(headers):
-        cell = ws.cell(row=1, column=idx+1, value=header)
+        cell = ws.cell(row=1, column=idx + 1, value=header)
         cell.font = header_font
         cell.fill = header_fill
+
     sample_data = [
         ["STU001", "John", "Doe", "Michael", "Form 1", "Home Economics A"],
         ["STU002", "Jane", "Smith", "", "Form 2", "General Arts 4B"],
-        ["STU003", "Bob", "Johnson", "William", "Form 3", "Business A"]
+        ["STU003", "Bob", "Johnson", "William", "Form 3", "Business A"],
     ]
     for row_idx, row_data in enumerate(sample_data, start=2):
         for col_idx, value in enumerate(row_data):
-            ws.cell(row=row_idx, column=col_idx+1, value=value)
+            ws.cell(row=row_idx, column=col_idx + 1, value=value)
+
     for idx, width in enumerate([15, 15, 15, 15, 10, 20]):
-        ws.column_dimensions[chr(65+idx)].width = width
+        ws.column_dimensions[chr(65 + idx)].width = width
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True) if os.path.dirname(output_path) else None
     wb.save(output_path)
     return output_path
 

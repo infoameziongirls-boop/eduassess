@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Bulk Class Scoresheet Import{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h2>Bulk Class Scoresheet Import</h2>
+  <p class="text-muted">
+    Upload scores for an entire class in one file — one row per student,
+    with all assessment categories (ICA1, ICA2, ICP1, ICP2, GP1, GP2,
+    Practical, Mid Term, End Term) as columns. Leave a cell blank to skip
+    that category for that student.
+  </p>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <h5 class="card-title">Step 1 — Get a pre-filled scoresheet</h5>
+      <p class="card-text">
+        Pick a class and subject, then download a spreadsheet already
+        populated with your students' numbers, names and reference numbers.
+        Just fill in the score columns and save.
+      </p>
+      <form method="get" action="{{ url_for('download_class_scoresheet') }}" class="row g-2 align-items-end">
+        <div class="col-md-4">
+          <label class="form-label">Class</label>
+          <select name="class_name" class="form-select" required>
+            <option value="">-- Select Class --</option>
+            {% for value, label in form.class_name.choices if value %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Subject</label>
+          <select name="subject" class="form-select" required>
+            <option value="">-- Select Subject --</option>
+            {% for value, label in form.subject.choices if value %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <button type="submit" class="btn btn-outline-primary w-100">
+            Download Class Scoresheet
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <h5 class="card-title">Step 2 — Upload the completed scoresheet</h5>
+      <form method="post" enctype="multipart/form-data" novalidate>
+        {{ form.hidden_tag() }}
+
+        <div class="row g-3">
+          <div class="col-md-4">
+            {{ form.subject.label(class="form-label") }}
+            {{ form.subject(class="form-select") }}
+            {% for error in form.subject.errors %}
+              <div class="text-danger small">{{ error }}</div>
+            {% endfor %}
+          </div>
+          <div class="col-md-4">
+            {{ form.class_name.label(class="form-label") }}
+            {{ form.class_name(class="form-select") }}
+            {% for error in form.class_name.errors %}
+              <div class="text-danger small">{{ error }}</div>
+            {% endfor %}
+          </div>
+          <div class="col-md-4">
+            {{ form.term.label(class="form-label") }}
+            {{ form.term(class="form-select") }}
+            {% for error in form.term.errors %}
+              <div class="text-danger small">{{ error }}</div>
+            {% endfor %}
+          </div>
+          <div class="col-md-4">
+            {{ form.academic_year.label(class="form-label") }}
+            {{ form.academic_year(class="form-control", placeholder="e.g. 2024-2025") }}
+          </div>
+          <div class="col-md-4">
+            {{ form.session.label(class="form-label") }}
+            {{ form.session(class="form-control", placeholder="e.g. 2024/2025") }}
+          </div>
+          <div class="col-md-4 d-flex align-items-center">
+            <div class="form-check mt-4">
+              {{ form.update_existing(class="form-check-input") }}
+              {{ form.update_existing.label(class="form-check-label") }}
+            </div>
+          </div>
+          <div class="col-md-12">
+            {{ form.excel_file.label(class="form-label") }}
+            {{ form.excel_file(class="form-control") }}
+            {% for error in form.excel_file.errors %}
+              <div class="text-danger small">{{ error }}</div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary mt-3">Upload &amp; Import Scores</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

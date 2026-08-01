@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import os
+import re
 import time
 import math
 from db import db
@@ -270,24 +271,69 @@ class Student(UserMixin, db.Model):
                 data["avg_percent"] = data["total_score"] / data["count"]
         return summary
 
-    def calculate_final_grade(self, subject=None, teacher_id=None):
+    def calculate_subject_final_grades(self, teacher_id=None):
+        from app import GRADE_POINT_MAP, normalize_label
         from template_updater import calculate_scores_from_template, scores_from_assessments
+
         query = [a for a in self.assessments if not a.archived]
-        if subject:
-            query = [a for a in query if a.subject == subject]
         if teacher_id:
             query = [a for a in query if a.teacher_id == teacher_id]
-        if not query:
+
+        subject_groups = {}
+        for assessment in query:
+            if not assessment.subject:
+                continue
+            subject_key = normalize_label(assessment.subject)
+            if not subject_key:
+                continue
+            subject_groups.setdefault(subject_key, []).append(assessment)
+
+        results = {}
+        for subject_key, assessments in subject_groups.items():
+            raw_scores = scores_from_assessments(assessments)
+            if not raw_scores:
+                continue
+            result = calculate_scores_from_template(raw_scores)
+            grade = result['grade']
+            results[subject_key] = {
+                'subject': assessments[0].subject,
+                'subject_key': subject_key,
+                'final_percent': float(result['final_score']),
+                'grade': grade,
+                'gpa': result['gpa'],
+                'grade_point': GRADE_POINT_MAP.get(grade),
+            }
+        return results
+
+    def calculate_final_grade(self, subject=None, teacher_id=None):
+        from template_updater import calculate_scores_from_template, scores_from_assessments
+        if subject:
+            query = [a for a in self.assessments if not a.archived]
+            query = [a for a in query if a.subject == subject]
+            if teacher_id:
+                query = [a for a in query if a.teacher_id == teacher_id]
+            if not query:
+                return None
+            raw_scores = scores_from_assessments(query)
+            if not raw_scores:
+                return None
+            result = calculate_scores_from_template(raw_scores)
+            return float(result['final_score'])
+
+        subject_results = self.calculate_subject_final_grades(teacher_id=teacher_id)
+        if not subject_results:
             return None
-        raw_scores = scores_from_assessments(query)
-        if not raw_scores:
+        final_scores = [data['final_percent'] for data in subject_results.values()]
+        if not final_scores:
             return None
-        result = calculate_scores_from_template(raw_scores)
-        return float(result['final_score'])
+        return round(sum(final_scores) / len(final_scores), 2)
 
     def get_gpa_and_grade(self, subject=None, teacher_id=None):
-        summary = self.get_overall_summary(subject=subject, teacher_id=teacher_id)
-        return {'gpa': summary['gpa'], 'grade': summary['grade']}
+        final_score = self.calculate_final_grade(subject=subject, teacher_id=teacher_id)
+        if final_score is None:
+            return {'gpa': 'N/A', 'grade': 'N/A'}
+        from app import calculate_gpa_and_grade
+        return calculate_gpa_and_grade(final_score)
 
     def get_overall_summary(self, subject=None, teacher_id=None):
         from template_updater import (calculate_scores_from_template,
