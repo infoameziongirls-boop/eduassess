@@ -869,25 +869,56 @@ def ensure_default_admin_user(app, bcrypt):
 
 
 def ensure_settings_columns():
-    """Safely add the results-release columns to an existing settings table."""
-    inspector = inspect(db.engine)
-    if not inspector.has_table('settings'):
-        return
+    """
+    Safely add the results-release columns to an existing settings table.
 
-    columns = {column['name'] for column in inspector.get_columns('settings')}
-    missing_columns = [
-        ('results_released', 'BOOLEAN'),
-        ('results_release_date', 'DATETIME'),
-        ('results_released_at', 'DATETIME'),
-        ('results_released_by', 'INTEGER'),
-    ]
+    Must use the correct type name for whichever database is connected —
+    Postgres/Neon does NOT understand "DATETIME" (that's SQLite's
+    spelling; Postgres uses "TIMESTAMP") — and must never let a migration
+    hiccup crash app boot, since this runs on every startup via init_db().
+    """
+    try:
+        inspector = inspect(db.engine)
+        if not inspector.has_table('settings'):
+            return
 
-    for column_name, column_type in missing_columns:
-        if column_name in columns:
-            continue
-        db.session.execute(text(f'ALTER TABLE settings ADD COLUMN {column_name} {column_type}'))
+        dialect = db.engine.dialect.name  # 'postgresql' or 'sqlite'
+        columns = {column['name'] for column in inspector.get_columns('settings')}
 
-    db.session.commit()
+        if dialect == 'postgresql':
+            type_map = {
+                'results_released':     'BOOLEAN DEFAULT FALSE',
+                'results_release_date': 'TIMESTAMP',
+                'results_released_at':  'TIMESTAMP',
+                'results_released_by':  'INTEGER',
+            }
+        else:
+            type_map = {
+                'results_released':     'BOOLEAN DEFAULT 0',
+                'results_release_date': 'DATETIME',
+                'results_released_at':  'DATETIME',
+                'results_released_by':  'INTEGER',
+            }
+
+        for column_name, column_type in type_map.items():
+            if column_name in columns:
+                continue
+            db.session.execute(text(f'ALTER TABLE settings ADD COLUMN {column_name} {column_type}'))
+
+        db.session.commit()
+
+        db.session.execute(text(
+            "UPDATE settings SET results_released = FALSE WHERE results_released IS NULL"
+            if dialect == 'postgresql' else
+            "UPDATE settings SET results_released = 0 WHERE results_released IS NULL"
+        ))
+        db.session.commit()
+
+    except Exception as exc:
+        # Never let a migration hiccup crash app boot / cause a restart
+        # loop. Log it and let the app start anyway.
+        db.session.rollback()
+        print(f"[ensure_settings_columns] WARNING: could not sync columns: {exc}")
 
 
 def init_db(app, bcrypt):
