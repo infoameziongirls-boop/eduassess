@@ -6,6 +6,7 @@ import math
 from db import db
 from flask_login import UserMixin
 from sqlalchemy.exc import OperationalError
+from sqlalchemy import inspect, text
 import json
 
 def utcnow():
@@ -473,6 +474,61 @@ class Setting(db.Model):
     current_session = db.Column(db.String(32), nullable=False, default='First Term')
     assessment_active = db.Column(db.Boolean, default=True)
 
+    # ------------------------------------------------------------------ #
+    # Results release control
+    #   - results_released:      manual admin override switch. If True,
+    #                             results are visible regardless of the
+    #                             scheduled date.
+    #   - results_release_date:  optional future datetime (UTC). Once
+    #                             "now" passes this, results become
+    #                             visible automatically even if the admin
+    #                             never flips the manual switch.
+    #   - results_released_at:   audit timestamp of when results actually
+    #                             became visible (set the moment either
+    #                             the manual switch is flipped on or the
+    #                             scheduled date is first observed to have
+    #                             passed).
+    #   - results_released_by:   admin user who triggered the manual
+    #                             release ("Release Now"). Null if the
+    #                             release happened purely via the
+    #                             scheduled date.
+    # ------------------------------------------------------------------ #
+    results_released = db.Column(db.Boolean, nullable=False, default=False)
+    results_release_date = db.Column(db.DateTime, nullable=True)
+    results_released_at = db.Column(db.DateTime, nullable=True)
+    results_released_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+
+    releaser = db.relationship("User", foreign_keys=[results_released_by])
+
+    def is_results_visible(self):
+        """True if students should currently be able to see their results."""
+        if self.results_released:
+            return True
+        if self.results_release_date and utcnow() >= self._aware(self.results_release_date):
+            return True
+        return False
+
+    @staticmethod
+    def _aware(dt):
+        """Treat naive datetimes stored in the DB as UTC for comparison."""
+        if dt is not None and dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt
+
+    def release_now(self, admin_user=None):
+        """Manually release results immediately."""
+        self.results_released = True
+        self.results_released_at = utcnow()
+        self.results_released_by = admin_user.id if admin_user else None
+
+    def unrelease(self):
+        """Hide results again (manual switch off). Does not clear the
+        scheduled date — if that date has already passed, results will
+        still show as released via is_results_visible()."""
+        self.results_released = False
+        self.results_released_at = None
+        self.results_released_by = None
+
     def __repr__(self):
         return f"<Setting term={self.current_term}, year={self.current_academic_year}>"
 
@@ -812,6 +868,28 @@ def ensure_default_admin_user(app, bcrypt):
         return admin
 
 
+def ensure_settings_columns():
+    """Safely add the results-release columns to an existing settings table."""
+    inspector = inspect(db.engine)
+    if not inspector.has_table('settings'):
+        return
+
+    columns = {column['name'] for column in inspector.get_columns('settings')}
+    missing_columns = [
+        ('results_released', 'BOOLEAN'),
+        ('results_release_date', 'DATETIME'),
+        ('results_released_at', 'DATETIME'),
+        ('results_released_by', 'INTEGER'),
+    ]
+
+    for column_name, column_type in missing_columns:
+        if column_name in columns:
+            continue
+        db.session.execute(text(f'ALTER TABLE settings ADD COLUMN {column_name} {column_type}'))
+
+    db.session.commit()
+
+
 def init_db(app, bcrypt):
     if not app.extensions.get('sqlalchemy'):
         db.init_app(app)
@@ -831,6 +909,8 @@ def init_db(app, bcrypt):
                     raise
                 print(f"Database not ready, retrying in 2 seconds... ({attempt+1}/{max_retries})")
                 time.sleep(2)
+
+        ensure_settings_columns()
 
         if not Setting.query.first():
             default_settings = Setting(

@@ -205,6 +205,16 @@
                             </div>
                             {% if current_user.is_admin() %}
                             <div class="col-6 col-md-4">
+                                {% set released = settings and settings.is_results_visible() %}
+                                <a href="{{ url_for('results_release') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid {{ 'var(--green)' if released else 'var(--rose)' }};border-radius:var(--radius);text-decoration:none;transition:all .2s;background:{{ 'var(--green-dim)' if released else 'var(--rose-dim)' }};position:relative;">
+                                    <span class="badge {{ 'badge-green' if released else 'badge-rose' }}" style="position:absolute;top:6px;right:6px;font-size:.58rem;">{{ 'LIVE' if released else 'HIDDEN' }}</span>
+                                    <div style="width:36px;height:36px;background:{{ 'var(--green)' if released else 'var(--rose)' }};border-radius:9px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;">
+                                        <i class="bi {{ 'bi-unlock-fill' if released else 'bi-lock-fill' }}"></i>
+                                    </div>
+                                    <span style="font-size:.72rem;font-weight:600;color:var(--ink-2);text-align:center;">Release Results</span>
+                                </a>
+                            </div>
+                            <div class="col-6 col-md-4">
                                 <a href="{{ url_for('analytics_dashboard') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border);border-radius:var(--radius);text-decoration:none;transition:all .2s;background:var(--surface-2);" onmouseover="this.style.borderColor='var(--violet)';this.style.background='var(--violet-dim)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
                                     <div style="width:36px;height:36px;background:var(--violet-dim);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--violet);font-size:16px;">
                                         <i class="bi bi-bar-chart-line-fill"></i>

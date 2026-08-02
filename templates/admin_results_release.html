@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Results Release{% endblock %}
+{% block page_title %}Results Release{% endblock %}
+
+{% block content %}
+<div class="page-header animate-in">
+    <div>
+        <h1 class="page-title">Results Release</h1>
+        <p class="page-subtitle">Control when students can see their assessment results</p>
+    </div>
+    <a href="{{ url_for('admin_settings') }}" class="btn btn-outline"><i class="bi bi-arrow-left"></i> Settings</a>
+</div>
+
+<div class="row g-4 animate-in delay-1">
+    <div class="col-lg-7">
+        <!-- Status banner -->
+        <div class="card" style="margin-bottom:16px;">
+            <div class="card-body" style="padding:20px; display:flex; align-items:center; gap:16px;">
+                <div style="width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0;
+                    {% if is_visible %}background:rgba(5,150,105,.1);color:#059669;{% else %}background:rgba(220,38,38,.1);color:#dc2626;{% endif %}">
+                    <i class="bi {% if is_visible %}bi-unlock-fill{% else %}bi-lock-fill{% endif %}"></i>
+                </div>
+                <div style="flex:1;">
+                    <div style="font-weight:700;font-size:.95rem;color:var(--ink);">
+                        {% if is_visible %}Results are visible to students{% else %}Results are hidden from students{% endif %}
+                    </div>
+                    <div style="font-size:.8rem;color:var(--ink-4);margin-top:2px;">
+                        {% if settings.results_released %}
+                            Released manually{% if settings.releaser %} by {{ settings.releaser.username }}{% endif %}
+                            {% if settings.results_released_at %} on {{ settings.results_released_at.strftime('%d %b %Y, %I:%M %p') }}{% endif %}.
+                        {% elif is_visible and settings.results_release_date %}
+                            Auto-released — scheduled date ({{ settings.results_release_date.strftime('%d %b %Y, %I:%M %p') }}) has passed.
+                        {% elif settings.results_release_date %}
+                            Will auto-release on {{ settings.results_release_date.strftime('%d %b %Y, %I:%M %p') }}.
+                        {% else %}
+                            No release date scheduled and manual release has not been triggered.
+                        {% endif %}
+                    </div>
+                </div>
+                {% if is_visible %}
+                <span class="badge badge-green">Released</span>
+                {% else %}
+                <span class="badge badge-rose">Hidden</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Schedule a release date -->
+        <div class="card" style="margin-bottom:16px;">
+            <div class="card-header">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div style="width:32px;height:32px;background:var(--brand-dim);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--brand);">
+                        <i class="bi bi-calendar-event"></i>
+                    </div>
+                    <span class="card-title">Schedule Automatic Release</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <p style="font-size:.82rem;color:var(--ink-4);margin-bottom:16px;">
+                    Set a future date/time and results will unlock for every student automatically,
+                    even if no admin is online at that moment.
+                </p>
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="schedule">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-8">
+                            <label class="form-label" for="results_release_date">Scheduled Release Date/Time</label>
+                            <input type="datetime-local"
+                                   id="results_release_date"
+                                   name="results_release_date"
+                                   class="form-control"
+                                   value="{{ settings.results_release_date.strftime('%Y-%m-%dT%H:%M') if settings.results_release_date else '' }}">
+                        </div>
+                        <div class="col-md-4">
+                            <button type="submit" class="btn btn-primary w-100"><i class="bi bi-check-lg"></i> Save Date</button>
+                        </div>
+                    </div>
+                </form>
+                {% if settings.results_release_date %}
+                <form method="POST" style="margin-top:10px;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="clear_schedule">
+                    <button type="submit" class="btn btn-outline btn-sm"><i class="bi bi-x-lg"></i> Clear Scheduled Date</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Manual override -->
+        <div class="card">
+            <div class="card-header">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div style="width:32px;height:32px;background:var(--brand-dim);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--brand);">
+                        <i class="bi bi-toggle-on"></i>
+                    </div>
+                    <span class="card-title">Manual Override</span>
+                </div>
+            </div>
+            <div class="card-body" style="display:flex;gap:10px;flex-wrap:wrap;">
+                {% if not settings.results_released %}
+                <form method="POST" onsubmit="return confirm('Release results to all students right now?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="release_now">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-unlock-fill"></i> Release Now</button>
+                </form>
+                {% else %}
+                <form method="POST" onsubmit="return confirm('Hide results from students again?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="unrelease">
+                    <button type="submit" class="btn btn-warning"><i class="bi bi-lock-fill"></i> Hide Results Again</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header"><span class="card-title">How This Works</span></div>
+            <div class="card-body" style="padding:16px;">
+                <div style="display:flex;gap:10px;margin-bottom:14px;">
+                    <div style="width:26px;height:26px;border-radius:7px;background:var(--brand-dim);color:var(--brand);display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0;">1</div>
+                    <div style="font-size:.82rem;color:var(--ink-4);">Students see a "Results not yet released" screen instead of scores until either condition below is met.</div>
+                </div>
+                <div style="display:flex;gap:10px;margin-bottom:14px;">
+                    <div style="width:26px;height:26px;border-radius:7px;background:var(--brand-dim);color:var(--brand);display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0;">2</div>
+                    <div style="font-size:.82rem;color:var(--ink-4);"><strong>Scheduled date passes</strong> — results unlock automatically, no admin action needed.</div>
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <div style="width:26px;height:26px;border-radius:7px;background:var(--brand-dim);color:var(--brand);display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0;">3</div>
+                    <div style="font-size:.82rem;color:var(--ink-4);"><strong>"Release Now"</strong> — overrides the schedule and unlocks results immediately.</div>
+                </div>
+                <div style="margin-top:16px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:9px;font-size:.78rem;color:var(--ink-4);">
+                    <i class="bi bi-info-circle me-1"></i> This is a single global switch — it applies to every class and every subject at once.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

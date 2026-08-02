@@ -1013,6 +1013,14 @@ class SettingsForm(FlaskForm):
     assessment_active    = BooleanField('Assessment Entry Active', default=True)
 
 
+class ResultsReleaseForm(FlaskForm):
+    """Only used for its CSRF token — the datetime value is read directly
+    from request.form as a plain native <input type="datetime-local">,
+    which avoids depending on a specific WTForms version's field/widget
+    support."""
+    pass
+
+
 class QuestionForm(FlaskForm):
     question_text = TextAreaField('Question Text',
                                   validators=[InputRequired(), Length(min=10, max=1000)])
@@ -1324,6 +1332,8 @@ def dashboard():
         ).filter(Assessment.archived == True).scalar() or 0
     )
 
+    settings = Setting.query.first()
+
     return render_template(
         'dashboard.html',
         student_count=student_count,
@@ -1339,6 +1349,7 @@ def dashboard():
         archive_total=archive_total,
         archive_terms=archive_terms,
         archive_students=archive_students,
+        settings=settings,
     )
 
 
@@ -1359,6 +1370,15 @@ def student_dashboard():
         logout_user()
         flash('Student record not found. Contact the administrator.', 'danger')
         return redirect(url_for('student_login'))
+
+    settings = Setting.query.first()
+    results_visible = settings.is_results_visible() if settings else False
+    if not results_visible:
+        return render_template(
+            'student_results_locked.html',
+            student=student,
+            release_date=settings.results_release_date if settings else None
+        )
 
     subject_f  = request.args.get('subject', '')
     class_f    = request.args.get('class', '')
@@ -2553,6 +2573,79 @@ def admin_settings():
         flash('Settings updated', 'success')
         return redirect(url_for('admin_settings'))
     return render_template('admin_settings.html', form=form, settings=settings)
+
+
+@app.route('/admin/results-release', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def results_release():
+    """
+    Admin-only control panel for releasing results to the student portal.
+    Students see nothing (results section is hidden) until either:
+      - the admin clicks "Release Now", or
+      - the scheduled release date/time has passed.
+    """
+    settings = Setting.query.first()
+    if not settings:
+        settings = Setting()
+        db.session.add(settings)
+        db.session.commit()
+
+    form = ResultsReleaseForm()
+
+    if request.method == 'POST':
+        if not form.validate_on_submit():
+            flash('Your session/token expired — please try again.', 'danger')
+            return redirect(url_for('results_release'))
+
+        action = request.form.get('action')
+
+        if action == 'schedule':
+            raw_value = (request.form.get('results_release_date') or '').strip()
+            if not raw_value:
+                flash('Please pick a date and time first.', 'danger')
+                return redirect(url_for('results_release'))
+            try:
+                # Native <input type="datetime-local"> posts "YYYY-MM-DDTHH:MM"
+                parsed = datetime.strptime(raw_value, '%Y-%m-%dT%H:%M')
+            except ValueError:
+                flash('That date/time could not be read. Please use the date picker.', 'danger')
+                return redirect(url_for('results_release'))
+
+            settings.results_release_date = parsed
+            db.session.commit()
+            log_activity(current_user, 'schedule_results_release',
+                         f"Scheduled for {settings.results_release_date}")
+            flash(f'Release scheduled for {parsed.strftime("%d %b %Y, %I:%M %p")}.', 'success')
+
+        elif action == 'release_now':
+            settings.release_now(admin_user=current_user)
+            db.session.commit()
+            log_activity(current_user, 'release_results_now', 'Results released manually')
+            flash('Results have been released to students.', 'success')
+
+        elif action == 'unrelease':
+            settings.unrelease()
+            db.session.commit()
+            log_activity(current_user, 'unrelease_results', 'Results hidden from students')
+            flash('Results have been hidden from students again.', 'warning')
+
+        elif action == 'clear_schedule':
+            settings.results_release_date = None
+            db.session.commit()
+            flash('Scheduled release date cleared.', 'info')
+
+        else:
+            flash('Unrecognized action.', 'danger')
+
+        return redirect(url_for('results_release'))
+
+    return render_template(
+        'admin_results_release.html',
+        settings=settings,
+        form=form,
+        is_visible=settings.is_results_visible()
+    )
 
 
 @app.route('/admin/activity-logs')

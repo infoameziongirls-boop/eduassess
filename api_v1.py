@@ -1,7 +1,7 @@
 # api_v1.py — Register as a Blueprint
 from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
-from models import Student, Assessment, Quiz, QuizAttempt
+from models import Student, Assessment, Quiz, QuizAttempt, Setting
 
 api_bp = Blueprint('api_v1', __name__, url_prefix='/api/v1')
 
@@ -37,6 +37,16 @@ def student_assessments_api():
         student_number=current_user.username
     ).first_or_404()
 
+    settings = Setting.query.first()
+    if not settings or not settings.is_results_visible():
+        return jsonify({
+            'released': False,
+            'release_date': settings.results_release_date.isoformat()
+                             if settings and settings.results_release_date else None,
+            'message': 'Results have not been released yet.',
+            'assessments': []
+        })
+
     subject = request.args.get('subject')
     query = Assessment.query.filter_by(student_id=student.id, archived=False)
     if subject:
@@ -45,6 +55,7 @@ def student_assessments_api():
     assessments = query.order_by(Assessment.date_recorded.desc()).all()
 
     return jsonify({
+        'released': True,
         'assessments': [
             {
                 'id': a.id,
