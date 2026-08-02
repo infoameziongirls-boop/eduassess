@@ -3,16 +3,13 @@
 migrate_results_release.py
 ---------------------------
 One-time migration: adds the results-release columns to the existing
-`settings` table. Safe to run multiple times (it checks first).
+`settings` table. Safe to run multiple times (idempotent).
 
-Why this is needed: db.create_all() (used in models.init_db) only creates
-tables that don't exist yet — it never ALTERs an existing table to add
-new columns. Since `settings` already existed before this feature was
-added, the new Setting.results_released / results_release_date /
-results_released_at / results_released_by columns are NOT actually in
-your database yet, even though the Python model now defines them. Any
-route that touches Setting.query will fail (or misbehave) until this
-migration is run once.
+Works against both PostgreSQL (Neon, Render Postgres, RDS, etc.) and
+SQLite (local dev). Uses each database's own "add column if it doesn't
+already exist" mechanism, so there's no manual type-name branching that
+can drift out of sync — that's what caused the earlier failure ("DATETIME"
+is a SQLite-only type name; PostgreSQL's equivalent is "TIMESTAMP").
 
 Usage:
     python migrate_results_release.py
@@ -27,42 +24,60 @@ from app import app, db
 from sqlalchemy import inspect, text
 
 
-def column_exists(table, column):
-    inspector = inspect(db.engine)
-    existing = [c['name'] for c in inspector.get_columns(table)]
-    return column in existing
-
-
 def run():
     with app.app_context():
-        dialect = db.engine.dialect.name  # 'sqlite' or 'postgresql'
+        dialect = db.engine.dialect.name  # 'postgresql' or 'sqlite'
         print(f"Connected to: {dialect}")
 
-        additions = [
-            ("results_released",      "BOOLEAN DEFAULT 0" if dialect == "sqlite" else "BOOLEAN DEFAULT FALSE"),
-            ("results_release_date",  "DATETIME"           if dialect == "sqlite" else "TIMESTAMP"),
-            ("results_released_at",   "DATETIME"           if dialect == "sqlite" else "TIMESTAMP"),
-            ("results_released_by",   "INTEGER"),
-        ]
+        if dialect == "postgresql":
+            # Postgres supports "ADD COLUMN IF NOT EXISTS" natively —
+            # no need to introspect first, and no room for a type-name
+            # mismatch since we spell out real Postgres types directly.
+            statements = [
+                "ALTER TABLE settings ADD COLUMN IF NOT EXISTS results_released BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE settings ADD COLUMN IF NOT EXISTS results_release_date TIMESTAMP",
+                "ALTER TABLE settings ADD COLUMN IF NOT EXISTS results_released_at TIMESTAMP",
+                "ALTER TABLE settings ADD COLUMN IF NOT EXISTS results_released_by INTEGER",
+            ]
+            for stmt in statements:
+                print(f"[RUN]  {stmt}")
+                db.session.execute(text(stmt))
+            db.session.commit()
 
-        for column, col_type in additions:
-            if column_exists("settings", column):
-                print(f"[SKIP] settings.{column} already exists")
-                continue
-            ddl = f"ALTER TABLE settings ADD COLUMN {column} {col_type}"
-            print(f"[RUN]  {ddl}")
-            db.session.execute(text(ddl))
+            db.session.execute(text(
+                "UPDATE settings SET results_released = FALSE WHERE results_released IS NULL"
+            ))
+            db.session.commit()
 
-        db.session.commit()
+        elif dialect == "sqlite":
+            # SQLite's ALTER TABLE doesn't support IF NOT EXISTS reliably
+            # across versions, so check first via the inspector.
+            inspector = inspect(db.engine)
+            existing = {c['name'] for c in inspector.get_columns('settings')}
 
-        # Normalize any NULL results_released rows to False so the
-        # is_results_visible() boolean check behaves predictably.
-        db.session.execute(
-            text("UPDATE settings SET results_released = 0 WHERE results_released IS NULL")
-            if dialect == "sqlite" else
-            text("UPDATE settings SET results_released = FALSE WHERE results_released IS NULL")
-        )
-        db.session.commit()
+            additions = [
+                ("results_released",     "BOOLEAN DEFAULT 0"),
+                ("results_release_date", "DATETIME"),
+                ("results_released_at",  "DATETIME"),
+                ("results_released_by",  "INTEGER"),
+            ]
+            for column, col_type in additions:
+                if column in existing:
+                    print(f"[SKIP] settings.{column} already exists")
+                    continue
+                stmt = f"ALTER TABLE settings ADD COLUMN {column} {col_type}"
+                print(f"[RUN]  {stmt}")
+                db.session.execute(text(stmt))
+            db.session.commit()
+
+            db.session.execute(text(
+                "UPDATE settings SET results_released = 0 WHERE results_released IS NULL"
+            ))
+            db.session.commit()
+
+        else:
+            print(f"Unrecognized dialect '{dialect}' — please add a branch for it.")
+            sys.exit(1)
 
         print("Migration complete.")
 
