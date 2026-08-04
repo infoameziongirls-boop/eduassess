@@ -572,6 +572,26 @@ def _fail_open_session(self, app_, request_):
 
 app.session_interface.open_session = _fail_open_session.__get__(app.session_interface)
 
+_original_save_session = app.session_interface.save_session
+
+
+def _fail_open_save_session(self, app_, session, response):
+    try:
+        return _original_save_session(app_, session, response)
+    except Exception:
+        app_.logger.exception(
+            'Session store unavailable — could not persist session for this response'
+        )
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        return None
+
+
+app.session_interface.save_session = _fail_open_save_session.__get__(app.session_interface)
+
+
 def load_persistent_config():
     with app.app_context():
         for key in ('CLASS_LEVELS', 'STUDY_AREAS', 'STUDY_AREA_SUBJECTS'):
