@@ -34,6 +34,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload
 from wtforms import (StringField, PasswordField, FloatField, SelectField,
                      SelectMultipleField, TextAreaField, BooleanField)
+from whitenoise import WhiteNoise
 from wtforms.validators import (InputRequired, Length, Optional,
                                 NumberRange, ValidationError)
 
@@ -254,6 +255,7 @@ def get_teacher_students_query(teacher):
 # Application factory
 # ---------------------------------------------------------------------------
 app = Flask(__name__, static_folder='static')
+app.wsgi_app = WhiteNoise(app.wsgi_app, root='static/')
 
 env = os.environ.get('FLASK_ENV', 'development')
 config_cls = config.get(env)
@@ -534,6 +536,39 @@ if app.config.get("SESSION_TYPE") == "sqlalchemy":
     app.config["SESSION_SQLALCHEMY"] = db
 
 Session(app)
+
+# ---------------------------------------------------------------------------
+# Defensive session-store wrapper
+# ---------------------------------------------------------------------------
+# Pooled Postgres providers (Neon included) occasionally reset a connection
+# server-side without the client noticing until the next query — surfacing
+# here as "SSL error: ssl/tls alert bad record mac" from the sessions table
+# lookup that flask-session runs on *every* request. flask-session's own
+# retry logic doesn't roll back the SQLAlchemy session before retrying, so
+# a second attempt fails harder with PendingRollbackError, and because
+# open_session() raises instead of returning, Flask never gets a `session`
+# object for that request at all — which then crashes error handlers too
+# (Flask-Login's context processor reads `session`). Fail open here: on any
+# session-store error, roll back the DB session and hand Flask an empty
+# session for this one request rather than raising.
+_original_open_session = app.session_interface.open_session
+
+
+def _fail_open_session(self, app_, request_):
+    try:
+        return _original_open_session(app_, request_)
+    except Exception:
+        app_.logger.exception(
+            'Session store unavailable — continuing with a fresh session for this request'
+        )
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        return None  # Flask falls back to a new empty session when this is None
+
+
+app.session_interface.open_session = _fail_open_session.__get__(app.session_interface)
 
 def load_persistent_config():
     with app.app_context():
@@ -1155,8 +1190,22 @@ def internal_error(e):
             f.write('\n')
     except Exception:
         pass
-    db.session.rollback()
-    return render_template('500.html'), 500
+
+    try:
+        session.clear()
+    except Exception:
+        pass
+
+    try:
+        db.session.rollback()
+    except Exception:
+        app.logger.exception('Failed to rollback DB session after error')
+
+    try:
+        return render_template('500.html'), 500
+    except Exception:
+        app.logger.exception('Fallback 500 template failed to render')
+        return '<!DOCTYPE html><html><body><h1>Internal Server Error</h1></body></html>', 500
 
 
 def cleanup_orphaned_assessments():

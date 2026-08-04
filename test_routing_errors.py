@@ -1,6 +1,7 @@
 """
 Comprehensive test to find routing and Jinja template errors
 """
+import importlib
 import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -72,6 +73,36 @@ def test_endpoints():
                         
                 except Exception as e:
                     print(f"✗ {endpoint}: {str(e)}")
+
+
+def test_error_handler_survives_session_store_and_rollback_failures(monkeypatch):
+    """A broken session store should not crash the 500 page renderer."""
+
+    app_module = importlib.import_module('app')
+    app.testing = True
+
+    @app.route('/test-session-failure')
+    def test_session_failure():
+        raise RuntimeError('simulated app error')
+
+    def fail_open_session(*args, **kwargs):
+        raise RuntimeError('session store unavailable')
+
+    def fail_rollback():
+        raise RuntimeError('rollback failed')
+
+    monkeypatch.setattr(app_module, '_original_open_session', fail_open_session)
+    monkeypatch.setattr(db.session, 'rollback', fail_rollback)
+
+    try:
+        with app.test_client() as client:
+            response = client.get('/test-session-failure')
+    finally:
+        app.view_functions.pop('/test-session-failure', None)
+
+    assert response.status_code == 500
+    assert b'Something Went Wrong' in response.data
+
 
 if __name__ == '__main__':
     test_endpoints()
