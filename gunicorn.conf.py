@@ -1,13 +1,15 @@
-# gunicorn.conf.py
+import os
+
+bind = f"0.0.0.0:{os.environ.get('PORT', 10000)}"
 workers = 2
-worker_class = "sync"
 timeout = 120
-keepalive = 5
-max_requests = 1000
-max_requests_jitter = 100
 preload_app = True
 
 
 def post_fork(server, worker):
-    from app import db
-    db.engine.dispose()
+    from app import app, db
+
+    with app.app_context():
+        db.engine.dispose()
+
+    server.log.info("Worker %s: DB engine disposed after fork", worker.pid)
