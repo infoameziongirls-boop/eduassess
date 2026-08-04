@@ -705,9 +705,24 @@ def build_student_aggregate_metrics(student):
             letter_grade = 'N/A'
             gpa = 'N/A'
 
+    if gpa not in ('N/A', None):
+        try:
+            gpa_value = float(gpa)
+        except (TypeError, ValueError):
+            gpa_value = None
+        grading_class = get_grade_class_division(gpa_value) if gpa_value is not None else None
+        comment = _get_comment(gpa)
+    else:
+        grading_class = None
+        comment = None
+
+    if final_pct is not None and grading_class is None:
+        try:
+            grading_class = get_grade_class_division(calculate_gpa_and_grade(final_pct)['gpa'])
+        except Exception:
+            grading_class = None
+
     grade_point = calculate_total_grade_points(student)
-    grading_class = get_grade_class_division(gpa) if gpa not in ('N/A', None) else None
-    comment = _get_comment(gpa) if gpa not in ('N/A', None) else None
 
     overall_summary = {
         'final_score': final_pct,
@@ -2768,6 +2783,23 @@ def class_register():
 
 @app.route('/diagnostic/health')
 def diagnostic_health():
+    """
+    Public liveness check — safe for uptime monitors / load balancers.
+    Intentionally returns no environment info, counts, or error details;
+    see /diagnostic/health/details (admin-only) for that.
+    """
+    try:
+        db.session.execute(db.text('SELECT 1'))
+        return jsonify({'status': 'ok'})
+    except Exception:
+        app.logger.exception('Health check failed')
+        return jsonify({'status': 'error'}), 500
+
+
+@app.route('/diagnostic/health/details')
+@login_required
+@admin_required
+def diagnostic_health_details():
     from models import Student, User
 
     try:
@@ -2780,7 +2812,10 @@ def diagnostic_health():
             'environment': {
                 'flask_env': os.environ.get('FLASK_ENV'),
                 'database_url_present': bool(os.environ.get('DATABASE_URL') or app.config.get('DATABASE_URL')),
-                'secret_key_present': bool(app.config.get('SECRET_KEY')),
+                # NOTE: SECRET_KEY always has *some* value (config.py falls back to a
+                # dev default), so "present" was always true and told us nothing.
+                # This flags the actual risk: is it still the insecure default?
+                'secret_key_is_default': app.config.get('SECRET_KEY') == 'dev-secret-key-CHANGE-IN-PRODUCTION',
             },
             'config': {
                 'class_levels_count': len(class_levels),

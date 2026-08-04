@@ -1,38 +1,29 @@
 {% extends "base.html" %}
 {% block title %}Class Promotion — EduAssess{% endblock %}
 
-{% block extra_head %}
+{% block extra_css %}
 <style>
+  /* Core palette (--ink, --brand/--brand-light/--brand-glow, --surface, --surface-2,
+     --green, --rose, --ease-smooth, etc.) comes from the shared design system in
+     base.html. Only page-specific values live here. */
   :root {
-    --ink:      #0b1623;
-    --ink-mid:  #1e3353;
-    --ink-soft: #2d4a6e;
-    --gold:     #c9a84c;
-    --gold-lt:  #e8c96a;
-    --gold-dim: rgba(201,168,76,.18);
-    --cream:    #f7f2e8;
-    --cream-dk: #ede6d6;
-    --white:    #ffffff;
-    --green:    #1d7a4c;
-    --green-lt: #2ea86a;
-    --red:      #c0392b;
-    --shadow-md: 0 8px 32px rgba(11,22,35,.18);
-    --shadow-lg: 0 20px 60px rgba(11,22,35,.25);
-    --radius:   18px;
-    --transition: .35s cubic-bezier(.4,0,.2,1);
+    --green-lt:   #2ea86a;
+    --shadow-card: 0 8px 32px rgba(11,22,35,.18);
+    --shadow-hero: 0 20px 60px rgba(11,22,35,.25);
+    --transition: .35s var(--ease-smooth);
   }
 
-  body { background: #f0ebe0; font-family: 'DM Sans', sans-serif; }
+  body { background: var(--surface); font-family: var(--font-body); }
 
   /* ── PAGE HERO ── */
   .promo-hero {
-    background: linear-gradient(135deg, var(--ink) 0%, var(--ink-mid) 60%, #163060 100%);
+    background: linear-gradient(135deg, var(--ink) 0%, var(--ink-2) 60%, #163060 100%);
     border-radius: 28px;
     padding: 3rem 3.5rem;
     margin-bottom: 2.5rem;
     position: relative;
     overflow: hidden;
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--shadow-hero);
   }
   .promo-hero::before {
     content: '';
@@ -49,13 +40,13 @@
   }
   .hero-badge {
     display: inline-flex; align-items: center; gap: .5rem;
-    background: var(--gold-dim);
+    background: var(--brand-glow);
     border: 1px solid rgba(201,168,76,.3);
     border-radius: 50px;
     padding: .35rem 1rem;
     font-size: .78rem;
     font-family: 'DM Mono', monospace;
-    color: var(--gold-lt);
+    color: var(--brand-light);
     letter-spacing: .05em;
     text-transform: uppercase;
     margin-bottom: 1rem;
@@ -66,11 +57,11 @@
     font-family: 'Playfair Display', serif;
     font-size: 2.6rem;
     font-weight: 700;
-    color: var(--white);
+    color: var(--surface-2);
     line-height: 1.2;
     margin-bottom: .6rem;
   }
-  .hero-title span { color: var(--gold); }
+  .hero-title span { color: var(--brand); }
   .hero-sub {
     font-size: .95rem;
     color: rgba(255,255,255,.65);
@@ -88,7 +79,7 @@
     font-family: 'Playfair Display', serif;
     font-size: 1.8rem;
     font-weight: 700;
-    color: var(--gold);
+    color: var(--brand);
     line-height: 1;
   }
   .hero-stat .lbl {
@@ -117,14 +108,14 @@
   }
   .sec-head .line {
     flex: 1; height: 1px;
-    background: linear-gradient(90deg, var(--gold) 0%, transparent 100%);
+    background: linear-gradient(90deg, var(--brand) 0%, transparent 100%);
     opacity: .4;
   }
   .sec-head .pill {
     font-size: .72rem;
     font-family: 'DM Mono', monospace;
     background: var(--ink);
-    color: var(--gold);
+    color: var(--brand);
     padding: .25rem .7rem;
     border-radius: 50px;
     text-transform: uppercase;
@@ -139,8 +130,8 @@
     margin-bottom: 2.5rem;
   }
   .class-card {
-    background: var(--white);
-    border-radius: var(--radius);
+    background: var(--surface-2);
+    border-radius: 18px;
     border: 1.5px solid rgba(11,22,35,.07);
     box-shadow: 0 4px 16px rgba(11,22,35,.06);
     overflow: hidden;
@@ -150,16 +141,16 @@
   }
   .class-card:hover {
     transform: translateY(-4px);
-    box-shadow: var(--shadow-md);
-    border-color: var(--gold);
+    box-shadow: var(--shadow-card);
+    border-color: var(--brand);
   }
   .class-card.selected {
-    border-color: var(--gold);
-    box-shadow: 0 0 0 3px var(--gold-dim), var(--shadow-md);
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px var(--brand-glow), var(--shadow-card);
   }
   .class-card-accent {
     height: 5px;
-    background: linear-gradient(90deg, var(--gold) 0%, var(--gold-lt) 100%);
+    background: linear-gradient(90deg, var(--brand) 0%, var(--brand-light) 100%);
   }
   .class-card-accent.green  { background: linear-gradient(90deg, var(--green) 0%, var(--green-lt) 100%); }
   .class-card-accent.indigo { background: linear-gradient(90deg, #3b5bdb 0%, #74c0fc 100%); }
@@ -167,7 +158,7 @@
   .class-card-icon {
     width: 46px; height: 46px;
     border-radius: 12px;
-    background: var(--gold-dim);
+    background: var(--brand-glow);
     display: flex; align-items: center; justify-content: center;
     font-size: 1.4rem;
     margin-bottom: 1rem;
@@ -210,13 +201,13 @@
     width: 22px; height: 22px;
     border-radius: 6px;
     border: 2px solid rgba(11,22,35,.15);
-    background: var(--white);
+    background: var(--surface-2);
     display: flex; align-items: center; justify-content: center;
     transition: var(--transition);
   }
   .class-card.selected .card-checkbox {
-    background: var(--gold);
-    border-color: var(--gold);
+    background: var(--brand);
+    border-color: var(--brand);
   }
   .class-card.selected .card-checkbox::after {
     content: '✓';
@@ -227,28 +218,28 @@
 
   /* ── ACTION PANEL ── */
   .action-panel {
-    background: var(--white);
-    border-radius: var(--radius);
+    background: var(--surface-2);
+    border-radius: 18px;
     border: 1.5px solid rgba(11,22,35,.07);
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--shadow-card);
     overflow: hidden;
     margin-bottom: 2.5rem;
   }
   .action-panel-head {
-    background: linear-gradient(135deg, var(--ink) 0%, var(--ink-mid) 100%);
+    background: linear-gradient(135deg, var(--ink) 0%, var(--ink-2) 100%);
     padding: 1.5rem 2rem;
     display: flex; align-items: center; justify-content: space-between;
   }
   .action-panel-head h3 {
     font-family: 'Playfair Display', serif;
     font-size: 1.1rem;
-    color: var(--white);
+    color: var(--surface-2);
     margin: 0;
   }
   .action-panel-head .tag {
-    background: var(--gold-dim);
+    background: var(--brand-glow);
     border: 1px solid rgba(201,168,76,.35);
-    color: var(--gold);
+    color: var(--brand);
     font-size: .72rem;
     font-family: 'DM Mono', monospace;
     padding: .25rem .65rem;
@@ -308,7 +299,7 @@
     white-space: nowrap;
   }
   .btn-promo-gold {
-    background: linear-gradient(135deg, var(--gold) 0%, #b8913e 100%);
+    background: linear-gradient(135deg, var(--brand) 0%, #b8913e 100%);
     color: var(--ink);
     box-shadow: 0 4px 16px rgba(201,168,76,.35);
   }
@@ -323,19 +314,19 @@
     border: 1.5px solid rgba(11,22,35,.2);
   }
   .btn-promo-outline:hover {
-    border-color: var(--gold);
-    color: var(--gold);
-    background: var(--gold-dim);
+    border-color: var(--brand);
+    color: var(--brand);
+    background: var(--brand-glow);
   }
   .btn-promo-danger {
     background: rgba(192,57,43,.1);
-    color: var(--red);
+    color: var(--rose);
     border: 1.5px solid rgba(192,57,43,.2);
   }
   .btn-promo-danger:hover {
-    background: var(--red);
-    color: var(--white);
-    border-color: var(--red);
+    background: var(--rose);
+    color: var(--surface-2);
+    border-color: var(--rose);
   }
 
   /* ── SELECTION BAR ── */
@@ -358,7 +349,7 @@
   .sel-count {
     font-family: 'DM Mono', monospace;
     font-size: .85rem;
-    color: var(--gold);
+    color: var(--brand);
     font-weight: 500;
   }
   .sel-label { color: rgba(255,255,255,.6); font-size: .85rem; }
@@ -374,7 +365,7 @@
   }
   .promo-progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, var(--gold) 0%, var(--gold-lt) 100%);
+    background: linear-gradient(90deg, var(--brand) 0%, var(--brand-light) 100%);
     border-radius: 50px;
     transition: width 1s ease;
   }
@@ -403,15 +394,15 @@
     font-family: 'DM Sans', sans-serif;
     font-size: .9rem;
     color: var(--ink);
-    background: var(--cream);
+    background: var(--surface);
     transition: var(--transition);
     outline: none;
   }
   .field-group select:focus,
   .field-group input:focus {
-    border-color: var(--gold);
-    box-shadow: 0 0 0 3px var(--gold-dim);
-    background: var(--white);
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px var(--brand-glow);
+    background: var(--surface-2);
   }
 
   /* ── WARNING BOX ── */
@@ -424,7 +415,7 @@
     margin-bottom: 1.5rem;
   }
   .warn-icon { font-size: 1.2rem; flex-shrink: 0; margin-top: .05rem; }
-  .warn-text { font-size: .85rem; color: var(--red); line-height: 1.6; }
+  .warn-text { font-size: .85rem; color: var(--rose); line-height: 1.6; }
   .warn-text strong { display: block; margin-bottom: .15rem; font-size: .88rem; }
 
   /* ── INFO BOX ── */
@@ -456,7 +447,7 @@
     font-family: 'DM Mono', monospace;
   }
   .hist-table tbody tr td {
-    background: var(--white);
+    background: var(--surface-2);
     padding: .9rem 1rem;
     border-top: 1px solid rgba(11,22,35,.05);
     border-bottom: 1px solid rgba(11,22,35,.05);
@@ -471,7 +462,7 @@
     border-right: 1px solid rgba(11,22,35,.05);
     border-radius: 0 10px 10px 0;
   }
-  .hist-table tbody tr:hover td { background: var(--cream); }
+  .hist-table tbody tr:hover td { background: var(--surface); }
 
   /* ── BADGE ── */
   .badge-pill {
@@ -485,7 +476,7 @@
     font-family: 'DM Mono', monospace;
   }
   .badge-success { background: rgba(29,122,76,.1); color: var(--green); }
-  .badge-pending { background: var(--gold-dim); color: #8a6a1e; }
+  .badge-pending { background: var(--brand-glow); color: #8a6a1e; }
   .badge-info    { background: rgba(59,91,219,.1); color: #3b5bdb; }
 
   /* ── ANIMATIONS ── */

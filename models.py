@@ -928,6 +928,19 @@ def init_db(app, bcrypt):
     with app.app_context():
         print(f"Initializing database at: {app.config['SQLALCHEMY_DATABASE_URI']}")
 
+        ext = app.extensions.get('sqlalchemy')
+        if ext:
+            try:
+                ext._app_engines[app].clear()
+            except Exception:
+                pass
+            try:
+                options = {'url': app.config['SQLALCHEMY_DATABASE_URI'], **ext._engine_options}
+                engine = ext._make_engine(None, options, app)
+                ext._app_engines[app][None] = engine
+            except Exception:
+                pass
+
         max_retries = 5
         for attempt in range(max_retries):
             try:

@@ -301,6 +301,17 @@ class ProductionConfig(Config):
                 "in the environment before starting this service."
             )
 
+        _insecure_default_secret_key = "dev-secret-key-CHANGE-IN-PRODUCTION"
+        if (not os.environ.get("SECRET_KEY")) or cls.SECRET_KEY == _insecure_default_secret_key:
+            raise RuntimeError(
+                "SECRET_KEY is not set (or is still the checked-in development "
+                "default) in a production environment. This key signs session "
+                "cookies and CSRF tokens, so leaving it as the default lets "
+                "anyone forge both. Set a long, random SECRET_KEY in the "
+                "environment before starting this service, e.g.: "
+                "python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+
 
 config = {
     "development": DevelopmentConfig,
