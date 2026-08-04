@@ -565,7 +565,9 @@ def _fail_open_session(self, app_, request_):
             db.session.rollback()
         except Exception:
             pass
-        return None  # Flask falls back to a new empty session when this is None
+
+        sid = self._generate_sid(self.sid_length)
+        return self.session_class(sid=sid, permanent=self.permanent)
 
 
 app.session_interface.open_session = _fail_open_session.__get__(app.session_interface)
