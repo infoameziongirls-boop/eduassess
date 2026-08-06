@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Bulk Roster Template{% endblock %}
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-file-earmark-excel"></i> Generate pre-filled roster template</h5>
+            </div>
+            <div class="card-body">
+                <form method="GET" action="{{ url_for('bulk_roster_download') }}">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Class</label>
+                            <select class="form-select" name="class_name" required>
+                                <option value="">-- Select Class --</option>
+                                {% for value, label in class_levels %}
+                                <option value="{{ value }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Study Area</label>
+                            <select class="form-select" name="study_area">
+                                <option value="">-- Any --</option>
+                                {% for value, label in study_areas %}
+                                <option value="{{ value }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Subject</label>
+                            <select class="form-select" name="subject" id="subjectSelect" required>
+                                <option value="">-- Select Subject --</option>
+                                {% for subject in subject_choices %}
+                                <option value="{{ subject }}">{{ subject }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Term</label>
+                            <input class="form-control" type="text" name="term">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Academic Year</label>
+                            <input class="form-control" type="text" name="academic_year">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Session</label>
+                            <input class="form-control" type="text" name="session">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Category</label>
+                            <select class="form-select" name="category" required>
+                                <option value="">-- Select Category --</option>
+                                {% for value, label in categories %}
+                                <option value="{{ value }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Assessor</label>
+                            <input class="form-control" type="text" name="assessor" value="{{ default_assessor }}">
+                        </div>
+                    </div>
+                    <div class="mt-4 d-flex justify-content-between">
+                        <a href="{{ url_for('import_excel') }}" class="btn btn-secondary">Back</a>
+                        <button type="submit" class="btn btn-primary">Download roster template</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+{{ super() }}
+<script>
+    const studyAreaSubjects = {{ study_area_subjects|tojson }};
+    const studyAreaSelect = document.querySelector('select[name="study_area"]');
+    const subjectSelect = document.getElementById('subjectSelect');
+
+    function populateSubjects(selectedArea) {
+        const options = [];
+        if (selectedArea && studyAreaSubjects[selectedArea]) {
+            const areaConfig = studyAreaSubjects[selectedArea];
+            const subjects = [];
+            if (Array.isArray(areaConfig.core)) {
+                subjects.push(...areaConfig.core);
+            }
+            if (Array.isArray(areaConfig.electives)) {
+                subjects.push(...areaConfig.electives);
+            }
+            options.push(...new Set(subjects));
+        }
+
+        subjectSelect.innerHTML = '<option value="">-- Select Subject --</option>';
+        options.forEach(function(subject) {
+            const option = document.createElement('option');
+            option.value = subject;
+            option.textContent = subject;
+            subjectSelect.appendChild(option);
+        });
+    }
+
+    if (studyAreaSelect && subjectSelect) {
+        studyAreaSelect.addEventListener('change', function() {
+            populateSubjects(this.value);
+        });
+        populateSubjects(studyAreaSelect.value);
+    }
+</script>
+{% endblock %}

@@ -26,6 +26,9 @@
                                 <i class="bi bi-file-earmark-arrow-up"></i> Import Assessment Records
                             </a></li>
                             <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('bulk_roster_form') }}">
+                                <i class="bi bi-person-lines-fill"></i> Generate Pre-filled Roster Template
+                            </a></li>
                             <li><a class="dropdown-item" href="{{ url_for('download_template', template_type='import') }}">
                                 <i class="bi bi-download"></i> Download Assessment Import Template
                             </a></li>

@@ -521,6 +521,7 @@ from template_updater import (
     AssessmentTemplateUpdater,
     calculate_scores_from_template,
     create_bulk_assessment_import_template,
+    create_prefilled_roster_template,
     scores_from_assessments,
 )
 
@@ -4244,6 +4245,7 @@ def import_excel():
                     db.session.add(Assessment(
                         student=student, category=data['category'],
                         subject=data['subject'],
+                        class_name=student.class_name,
                         score=float(data['score']),
                         max_score=float(data['max_score']),
                         term=data['term'],
@@ -4275,6 +4277,79 @@ def import_excel():
                     pass
             flash(f'Error: {exc}', 'danger')
     return render_template('import_excel.html', form=form)
+
+
+@app.route('/assessments/bulk_roster', methods=['GET'])
+@login_required
+def bulk_roster_form():
+    if not (current_user.is_teacher() or current_user.is_admin()):
+        abort(403)
+    study_area_subjects = app.config.get('STUDY_AREA_SUBJECTS', {}) or {}
+    subject_choices = []
+    seen_subjects = set()
+    for area_config in study_area_subjects.values():
+        for group in ('core', 'electives'):
+            for subject in (area_config.get(group) or []):
+                if subject and subject not in seen_subjects:
+                    seen_subjects.add(subject)
+                    subject_choices.append(subject)
+
+    return render_template(
+        'bulk_roster_form.html',
+        class_levels=app.config['CLASS_LEVELS'],
+        study_areas=app.config['STUDY_AREAS'],
+        study_area_subjects=study_area_subjects,
+        subject_choices=subject_choices,
+        terms=app.config['TERMS'],
+        categories=app.config['ASSESSMENT_CATEGORIES'],
+        default_assessor=(current_user.full_name() if hasattr(current_user, 'full_name') else current_user.username),
+    )
+
+
+@app.route('/assessments/bulk_roster/download', methods=['GET'])
+@login_required
+def bulk_roster_download():
+    if not (current_user.is_teacher() or current_user.is_admin()):
+        abort(403)
+
+    class_name = request.args.get('class_name', '').strip()
+    study_area = request.args.get('study_area', '').strip()
+    subject = request.args.get('subject', '').strip()
+    term = request.args.get('term', '').strip()
+    academic_year = request.args.get('academic_year', '').strip()
+    session_ = request.args.get('session', '').strip()
+    category = request.args.get('category', '').strip()
+    assessor = request.args.get('assessor', '').strip() or current_user.username
+
+    if not (class_name and subject and category):
+        flash('Class, Subject and Category are required.', 'danger')
+        return redirect(url_for('bulk_roster_form'))
+    if category not in app.config['ASSESSMENT_WEIGHTS']:
+        flash('Invalid category selected.', 'danger')
+        return redirect(url_for('bulk_roster_form'))
+
+    q = Student.query.filter_by(class_name=class_name)
+    if study_area:
+        q = q.filter_by(study_area=study_area)
+    students = q.order_by(Student.last_name, Student.first_name).all()
+    if not students:
+        flash('No students found for that class/study area.', 'warning')
+        return redirect(url_for('bulk_roster_form'))
+
+    filename = f"roster_{secure_filename(class_name)}_{category}.xlsx"
+    output_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    create_prefilled_roster_template(
+        output_path,
+        students,
+        subject=subject,
+        class_name=class_name,
+        term=term,
+        academic_year=academic_year,
+        session=session_,
+        category=category,
+        assessor=assessor,
+    )
+    return send_file(output_path, as_attachment=True, download_name=filename)
 
 
 @app.route('/download/class-scoresheet')
