@@ -520,6 +520,7 @@ from support_routes import support_bp
 from template_updater import (
     AssessmentTemplateUpdater,
     calculate_scores_from_template,
+    create_bulk_assessment_import_template,
     scores_from_assessments,
 )
 
@@ -4469,8 +4470,7 @@ def download_template(template_type):
     if template_type == 'import':
         tpl_path = os.path.join(app.config['TEMPLATE_FOLDER'], 'import_template.xlsx')
         if not os.path.exists(tpl_path):
-            flash('Import template not found.', 'danger')
-            return redirect(url_for('import_excel'))
+            create_bulk_assessment_import_template(tpl_path)
         return send_file(tpl_path, as_attachment=True,
                          download_name='bulk_import_template.xlsx',
                          mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

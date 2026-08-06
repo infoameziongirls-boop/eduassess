@@ -97,6 +97,67 @@ CATEGORY_LABELS = {
     'end_term':  'End of Term Exam',
 }
 
+
+def create_bulk_assessment_import_template(path):
+    """Generate the flat, multi-category bulk-assessment import template.
+
+    Category codes MUST match template_updater.CATEGORY_MAX. Any other value
+    is silently excluded from final grade calculation by the grading pipeline.
+    """
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Assessments"
+
+    headers = [
+        "Student Number",
+        "Category",
+        "Subject",
+        "Score",
+        "Max Score",
+        "Term",
+        "Session",
+        "Assessor",
+        "Comments",
+    ]
+    ws.append(headers)
+
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="4472C4")
+
+    valid_categories = ",".join(CATEGORY_MAX.keys())
+    category_dv = DataValidation(
+        type="list",
+        formula1=f'"{valid_categories}"',
+        allow_blank=True,
+        showErrorMessage=True,
+        errorTitle="Invalid category",
+        error=f"Category must be one of: {valid_categories}",
+    )
+    ws.add_data_validation(category_dv)
+    category_dv.add("B2:B500")
+
+    score_dv = DataValidation(
+        type="custom",
+        formula1='=AND(D2<>"",E2<>"",D2<=E2)',
+        allow_blank=True,
+        showErrorMessage=True,
+        errorTitle="Score exceeds maximum",
+        error="Score cannot exceed the Max Score entered for this row.",
+    )
+    ws.add_data_validation(score_dv)
+    score_dv.add("D2:D500")
+
+    for col, width in zip("ABCDEFGHI", [18, 12, 16, 10, 12, 10, 12, 16, 24]):
+        ws.column_dimensions[col].width = width
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    wb.save(path)
+
 # ── Formula-protected columns ────────────────────────────────────────────────
 # These columns contain Excel formulas that must NEVER be overwritten.
 # Verified against actual template row 10.
