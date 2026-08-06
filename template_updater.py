@@ -158,6 +158,80 @@ def create_bulk_assessment_import_template(path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     wb.save(path)
 
+
+def create_prefilled_roster_template(path, students, *, subject, class_name,
+                                     term, academic_year, session, category,
+                                     assessor):
+    """Create a roster workbook with one row per student and protected metadata."""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Protection, Alignment
+    from openpyxl.worksheet.protection import SheetProtection
+
+    if category not in CATEGORY_MAX:
+        raise ValueError(f"Unknown category: {category}")
+
+    max_score = CATEGORY_MAX[category]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Roster"
+
+    headers = [
+        "Student Number",
+        "Name",
+        "Category",
+        "Subject",
+        "Score",
+        "Max Score",
+        "Term",
+        "Session",
+        "Assessor",
+        "Comments",
+    ]
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="4472C4")
+
+    protected_fill = PatternFill("solid", fgColor="FDE9E9")
+    editable_fill = PatternFill("solid", fgColor="E8F5E9")
+    note_fill = PatternFill("solid", fgColor="FFF3CD")
+    locked = Protection(locked=True)
+    unlocked = Protection(locked=False)
+
+    ws['A12'] = "Protected metadata cells are locked. Editable Score/Comments cells are unlocked and highlighted green."
+    ws['A12'].fill = note_fill
+    ws['A12'].font = Font(bold=True, color="7A5C00")
+    ws['A12'].alignment = Alignment(wrap_text=True)
+    ws.merge_cells('A12:J12')
+
+    for row_idx, student in enumerate(students, start=2):
+        ws.cell(row_idx, 1, student.student_number).protection = locked
+        ws.cell(row_idx, 2, student.full_name()).protection = locked
+        ws.cell(row_idx, 3, category).protection = locked
+        ws.cell(row_idx, 4, subject).protection = locked
+        score_cell = ws.cell(row_idx, 5)
+        score_cell.protection = unlocked
+        score_cell.fill = editable_fill
+        ws.cell(row_idx, 6, max_score).protection = locked
+        ws.cell(row_idx, 7, term).protection = locked
+        ws.cell(row_idx, 8, session).protection = locked
+        ws.cell(row_idx, 9, assessor).protection = locked
+        comments_cell = ws.cell(row_idx, 10, "")
+        comments_cell.protection = unlocked
+        comments_cell.fill = editable_fill
+
+        for protected_col in [1, 2, 3, 4, 6, 7, 8, 9]:
+            ws.cell(row_idx, protected_col).fill = protected_fill
+
+    for col, width in zip("ABCDEFGHIJ", [16, 24, 10, 16, 8, 10, 10, 12, 16, 24]):
+        ws.column_dimensions[col].width = width
+
+    ws.protection = SheetProtection(sheet=True, password=None,
+                                   selectLockedCells=True, selectUnlockedCells=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    wb.save(path)
+
 # ── Formula-protected columns ────────────────────────────────────────────────
 # These columns contain Excel formulas that must NEVER be overwritten.
 # Verified against actual template row 10.
