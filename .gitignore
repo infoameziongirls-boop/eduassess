@@ -86,6 +86,14 @@ uploads/*
 tmp/
 temp/
 *.tmp
+inspect_*.py
+server.log
+server2.log
+tmp_*
+*.out
+*.txt
+*.log
+*.html
 
 # OS
 .DS_Store
