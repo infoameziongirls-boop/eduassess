@@ -100,9 +100,10 @@
                 {% if students is defined and students %}
                 <div class="col-md-4 col-xl-3">
                     <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;">
-                        <button class="s-tray-toggle" type="button"
+                        <button class="s-tray-toggle" type="button" data-class="{{ cls }}"
                             style="width:100%;background:var(--surface);color:var(--ink);border-bottom:1px solid var(--border);border-radius:0;padding:11px 14px;font-size:.82rem;font-weight:700;"
-                            data-bs-toggle="collapse" data-bs-target="#formBlock{{ loop.index }}" aria-expanded="false">
+                            data-bs-toggle="collapse" data-bs-target="#formBlock{{ loop.index }}" aria-expanded="false"
+                            onclick="filterLearningAreasByClass('{{ cls|e }}')">
                             <i class="bi bi-building tray-main" style="color:var(--brand);"></i>
                             <span>{{ cls|replace('_',' ')|title }}</span>
                             <span class="badge-ink badge ms-auto me-2">
@@ -146,10 +147,22 @@
                     <div style="width:32px;height:32px;background:var(--teal-dim);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--teal);">
                         <i class="bi bi-book-fill"></i>
                     </div>
-                    <span class="card-title">Students by Learning Area</span>
+                    <div>
+                        <span class="card-title">Students by Learning Area</span>
+                        <div id="learningAreaScope" style="font-size:.7rem;color:var(--ink-4);">Showing: All Forms</div>
+                    </div>
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button id="learningAreaResetBtn" class="btn btn-outline btn-sm" style="display:none;" onclick="resetLearningAreas()">
+                        <i class="bi bi-arrow-counterclockwise"></i> Reset
+                    </button>
+                    <button class="btn btn-outline btn-sm" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#learningAreaBody" aria-expanded="true">
+                        <i class="bi bi-chevron-contract"></i> Collapse
+                    </button>
                 </div>
             </div>
-            <div class="card-body" style="padding:12px;">
+            <div class="card-body collapse show" id="learningAreaBody" style="padding:12px;">
                 {% for area, cnt in students_by_area.items() %}
                 <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:9px;margin-bottom:4px;transition:background .15s;" onmouseover="this.style.background='var(--brand-dim)'" onmouseout="this.style.background=''">
                     <span style="font-size:.82rem;font-weight:500;color:var(--ink-2);">{{ area|replace('_',' ')|title }}</span>
@@ -285,9 +298,10 @@
                             <th>Action</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        {% for summary in teacher_student_summaries[:15] %}
-                        <tr>
+                    <tbody id="trackerBody">
+                        {% set incomplete_summaries = teacher_student_summaries|selectattr('missing_count', 'gt', 0)|list %}
+                        {% for summary in incomplete_summaries %}
+                        <tr class="tracker-row" data-index="{{ loop.index0 }}">
                             <td>
                                 <div style="font-weight:600;color:var(--ink);">{{ summary.student.full_name() }}</div>
                                 <div style="font-size:.7rem;color:var(--ink-4);">{{ summary.student.student_number }}</div>
@@ -347,9 +361,30 @@
                             </td>
                         </tr>
                         {% endfor %}
+                        {% if not incomplete_summaries %}
+                        <tr>
+                            <td colspan="7" style="text-align:center;padding:40px;color:var(--ink-4);">
+                                <i class="bi bi-check-circle" style="font-size:24px;display:block;margin-bottom:8px;color:var(--green);"></i>
+                                All students have complete assessments.
+                            </td>
+                        </tr>
+                        {% endif %}
                     </tbody>
                 </table>
             </div>
+            {% if incomplete_summaries|length > 10 %}
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;">
+                <span id="trackerPageInfo" style="font-size:.75rem;color:var(--ink-4);"></span>
+                <div style="display:flex;gap:6px;">
+                    <button id="trackerPrevBtn" class="btn btn-outline btn-sm" onclick="trackerGoToPage(trackerCurrentPage - 1)">
+                        <i class="bi bi-chevron-left"></i> Prev
+                    </button>
+                    <button id="trackerNextBtn" class="btn btn-outline btn-sm" onclick="trackerGoToPage(trackerCurrentPage + 1)">
+                        Next <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+            {% endif %}
             {% if teacher_student_summaries|length > 15 %}
             <div style="margin-top:12px;text-align:right;">
                 <a href="{{ url_for('students') }}" class="btn btn-outline btn-sm">View all students</a>
@@ -551,5 +586,92 @@ function toggleRecent() {
     panel.style.display = showing ? 'none' : 'block';
     trigger.style.display = showing ? 'block' : 'none';
 }
+
+/* ===== Students by Learning Area: filter by clicked Form ===== */
+const studentsByClassArea = {{ students_by_class_area | tojson }};
+const studentCountTotal = {{ student_count | tojson }};
+
+function titleCase(s) {
+    return s.replace(/_/g, ' ').replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
+function renderLearningAreaRows(areaDict) {
+    const body = document.getElementById('learningAreaBody');
+    const total = Object.values(areaDict).reduce((a, b) => a + b, 0) || 1;
+    const entries = Object.entries(areaDict);
+
+    if (!entries.length) {
+        body.innerHTML = '<p style="color:var(--ink-4);font-size:.82rem;text-align:center;padding:20px 0;">No data available</p>';
+        return;
+    }
+
+    body.innerHTML = entries.map(([area, cnt]) => {
+        const pct = Math.min((cnt / total) * 100, 100);
+        return `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:9px;margin-bottom:4px;transition:background .15s;" onmouseover="this.style.background='var(--brand-dim)'" onmouseout="this.style.background=''">
+            <span style="font-size:.82rem;font-weight:500;color:var(--ink-2);">${titleCase(area)}</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <div style="width:80px;height:5px;background:var(--border);border-radius:99px;overflow:hidden;">
+                    <div style="height:100%;background:var(--brand);border-radius:99px;width:${pct}%;"></div>
+                </div>
+                <span class="badge badge-brand">${cnt}</span>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function filterLearningAreasByClass(clsName) {
+    const areaDict = studentsByClassArea[clsName];
+    if (!areaDict) return;
+    renderLearningAreaRows(areaDict);
+    document.getElementById('learningAreaScope').textContent = 'Showing: ' + titleCase(clsName);
+    document.getElementById('learningAreaResetBtn').style.display = 'inline-flex';
+
+    // Ensure the panel is visibly expanded when a form is selected
+    const bodyEl = document.getElementById('learningAreaBody');
+    bootstrap.Collapse.getOrCreateInstance(bodyEl).show();
+}
+
+function resetLearningAreas() {
+    const globalDict = {};
+    Object.values(studentsByClassArea).forEach(areaDict => {
+        Object.entries(areaDict).forEach(([area, cnt]) => {
+            globalDict[area] = (globalDict[area] || 0) + cnt;
+        });
+    });
+    renderLearningAreaRows(globalDict);
+    document.getElementById('learningAreaScope').textContent = 'Showing: All Forms';
+    document.getElementById('learningAreaResetBtn').style.display = 'none';
+}
+
+/* ===== Class Progress Tracker: client-side pagination ===== */
+let trackerCurrentPage = 1;
+const trackerPageSize = 10;
+
+function trackerGoToPage(page) {
+    const rows = document.querySelectorAll('#trackerBody .tracker-row');
+    const totalPages = Math.max(1, Math.ceil(rows.length / trackerPageSize));
+    page = Math.min(Math.max(page, 1), totalPages);
+    trackerCurrentPage = page;
+
+    rows.forEach((row, i) => {
+        const rowPage = Math.floor(i / trackerPageSize) + 1;
+        row.style.display = (rowPage === page) ? '' : 'none';
+    });
+
+    const info = document.getElementById('trackerPageInfo');
+    if (info) info.textContent = `Page ${page} of ${totalPages} (${rows.length} student${rows.length === 1 ? '' : 's'} with missing categories)`;
+
+    const prevBtn = document.getElementById('trackerPrevBtn');
+    const nextBtn = document.getElementById('trackerNextBtn');
+    if (prevBtn) prevBtn.disabled = (page === 1);
+    if (nextBtn) nextBtn.disabled = (page === totalPages);
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    if (document.querySelector('#trackerBody .tracker-row')) {
+        trackerGoToPage(1);
+    }
+});
 </script>
 {% endblock %}

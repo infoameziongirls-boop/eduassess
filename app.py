@@ -895,11 +895,13 @@ def calculate_short_answer_score(answer, question):
 def get_student_groups(cur_user, app_config):
     by_class = {}
     by_area  = {}
+    by_class_area = {}   # {class_name: {area_name: count}} — powers the
+                          # "filter Learning Area breakdown by Form" dashboard feature
 
     if hasattr(cur_user, 'is_teacher') and cur_user.is_teacher():
         q = get_teacher_students_query(cur_user)
         if q is None:
-            return {}, {}
+            return {}, {}, {}
         students = q.all()
     else:
         students = Student.query.all()
@@ -909,7 +911,9 @@ def get_student_groups(cur_user, app_config):
         by_class.setdefault(cls, []).append(s)
         area = s.get_study_area_display() or 'Unspecified'
         by_area[area] = by_area.get(area, 0) + 1
-    return by_class, by_area
+        class_areas = by_class_area.setdefault(cls, {})
+        class_areas[area] = class_areas.get(area, 0) + 1
+    return by_class, by_area, by_class_area
 
 
 def _get_comment(gpa):
@@ -1462,7 +1466,7 @@ def dashboard():
                 key=lambda item: (item['avg_percentage'] is None, item['avg_percentage'] or 0)
             )
 
-    students_by_class, students_by_area = get_student_groups(current_user, app.config)
+    students_by_class, students_by_area, students_by_class_area = get_student_groups(current_user, app.config)
 
     archive_total = Assessment.query.filter_by(archived=True).count()
     archive_terms = (
@@ -1494,12 +1498,26 @@ def dashboard():
         grouped_students=None,
         students_by_class=students_by_class,
         students_by_area=students_by_area,
+        students_by_class_area=students_by_class_area,
         archive_total=archive_total,
         archive_terms=archive_terms,
         archive_students=archive_students,
         settings=settings,
         category_labels=app.config.get('CATEGORY_LABELS', {}),
     )
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# RECONSTRUCTED: this function's def/@app.route/@login_required header and
+# its `student` lookup were missing from the source as received — the body
+# below (from `if not student:` onward) is the original, unmodified code.
+# Verify this route path and the lookup logic against your own Git history
+# if you have an earlier working commit to compare against.
+# ──────────────────────────────────────────────────────────────────────────
+@app.route('/student/dashboard')
+@login_required
+def student_dashboard():
+    student = Student.query.filter_by(student_number=current_user.username).first()
 
     if not student:
         logout_user()
