@@ -312,7 +312,7 @@ def test_get_assessment_template_path_prefers_runtime_template_over_repo(tmp_pat
     assert copied_path == str(runtime_template_path)
 
     runtime_wb_after = load_workbook(str(runtime_template_path), data_only=False)
-    assert runtime_wb_after['B2'].value == 'Runtime Custom School'
+    assert runtime_wb_after.active['B2'].value == 'Runtime Custom School'
 
 
 def test_get_assessment_template_path_copies_repo_template_and_exports(tmp_path):
