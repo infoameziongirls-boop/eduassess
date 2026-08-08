@@ -86,6 +86,59 @@ def test_bulk_roster_form_renders_subject_options_from_config():
         assert 'Chemistry' in html
 
 
+def test_edit_user_rejects_duplicate_username():
+    app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
+
+    with app.app_context():
+        db.drop_all()
+        db.create_all()
+
+        admin = User(
+            username='admin_user',
+            password_hash=bcrypt.generate_password_hash('Test@123').decode('utf-8'),
+            role='admin',
+        )
+        user1 = User(
+            username='teacher1',
+            password_hash=bcrypt.generate_password_hash('Test@123').decode('utf-8'),
+            role='teacher',
+        )
+        user2 = User(
+            username='teacher2',
+            password_hash=bcrypt.generate_password_hash('Test@123').decode('utf-8'),
+            role='teacher',
+        )
+        db.session.add_all([admin, user1, user2])
+        db.session.commit()
+        admin_id = admin.id
+        user1_id = user1.id
+        user2_username = user2.username
+
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess['_user_id'] = str(admin_id)
+            sess['_fresh'] = True
+
+        response = client.post(
+            f'/users/{user1_id}/edit',
+            data={
+                'username': user2_username,
+                'role': 'teacher',
+                'subject': '',
+            },
+            follow_redirects=True,
+        )
+
+        assert response.status_code == 200
+        html = response.get_data(as_text=True)
+        assert 'already taken by another user' in html
+        assert 'Edit User' in html
+
+    with app.app_context():
+        refreshed = User.query.get(user1_id)
+        assert refreshed.username == 'teacher1'
+
+
 def test_prefilled_roster_workbook_unlocks_score_and_comments_cells(tmp_path):
     from template_updater import create_prefilled_roster_template
     from models import Student
