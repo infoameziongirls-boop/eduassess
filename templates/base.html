@@ -396,7 +396,27 @@
         .kpi-trend.down { color: var(--rose); }
 
         /* ===== TABLES ===== */
-        .table-wrap { border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--border); }
+        /* overflow-x:auto (not `hidden`) lets wide tables scroll horizontally
+           on narrow screens instead of silently clipping the rightmost
+           columns (e.g. row-action buttons) with no way to reach them. */
+        .table-wrap {
+            position: relative;
+            border-radius: var(--radius-lg);
+            overflow-x: auto;
+            overflow-y: hidden;
+            border: 1px solid var(--border);
+            -webkit-overflow-scrolling: touch;
+        }
+        /* Persistent right-edge fade: a visible cue that the table continues
+           past the viewport, since touch devices often hide scrollbars. */
+        .table-wrap::after {
+            content: '';
+            position: absolute;
+            top: 0; right: 0; bottom: 0;
+            width: 28px;
+            background: linear-gradient(to right, transparent, rgba(0,0,0,.07));
+            pointer-events: none;
+        }
         .table { margin: 0; border-collapse: collapse; }
         .table thead th {
             background: var(--ink);
@@ -774,6 +794,11 @@
             .page-header { flex-direction: column; }
             .page-actions { width: 100%; }
             .kpi-value { font-size: 1.4rem; }
+            /* Tighter (not smaller-text) table cell padding reduces how far
+               a table overflows on a phone, without shrinking touch targets
+               like the row-action buttons. */
+            .table thead th { padding: 11px 10px; }
+            .table tbody td { padding: 10px 10px; }
         }
 
         /* ===== PASSWORD TOGGLE ===== */

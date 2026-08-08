@@ -256,7 +256,7 @@
     </div>
 </div>
 
-{% if teacher_student_summaries is defined %}
+{% if teacher_student_summaries %}
 <div class="section-gap animate-in delay-4">
     <div class="card">
         <div class="card-header">
@@ -266,21 +266,22 @@
                 </div>
                 <div>
                     <div class="card-title">Class Progress Tracker</div>
-                    <div style="font-size:.7rem;color:var(--ink-4);">Track your students' current assessment progress and average performance.</div>
+                    <div style="font-size:.7rem;color:var(--ink-4);">Track student completion by assessment category and current class progress.</div>
                 </div>
             </div>
+            <a href="{{ url_for('admin_teacher_tracking') }}" class="btn btn-outline btn-sm">Open Teacher Tracker</a>
         </div>
         <div class="card-body" style="padding:16px;">
-            {% if teacher_student_summaries %}
             <div class="table-wrap" style="border-radius:0;border:none;border-top:1px solid var(--border);">
                 <table class="table">
                     <thead>
                         <tr>
                             <th>Student</th>
                             <th>Class</th>
+                            <th>Completion</th>
+                            <th>Missing Categories</th>
                             <th>Avg Score</th>
                             <th>Grade</th>
-                            <th>Assessments</th>
                             <th>Action</th>
                         </tr>
                     </thead>
@@ -292,6 +293,34 @@
                                 <div style="font-size:.7rem;color:var(--ink-4);">{{ summary.student.student_number }}</div>
                             </td>
                             <td><span class="badge badge-ink">{{ summary.student.get_class_display() or 'N/A' }}</span></td>
+                            <td>
+                                <div style="display:flex;flex-direction:column;gap:4px;">
+                                    <div style="display:flex;align-items:center;gap:8px;">
+                                        <div style="width:80px;height:6px;background:var(--border);border-radius:99px;overflow:hidden;">
+                                            <div style="height:100%;background:var(--brand);border-radius:99px;width:{{ summary.completion_pct }}%;"></div>
+                                        </div>
+                                        <span style="font-weight:700;color:var(--ink);">{{ summary.completion_pct }}%</span>
+                                    </div>
+                                    <span style="font-size:.7rem;color:var(--ink-4);">{{ summary.filled_count }}/{{ summary.total_categories }} completed</span>
+                                </div>
+                            </td>
+                            <td>
+                                {% if summary.missing_count > 0 %}
+                                <div style="display:flex;flex-direction:column;gap:4px;">
+                                    <span class="badge badge-rose" title="Missing categories">{{ summary.missing_count }}</span>
+                                    <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                                        {% for cat in summary.missing_cats[:3] %}
+                                        <span class="badge badge-rose" style="font-size:.62rem;">{{ category_labels.get(cat, cat) }}</span>
+                                        {% endfor %}
+                                        {% if summary.missing_cats|length > 3 %}
+                                        <span class="badge badge-ink" style="font-size:.62rem;">+{{ summary.missing_cats|length - 3 }}</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% else %}
+                                <span class="badge badge-green">Complete</span>
+                                {% endif %}
+                            </td>
                             <td>
                                 {% if summary.avg_percentage is not none %}
                                 <div style="display:flex;align-items:center;gap:8px;">
@@ -311,7 +340,6 @@
                                 <span style="color:var(--ink-4);">—</span>
                                 {% endif %}
                             </td>
-                            <td><span class="badge badge-brand">{{ summary.assessment_count }}</span></td>
                             <td>
                                 <a href="{{ url_for('student_view', student_id=summary.student.id) }}" class="btn btn-icon btn-sm btn-outline" title="View">
                                     <i class="bi bi-eye" style="font-size:12px;"></i>
@@ -322,8 +350,10 @@
                     </tbody>
                 </table>
             </div>
-            {% else %}
-            <p style="color:var(--ink-4);">You currently have no assigned students or no assessment progress is available for your class.</p>
+            {% if teacher_student_summaries|length > 15 %}
+            <div style="margin-top:12px;text-align:right;">
+                <a href="{{ url_for('students') }}" class="btn btn-outline btn-sm">View all students</a>
+            </div>
             {% endif %}
         </div>
     </div>
@@ -436,7 +466,7 @@
                                 <div style="font-size:.7rem;color:var(--ink-4);margin-bottom:8px;">{{ item.student.student_number }}</div>
                                 <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;">
                                     {% for cat in item.missing_categories %}
-                                    <span class="badge badge-rose" style="font-size:.62rem;">{{ CATEGORY_LABELS.get(cat, cat) }}</span>
+                                    <span class="badge badge-rose" style="font-size:.62rem;">{{ category_labels.get(cat, cat) }}</span>
                                     {% endfor %}
                                 </div>
                                 <a href="{{ url_for('new_assessment', student_id=item.student.id) }}" class="btn btn-danger btn-sm" style="font-size:.72rem;padding:5px 10px;">
@@ -488,6 +518,7 @@
                                 <span style="font-weight:700;">{{ "%.1f"|format(a.score) }}/{{ "%.0f"|format(a.max_score) }}</span>
                                 <span style="font-size:.72rem;color:var(--ink-4);">({{ "%.1f"|format(a.get_percentage()) }}%)</span>
                             </td>
+                            <td><span class="badge badge-brand">{{ category_labels.get(a.category, a.category) }}</span></td>
                             <td><span style="font-size:.75rem;color:var(--ink-4);">{{ a.date_recorded.strftime('%Y-%m-%d %H:%M') }}</span></td>
                         </tr>
                         {% else %}

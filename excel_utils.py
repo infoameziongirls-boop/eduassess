@@ -210,14 +210,14 @@ class ClassScoreSheetImporter:
     """
 
     CATEGORY_HEADER_ALIASES = {
-        'ica1': ('ica1', 'ica 1', 'individual class assessment 1'),
-        'ica2': ('ica2', 'ica 2', 'individual class assessment 2'),
+        'ica1': ('ica1', 'ica 1', 'individual class assessment 1', 'individual assessment 1'),
+        'ica2': ('ica2', 'ica 2', 'individual class assessment 2', 'individual assessment 2'),
         'icp1': ('icp1', 'icp 1', 'individual class project 1'),
         'icp2': ('icp2', 'icp 2', 'individual class project 2'),
         'gp1': ('gp1', 'gp 1', 'group project/research 1', 'group project 1'),
         'gp2': ('gp2', 'gp 2', 'group project/research 2', 'group project 2'),
         'practical': ('practical', 'practical portfolio'),
-        'mid_term': ('mid term', 'mid-term', 'mid term exam', 'mid-term exam'),
+        'mid_term': ('mid term', 'mid-term', 'mid semester exam', 'mid-semester exam', 'mid term exam', 'mid-term exam'),
         'end_term': ('end term', 'end of term', 'end term exam', 'end of term exam'),
     }
 
@@ -278,7 +278,7 @@ class ClassScoreSheetImporter:
                             header_map['student_number'] = col_idx
                         elif label in ('reference number', 'reference no', 'ref id', 'ref no'):
                             header_map['reference_number'] = col_idx
-                        elif label in ('name of students', 'name', 'student name', 'full name'):
+                        elif label in ('name of student', 'name of students', 'name', 'student name', 'full name'):
                             header_map['name'] = col_idx
                         elif label in ('system id', 'record id', 'db id', 'student db id',
                                        'internal id'):

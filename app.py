@@ -1412,6 +1412,9 @@ def dashboard():
         if students_query is not None:
             students = students_query.all()
             student_ids = [s.id for s in students]
+            required_categories = list(app.config.get('CATEGORY_LABELS', {}).keys())
+            n_required = len(required_categories)
+
             if student_ids:
                 assessments = (Assessment.query
                                .filter(Assessment.student_id.in_(student_ids),
@@ -1427,6 +1430,12 @@ def dashboard():
             summaries = []
             for student in students:
                 student_assessments = assessments_by_student.get(student.id, [])
+                filled_cats = {a.category for a in student_assessments if a.category in required_categories}
+                filled_count = len(filled_cats)
+                missing_cats = [cat for cat in required_categories if cat not in filled_cats]
+                missing_count = n_required - filled_count
+                completion_pct = round((filled_count / n_required) * 100) if n_required else 0
+
                 if student_assessments:
                     raw_scores = scores_from_assessments(student_assessments)
                     if raw_scores:
@@ -1441,6 +1450,11 @@ def dashboard():
                     'avg_percentage': avg_percentage,
                     'grade': grade_data['grade'] if grade_data else None,
                     'assessment_count': len(student_assessments),
+                    'filled_count': filled_count,
+                    'missing_count': missing_count,
+                    'missing_cats': missing_cats,
+                    'total_categories': n_required,
+                    'completion_pct': completion_pct,
                 })
 
             teacher_student_summaries = sorted(
@@ -1476,7 +1490,7 @@ def dashboard():
         affected_students_count=len(incomplete_list),
         incomplete_students=incomplete_list,
         recent=recent,
-        teacher_student_summaries=None,
+        teacher_student_summaries=teacher_student_summaries,
         grouped_students=None,
         students_by_class=students_by_class,
         students_by_area=students_by_area,
@@ -1484,22 +1498,9 @@ def dashboard():
         archive_terms=archive_terms,
         archive_students=archive_students,
         settings=settings,
+        category_labels=app.config.get('CATEGORY_LABELS', {}),
     )
 
-
-@app.route('/dashboard')
-@login_required
-def dashboard_redirect():
-    return redirect(url_for('dashboard'))
-
-
-@app.route('/student/dashboard')
-@login_required
-@student_required
-def student_dashboard():
-    student = Student.query.filter(
-        db.func.trim(Student.student_number) == (current_user.username or '').strip()
-    ).first()
     if not student:
         logout_user()
         flash('Student record not found. Contact the administrator.', 'danger')

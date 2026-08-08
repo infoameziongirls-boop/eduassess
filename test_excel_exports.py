@@ -5,7 +5,7 @@ from openpyxl import Workbook, load_workbook
 from flask_login import login_user
 
 from app import app, db, export_csv, export_student_csv, export_student_excel, download_template, _get_assessment_template_path
-from excel_utils import ExcelBulkImporter
+from excel_utils import ExcelBulkImporter, ClassScoreSheetImporter, create_class_scoresheet_template
 from models import User, Student, Assessment, Setting
 from template_updater import AssessmentTemplateUpdater, calculate_scores_from_template
 
@@ -116,6 +116,38 @@ def test_excel_bulk_importer_accepts_reference_number_header(tmp_path):
     assert imported[0]['reference_number'] == 'REF001'
     assert imported[0]['category'] == 'ica1'
     assert imported[0]['score'] == 40
+
+
+def test_class_scoresheet_importer_accepts_app_category_labels(tmp_path):
+    path = tmp_path / 'class_scoresheet.xlsx'
+    students = [
+        {
+            'id': 1,
+            'student_number': 'STU001',
+            'name': 'John Doe',
+            'reference_number': 'REF001',
+            'study_area': 'Mathematics',
+        }
+    ]
+    create_class_scoresheet_template(
+        str(path),
+        students=students,
+        subject_label='Mathematics',
+        class_label='Form 1',
+        category_labels=app.config['CATEGORY_LABELS'],
+    )
+
+    workbook = load_workbook(str(path))
+    worksheet = workbook.active
+    worksheet.cell(row=5, column=5, value=32)
+    worksheet.cell(row=5, column=6, value=24)
+    workbook.save(str(path))
+
+    imported = ClassScoreSheetImporter(str(path)).import_scoresheet()
+    assert len(imported) == 1
+    assert imported[0]['system_id'] == 1
+    assert imported[0]['scores']['ica1'] == 32.0
+    assert imported[0]['scores']['ica2'] == 24.0
 
 
 def _setup_db_with_template(app, tmp_path):
