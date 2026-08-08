@@ -6,7 +6,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app import app, db, canonical_class_key, canonical_study_area_key
-from models import Student, User, Assessment
+from models import Student, User, Assessment, Message
 
 
 @pytest.fixture(scope="function")
@@ -177,6 +177,60 @@ def test_student_new_normalizes_class_and_study_area(client):
     assert student is not None
     assert student.class_name == 'Form 1'
     assert student.study_area == 'science_a'
+
+
+def test_admin_send_prompt_ajax(client):
+    admin = create_admin_user()
+    teacher = User(username='teacher_prompt', password_hash='x', role='teacher', subject='Mathematics')
+    db.session.add(teacher)
+    db.session.commit()
+
+    login_as(client, admin)
+    response = client.post(
+        '/admin/send-prompt',
+        json={'teacher_id': teacher.id, 'message': 'Please complete the pending assessments.'}
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['success'] is True
+    assert 'Reminder sent to' in data['message']
+
+    sent_message = Message.query.filter_by(recipient_id=teacher.id).first()
+    assert sent_message is not None
+    assert sent_message.subject.startswith('📋 Assessment Reminder')
+
+
+def test_teacher_dashboard_progress_tracker(client):
+    teacher = User(username='teacher_progress', password_hash='x', role='teacher', subject='Mathematics')
+    teacher.set_classes_list(['Form 1'])
+    db.session.add(teacher)
+    student = create_student(
+        first_name='Alice',
+        last_name='Progress',
+        student_number='STUPROG',
+        reference_number='REFPROG'
+    )
+    db.session.commit()
+
+    assessment = Assessment(
+        student_id=student.id,
+        category='ica1',
+        subject='Mathematics',
+        class_name='Form 1',
+        score=42.0,
+        max_score=50.0,
+        teacher_id=teacher.id
+    )
+    db.session.add(assessment)
+    db.session.commit()
+
+    login_as(client, teacher)
+    response = client.get('/', follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b'Class Progress Tracker' in response.data
+    assert b'Alice Progress' in response.data
 
 
 def test_student_edit_normalizes_class_and_study_area(client):

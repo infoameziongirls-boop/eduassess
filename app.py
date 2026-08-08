@@ -960,6 +960,7 @@ class UserForm(FlaskForm):
 
 
 class EditUserForm(FlaskForm):
+    username = StringField('Username', validators=[InputRequired(), Length(min=3)])
     role    = SelectField('Role', choices=app.config['USER_ROLES'])
     subject = SelectField('Subject (for teachers)',
                           choices=[('', '-- Not Applicable --')] + app.config['LEARNING_AREAS'],
@@ -1401,6 +1402,51 @@ def dashboard():
                   .limit(8).all())
 
     recent = [a for a in recent if a.student is not None]
+
+    teacher_student_summaries = None
+    if current_user.is_teacher():
+        from collections import defaultdict
+        from template_updater import calculate_scores_from_template, scores_from_assessments
+
+        students_query = get_teacher_students_query(current_user)
+        if students_query is not None:
+            students = students_query.all()
+            student_ids = [s.id for s in students]
+            if student_ids:
+                assessments = (Assessment.query
+                               .filter(Assessment.student_id.in_(student_ids),
+                                       Assessment.teacher_id == current_user.id,
+                                       Assessment.archived == False)
+                               .all())
+                assessments_by_student = defaultdict(list)
+                for a in assessments:
+                    assessments_by_student[a.student_id].append(a)
+            else:
+                assessments_by_student = {}
+
+            summaries = []
+            for student in students:
+                student_assessments = assessments_by_student.get(student.id, [])
+                if student_assessments:
+                    raw_scores = scores_from_assessments(student_assessments)
+                    if raw_scores:
+                        avg_percentage = float(calculate_scores_from_template(raw_scores)['final_score'])
+                    else:
+                        avg_percentage = None
+                else:
+                    avg_percentage = None
+                grade_data = calculate_gpa_and_grade(avg_percentage) if avg_percentage is not None else None
+                summaries.append({
+                    'student': student,
+                    'avg_percentage': avg_percentage,
+                    'grade': grade_data['grade'] if grade_data else None,
+                    'assessment_count': len(student_assessments),
+                })
+
+            teacher_student_summaries = sorted(
+                summaries,
+                key=lambda item: (item['avg_percentage'] is None, item['avg_percentage'] or 0)
+            )
 
     students_by_class, students_by_area = get_student_groups(current_user, app.config)
 
@@ -2578,15 +2624,36 @@ def edit_user(user_id):
     user = User.query.get_or_404(user_id)
     form = EditUserForm(role=user.role)
     if form.validate_on_submit():
+        new_username = form.username.data.strip()
+
+        if new_username != user.username:
+            existing = User.query.filter(
+                User.username == new_username,
+                User.id != user.id
+            ).first()
+            if existing:
+                flash(f'Username "{new_username}" is already taken by another user.', 'danger')
+                return render_template('edit_user.html', form=form, user=user)
+
+        old_username = user.username
+        user.username = new_username
         user.role    = form.role.data
         user.subject = form.subject.data or None
         user.set_classes_list(form.classes.data) if form.classes.data else setattr(user, 'classes', None)
         db.session.commit()
-        log_activity(current_user, 'edit_user', f'Edited {user.username}')
+
+        change_note = f'Edited {old_username}'
+        if new_username != old_username:
+            change_note += f' (renamed to {new_username})'
+        log_activity(current_user, 'edit_user', change_note)
+
         flash(f'User {user.username} updated', 'success')
         return redirect(url_for('users'))
-    form.subject.data = user.subject
-    form.classes.data = user.get_classes_list()
+
+    if request.method == 'GET':
+        form.username.data = user.username
+        form.subject.data = user.subject
+        form.classes.data = user.get_classes_list()
     return render_template('edit_user.html', form=form, user=user)
 
 
@@ -4970,15 +5037,30 @@ def admin_send_prompt():
     Sends a pre-filled reminder message from the Teacher Tracking dashboard
     directly to the teacher's inbox (re-uses the existing Message model).
     """
-    teacher_id = request.form.get('teacher_id', type=int)
-    message_text = (request.form.get('message') or '').strip()
+    json_data = request.get_json(silent=True)
+    if json_data:
+        teacher_id = json_data.get('teacher_id')
+        message_text = (json_data.get('message') or '').strip()
+    else:
+        teacher_id = request.form.get('teacher_id', type=int)
+        message_text = (request.form.get('message') or '').strip()
+
+    try:
+        if teacher_id is not None:
+            teacher_id = int(teacher_id)
+    except (TypeError, ValueError):
+        teacher_id = None
 
     if not teacher_id or not message_text:
+        if json_data:
+            return jsonify({'success': False, 'message': 'Invalid prompt request.'}), 400
         flash('Invalid prompt request.', 'danger')
         return redirect(url_for('admin_teacher_tracking'))
 
     teacher = db.session.get(User, teacher_id)
     if not teacher or not teacher.is_teacher():
+        if json_data:
+            return jsonify({'success': False, 'message': 'Teacher not found.'}), 404
         flash('Teacher not found.', 'danger')
         return redirect(url_for('admin_teacher_tracking'))
 
@@ -4998,10 +5080,14 @@ def admin_send_prompt():
             'prompt_teacher',
             f'Sent assessment reminder to {teacher.username}',
         )
+        if json_data:
+            return jsonify({'success': True, 'message': f'Reminder sent to {teacher.username}.'})
         flash(f'Reminder sent to {teacher.username}.', 'success')
     except Exception as exc:
         db.session.rollback()
         app.logger.error('admin_send_prompt: %s', exc)
+        if json_data:
+            return jsonify({'success': False, 'message': 'Could not send message. Please try again.'}), 500
         flash('Could not send message. Please try again.', 'danger')
 
     return redirect(url_for('admin_teacher_tracking'))

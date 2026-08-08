@@ -10,7 +10,12 @@
             <div class="card-body">
                 <form method="POST">
                     {{ form.hidden_tag() }}
-                    
+
+                    <div class="mb-3">
+                        {{ form.username.label(class="form-label") }}
+                        {{ form.username(class="form-control", required=True) }}
+                    </div>
+
                     <div class="mb-3">
                         {{ form.role.label(class="form-label") }}
                         {{ form.role(class="form-control") }}

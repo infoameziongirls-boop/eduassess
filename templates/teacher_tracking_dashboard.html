@@ -1191,13 +1191,6 @@
   </div>
 </div>
 
-{# Hidden form for prompt POST #}
-<form id="promptForm" method="POST" action="{{ url_for('admin_send_prompt') }}" style="display:none">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="teacher_id" id="prompt-teacher-id">
-  <input type="hidden" name="message"    id="prompt-message-val">
-</form>
-
 {# Toast #}
 <div class="tk-toast" id="tkToast" role="alert" aria-live="polite">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -1343,13 +1336,36 @@ function closePromptModal() {
   _promptTid = null;
 }
 
-function submitPrompt() {
-  const msg = document.getElementById('modal-message').value.trim();
-  if (!msg) { alert('Please enter a message.'); return; }
-  document.getElementById('prompt-teacher-id').value  = _promptTid;
-  document.getElementById('prompt-message-val').value = msg;
-  closePromptModal();
-  document.getElementById('promptForm').submit();
+async function submitPrompt() {
+  const msgEl = document.getElementById('modal-message');
+  const msg = msgEl.value.trim();
+  if (!msg) {
+    alert('Please enter a message.');
+    msgEl.focus();
+    return;
+  }
+  const payload = {
+    teacher_id: _promptTid,
+    message: msg,
+  };
+
+  try {
+    const response = await fetch("{{ url_for('admin_send_prompt') }}", {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || 'Could not send reminder.');
+    }
+    closePromptModal();
+    showToast(data.message || 'Reminder sent successfully.');
+  } catch (err) {
+    alert(err.message || 'Could not send reminder. Please try again.');
+  }
 }
 
 // Close on backdrop click
