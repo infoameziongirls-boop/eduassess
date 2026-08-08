@@ -121,7 +121,49 @@ def test_prefilled_roster_workbook_unlocks_score_and_comments_cells(tmp_path):
         ws = wb['Roster']
         assert ws['E2'].protection.locked is False
         assert ws['J2'].protection.locked is False
-        assert ws['A12'].value is not None
-        assert 'Editable' in str(ws['A12'].value)
+        assert ws['A3'].value is not None
+        assert 'Editable' in str(ws['A3'].value)
+        assert ws['A12'].value is None
         assert ws['E2'].fill.fgColor.rgb != ws['A2'].fill.fgColor.rgb
         assert ws['J2'].fill.fgColor.rgb != ws['A2'].fill.fgColor.rgb
+
+
+def test_prefilled_roster_workbook_places_note_after_all_students(tmp_path):
+    from template_updater import create_prefilled_roster_template
+    from models import Student
+
+    with app.app_context():
+        db.drop_all()
+        db.create_all()
+
+        students = []
+        for idx in range(1, 12):
+            students.append(Student(
+                student_number=f'S{idx:03d}',
+                first_name=f'First{idx}',
+                last_name=f'Last{idx}',
+                class_name='Form 1',
+                study_area='Science',
+                reference_number=f'R{idx:03d}',
+            ))
+        db.session.add_all(students)
+        db.session.commit()
+
+        output_path = tmp_path / 'roster_11.xlsx'
+        create_prefilled_roster_template(
+            str(output_path),
+            students,
+            subject='Biology',
+            class_name='Form 1',
+            term='Term 1',
+            academic_year='2026',
+            session='Morning',
+            category='ica1',
+            assessor='Test Assessor',
+        )
+
+        wb = load_workbook(output_path)
+        ws = wb['Roster']
+        assert ws['A13'].value is not None
+        assert 'Editable' in str(ws['A13'].value)
+        assert ws['A12'].value != ws['A13'].value

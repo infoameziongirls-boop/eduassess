@@ -4440,15 +4440,46 @@ def import_class_scoresheet():
             scores_ok   = 0
             errors      = []
 
+            system_ids = {row['system_id'] for row in rows if row.get('system_id')}
+            stu_numbers = {row['student_number'] for row in rows if row.get('student_number')}
+            ref_numbers = {row['reference_number'] for row in rows if row.get('reference_number')}
+
+            students_by_id = {
+                s.id: s for s in Student.query.filter(Student.id.in_(system_ids)).all()
+            } if system_ids else {}
+            students_by_num = {
+                s.student_number: s for s in Student.query.filter(Student.student_number.in_(stu_numbers)).all()
+            } if stu_numbers else {}
+            students_by_ref = {
+                s.reference_number: s for s in Student.query.filter(Student.reference_number.in_(ref_numbers)).all()
+            } if ref_numbers else {}
+
+            all_student_ids = {
+                *students_by_id.keys(),
+                *[s.id for s in students_by_num.values()],
+                *[s.id for s in students_by_ref.values()],
+            }
+
+            existing_map = {}
+            if all_student_ids:
+                existing_assessments = Assessment.query.filter(
+                    Assessment.student_id.in_(all_student_ids),
+                    Assessment.subject == subject,
+                    Assessment.term == term,
+                    Assessment.academic_year == academic_year,
+                    Assessment.session == session,
+                ).all()
+                existing_map = {(a.student_id, a.category): a for a in existing_assessments}
+
             for row in rows:
                 student = None
                 identifier = row.get('student_number') or row.get('reference_number') or 'Unknown'
                 if row.get('system_id'):
-                    student = Student.query.get(row['system_id'])
+                    student = students_by_id.get(row['system_id'])
                 if not student and row.get('student_number'):
-                    student = Student.query.filter_by(student_number=row['student_number']).first()
+                    student = students_by_num.get(row['student_number'])
                 if not student and row.get('reference_number'):
-                    student = Student.query.filter_by(reference_number=row['reference_number']).first()
+                    student = students_by_ref.get(row['reference_number'])
                 if not student:
                     errors.append(f"Student {identifier} not found")
                     continue
@@ -4466,10 +4497,7 @@ def import_class_scoresheet():
                         )
                         continue
 
-                    existing = Assessment.query.filter_by(
-                        student_id=student.id, category=category, subject=subject,
-                        term=term, academic_year=academic_year, session=session,
-                    ).first()
+                    existing = existing_map.get((student.id, category))
 
                     if existing:
                         if update_existing:

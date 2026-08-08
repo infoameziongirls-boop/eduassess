@@ -199,12 +199,6 @@ def create_prefilled_roster_template(path, students, *, subject, class_name,
     locked = Protection(locked=True)
     unlocked = Protection(locked=False)
 
-    ws['A12'] = "Protected metadata cells are locked. Editable Score/Comments cells are unlocked and highlighted green."
-    ws['A12'].fill = note_fill
-    ws['A12'].font = Font(bold=True, color="7A5C00")
-    ws['A12'].alignment = Alignment(wrap_text=True)
-    ws.merge_cells('A12:J12')
-
     for row_idx, student in enumerate(students, start=2):
         ws.cell(row_idx, 1, student.student_number).protection = locked
         ws.cell(row_idx, 2, student.full_name()).protection = locked
@@ -223,6 +217,13 @@ def create_prefilled_roster_template(path, students, *, subject, class_name,
 
         for protected_col in [1, 2, 3, 4, 6, 7, 8, 9]:
             ws.cell(row_idx, protected_col).fill = protected_fill
+
+    note_row = len(students) + 2
+    ws.cell(note_row, 1, "Protected metadata cells are locked. Editable Score/Comments cells are unlocked and highlighted green.")
+    ws.cell(note_row, 1).fill = note_fill
+    ws.cell(note_row, 1).font = Font(bold=True, color="7A5C00")
+    ws.cell(note_row, 1).alignment = Alignment(wrap_text=True)
+    ws.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=10)
 
     for col, width in zip("ABCDEFGHIJ", [16, 24, 10, 16, 8, 10, 10, 12, 16, 24]):
         ws.column_dimensions[col].width = width
