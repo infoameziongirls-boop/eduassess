@@ -1613,6 +1613,12 @@ def dashboard():
     )
 
 
+@app.route('/dashboard')
+@login_required
+def dashboard_alias():
+    return redirect(url_for('dashboard'))
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # RECONSTRUCTED: this function's def/@app.route/@login_required header and
 # its `student` lookup were missing from the source as received — the body
