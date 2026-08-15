@@ -8,6 +8,7 @@ import json
 import shutil
 import filecmp
 import traceback
+import click
 from functools import wraps
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -592,7 +593,7 @@ def utility_processor():
 # ---------------------------------------------------------------------------
 from models import (User, Student, Assessment, Setting, ActivityLog, Question,
                     QuestionAttempt, Quiz, QuizAttempt, SystemConfig, Parent,
-                    Message, init_db, ensure_default_admin_user)
+                    Message, APIKey, init_db, ensure_default_admin_user)
 from excel_utils import (ExcelTemplateHandler, ExcelBulkImporter,
                          StudentBulkImporter, TeacherBulkImporter,
                          QuestionBulkImporter, create_default_template,
@@ -716,6 +717,77 @@ cache = Cache(app, config={
 app.register_blueprint(api_bp)
 app.register_blueprint(promotion_bp)
 app.register_blueprint(support_bp)
+
+# CSRF tokens are a browser/session-cookie defense and don't apply to a
+# Bearer-token-authenticated JSON API (there's no cookie for a forged
+# cross-site request to ride on in the first place). Exempting the whole
+# blueprint only affects its POST routes — the two existing GET routes in
+# it were never subject to CSRF checks either way.
+csrf.exempt(api_bp)
+
+
+# ---------------------------------------------------------------------------
+# External API key management
+#
+# There's deliberately no admin-UI form for this: issuing an integration
+# credential is an infrequent, deliberate action best done from a shell
+# with access to the server, not a web form that could be reached by
+# whoever gets into the admin panel. Deactivate + reissue to rotate.
+# ---------------------------------------------------------------------------
+@app.cli.command('create-api-key')
+@click.option('--name', prompt='Key name (e.g. "TemseeEdu sync")',
+              help='A label to identify this key later (shown in logs, never the key itself).')
+@click.option('--user', 'username', default=None,
+              help='Username of an existing admin/teacher to attribute this key to (optional).')
+def create_api_key_command(name, username):
+    """Generate a new external-integration API key and print it once."""
+    owner = None
+    if username:
+        owner = User.query.filter_by(username=username).first()
+        if not owner:
+            click.echo(f'No user found with username "{username}". Not creating a key.')
+            return
+
+    api_key, raw_key = APIKey.generate(name=name, user=owner)
+
+    click.echo('')
+    click.echo('API key created. Copy it now, it will not be shown again:')
+    click.echo('')
+    click.echo(f'  {raw_key}')
+    click.echo('')
+    click.echo(f'(id={api_key.id}, prefix={api_key.key_prefix}..., name="{name}")')
+
+
+@app.cli.command('list-api-keys')
+def list_api_keys_command():
+    """List existing API keys (never shows the raw key, only metadata)."""
+    keys = APIKey.query.order_by(APIKey.created_at.desc()).all()
+    if not keys:
+        click.echo('No API keys have been created yet.')
+        return
+
+    for key in keys:
+        status = 'active' if key.is_active else 'REVOKED'
+        last_used = key.last_used_at.strftime('%Y-%m-%d %H:%M') if key.last_used_at else 'never'
+        owner_name = key.owner.username if key.owner else '(unattributed)'
+        click.echo(
+            f'#{key.id}  {key.key_prefix}...  "{key.name}"  '
+            f'owner={owner_name}  status={status}  last_used={last_used}'
+        )
+
+
+@app.cli.command('revoke-api-key')
+@click.argument('key_id', type=int)
+def revoke_api_key_command(key_id):
+    """Deactivate an API key by id (see `flask list-api-keys`)."""
+    api_key = db.session.get(APIKey, key_id)
+    if not api_key:
+        click.echo(f'No API key with id {key_id}.')
+        return
+
+    api_key.is_active = False
+    db.session.commit()
+    click.echo(f'Revoked key #{api_key.id} ("{api_key.name}").')
 
 
 # ---------------------------------------------------------------------------

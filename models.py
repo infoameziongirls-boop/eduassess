@@ -3,6 +3,8 @@ import os
 import re
 import time
 import math
+import secrets
+import hashlib
 from db import db
 from flask_login import UserMixin
 from sqlalchemy.exc import OperationalError
@@ -463,6 +465,53 @@ class Assessment(db.Model):
 
     def __repr__(self):
         return f"<Assessment {self.category} - {self.subject}: {self.score}/{self.max_score}>"
+
+
+class APIKey(db.Model):
+    """Bearer token for the external results-entry API (see
+    EXTERNAL_RESULTS_API_INTEGRATION.md). Only a SHA-256 hash of the key is
+    ever stored — the raw key is generated once (via `flask create-api-key`),
+    shown to the operator on the terminal, and cannot be recovered from the
+    database afterwards. Rotate a compromised key by deactivating it and
+    generating a new one, rather than trying to change the stored value."""
+    __tablename__ = "api_keys"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
+    key_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    key_prefix = db.Column(db.String(12), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    last_used_at = db.Column(db.DateTime, nullable=True)
+
+    owner = db.relationship("User", foreign_keys=[user_id])
+
+    @staticmethod
+    def hash_key(raw_key):
+        return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def generate(cls, name, user=None):
+        """Create and persist a new key, returning (APIKey, raw_key). The
+        raw key is only ever available here — the caller must display it
+        immediately, it is never stored or retrievable again."""
+        raw_key = secrets.token_urlsafe(32)
+        api_key = cls(
+            name=name,
+            key_hash=cls.hash_key(raw_key),
+            key_prefix=raw_key[:8],
+            user_id=user.id if user else None,
+        )
+        db.session.add(api_key)
+        db.session.commit()
+        return api_key, raw_key
+
+    def touch(self):
+        self.last_used_at = utcnow()
+
+    def __repr__(self):
+        return f"<APIKey {self.key_prefix}... name={self.name!r} active={self.is_active}>"
 
 
 class Setting(db.Model):
