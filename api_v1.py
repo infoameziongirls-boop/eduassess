@@ -1,4 +1,5 @@
 # api_v1.py — Register as a Blueprint
+from datetime import datetime
 from functools import wraps
 
 from flask import Blueprint, current_app, g, jsonify, request
@@ -337,3 +338,194 @@ def bulk_assessments():
         'errors': errors,
         'results': results,
     }), 200 if failed == 0 else 207
+
+
+def _serialize_assessment(a):
+    return {
+        'id': a.id,
+        'student_number': a.student.student_number if a.student else None,
+        'student_name': a.student.full_name() if a.student else None,
+        'category': a.category,
+        'subject': a.subject,
+        'class_name': a.class_name,
+        'score': a.score,
+        'max_score': a.max_score,
+        'term': a.term,
+        'academic_year': a.academic_year,
+        'session': a.session,
+        'assessor': a.assessor,
+        'comments': a.comments,
+        'date_recorded': a.date_recorded.isoformat() if a.date_recorded else None,
+    }
+
+
+@api_bp.route('/assessments', methods=['GET'])
+@require_api_key
+def list_assessments():
+    """Filtered, paginated listing — the read side of this API, added after
+    a sync run created duplicate rows because the caller's term/academic_year
+    labels didn't match what was already stored. This is what lets an
+    integration audit what it actually wrote (or what anything wrote) before
+    touching it further, instead of guessing from write-side responses
+    alone."""
+    query = Assessment.query.join(Student)
+
+    filters = {
+        'student_number': lambda v: query.filter(Student.student_number == v),
+        'category': lambda v: query.filter(Assessment.category == v),
+        'subject': lambda v: query.filter(Assessment.subject == v),
+        'term': lambda v: query.filter(Assessment.term == v),
+        'academic_year': lambda v: query.filter(Assessment.academic_year == v),
+        'session': lambda v: query.filter(Assessment.session == v),
+        'assessor': lambda v: query.filter(Assessment.assessor == v),
+    }
+    for param, apply in filters.items():
+        value = request.args.get(param)
+        if value:
+            query = apply(value)
+
+    for param, column in (('created_after', Assessment.date_recorded), ('created_before', Assessment.date_recorded)):
+        value = request.args.get(param)
+        if not value:
+            continue
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return jsonify({'error': f'{param} must be an ISO date/datetime, e.g. 2026-08-15'}), 400
+        query = query.filter(column >= parsed) if param == 'created_after' else query.filter(column <= parsed)
+
+    total = query.count()
+
+    try:
+        limit = min(int(request.args.get('limit', 50)), 500)
+        offset = max(int(request.args.get('offset', 0)), 0)
+    except ValueError:
+        return jsonify({'error': 'limit and offset must be integers'}), 400
+
+    rows = query.order_by(Assessment.date_recorded.desc()).offset(offset).limit(limit).all()
+
+    return jsonify({
+        'total': total,
+        'count': len(rows),
+        'limit': limit,
+        'offset': offset,
+        'results': [_serialize_assessment(a) for a in rows],
+    })
+
+
+@api_bp.route('/assessments/<int:assessment_id>', methods=['GET'])
+@require_api_key
+def get_assessment(assessment_id):
+    assessment = Assessment.query.get(assessment_id)
+    if not assessment:
+        return jsonify({'error': f'No assessment with id {assessment_id}'}), 404
+
+    return jsonify(_serialize_assessment(assessment))
+
+
+@api_bp.route('/assessments/<int:assessment_id>', methods=['PUT', 'PATCH'])
+@require_api_key
+def update_assessment(assessment_id):
+    assessment = Assessment.query.get(assessment_id)
+    if not assessment:
+        return jsonify({'error': f'No assessment with id {assessment_id}'}), 404
+
+    payload = request.get_json(silent=True) or {}
+    errors = []
+
+    if 'score' in payload:
+        try:
+            score = float(payload['score'])
+            if score < 0:
+                errors.append('score cannot be negative')
+        except (TypeError, ValueError):
+            errors.append('score must be a number')
+            score = None
+    else:
+        score = assessment.score
+
+    if 'max_score' in payload:
+        try:
+            max_score = float(payload['max_score'])
+        except (TypeError, ValueError):
+            errors.append('max_score must be a number')
+            max_score = None
+    else:
+        max_score = assessment.max_score
+
+    if isinstance(score, (int, float)) and isinstance(max_score, (int, float)) and score > max_score:
+        errors.append('score cannot exceed max_score')
+
+    if errors:
+        return jsonify({'success': False, 'errors': errors}), 422
+
+    assessment.score = score
+    assessment.max_score = max_score
+    if 'assessor' in payload:
+        assessment.assessor = payload['assessor']
+    if 'comments' in payload:
+        assessment.comments = payload['comments']
+
+    db.session.commit()
+
+    return jsonify({'success': True, 'message': 'Assessment updated successfully', 'assessment': _serialize_assessment(assessment)})
+
+
+@api_bp.route('/assessments/<int:assessment_id>', methods=['DELETE'])
+@require_api_key
+def delete_assessment(assessment_id):
+    assessment = Assessment.query.get(assessment_id)
+    if not assessment:
+        return jsonify({'error': f'No assessment with id {assessment_id}'}), 404
+
+    deleted = _serialize_assessment(assessment)
+    db.session.delete(assessment)
+    db.session.commit()
+
+    return jsonify({'success': True, 'message': 'Assessment deleted', 'deleted': deleted})
+
+
+@api_bp.route('/assessments/bulk-delete', methods=['POST'])
+@require_api_key
+def bulk_delete_assessments():
+    """Deliberately ID-only, no filter-based mass delete. The caller is
+    expected to have already listed and reviewed exactly which rows they
+    mean via GET /assessments — that review step is the safety rail, not
+    anything enforced here beyond requiring explicit ids. Capped at 500 per
+    call, same as the list endpoint's page size, so a single request can't
+    silently touch more than a caller could have actually reviewed."""
+    payload = request.get_json(silent=True) or {}
+    ids = payload.get('ids')
+
+    if not isinstance(ids, list) or not ids:
+        return jsonify({'success': False, 'errors': ['Request body must include a non-empty "ids" array']}), 422
+
+    if len(ids) > 500:
+        return jsonify({'success': False, 'errors': ['Cannot delete more than 500 ids in a single call']}), 422
+
+    deleted = []
+    not_found = []
+
+    for raw_id in ids:
+        try:
+            assessment_id = int(raw_id)
+        except (TypeError, ValueError):
+            not_found.append(raw_id)
+            continue
+
+        assessment = Assessment.query.get(assessment_id)
+        if not assessment:
+            not_found.append(assessment_id)
+            continue
+
+        deleted.append(_serialize_assessment(assessment))
+        db.session.delete(assessment)
+
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'deleted_count': len(deleted),
+        'not_found': not_found,
+        'deleted': deleted,
+    })

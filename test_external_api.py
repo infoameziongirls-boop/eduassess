@@ -1,5 +1,6 @@
 import os
 import sys
+from datetime import datetime
 import pytest
 
 # Ensure the application root is on the import path
@@ -335,3 +336,250 @@ def test_validate_flags_unmapped_student(client):
     assert body['valid'] == 0
     assert body['invalid'] == 1
     assert not body['results'][0]['valid']
+
+
+# ---------------------------------------------------------------------------
+# List / get / update / delete
+# ---------------------------------------------------------------------------
+
+def create_assessment_row(student, **overrides):
+    defaults = dict(
+        student_id=student.id, category='ica1', subject='mathematics',
+        class_name=student.class_name, score=40.0, max_score=50.0,
+        term='term1', academic_year='2024-2025', session='First Term',
+        assessor='Mr. Smith',
+    )
+    defaults.update(overrides)
+    assessment = Assessment(**defaults)
+    db.session.add(assessment)
+    db.session.commit()
+    return assessment
+
+
+def test_list_assessments_empty(client):
+    _, raw_key = create_key()
+
+    response = client.get('/api/v1/assessments', headers=auth_headers(raw_key))
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body['total'] == 0
+    assert body['results'] == []
+
+
+def test_list_assessments_filters_by_student_number(client):
+    _, raw_key = create_key()
+    s1 = create_student(student_number='STU001')
+    s2 = create_student(student_number='STU002')
+    create_assessment_row(s1)
+    create_assessment_row(s2)
+
+    response = client.get('/api/v1/assessments?student_number=STU001', headers=auth_headers(raw_key))
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body['total'] == 1
+    assert body['results'][0]['student_number'] == 'STU001'
+
+
+def test_list_assessments_filters_by_term_and_academic_year(client):
+    _, raw_key = create_key()
+    s1 = create_student(student_number='STU001')
+    create_assessment_row(s1, term='term1', academic_year='2024-2025')
+    create_assessment_row(s1, term='term2', academic_year='2024-2025', subject='english')
+
+    response = client.get(
+        '/api/v1/assessments?term=term1&academic_year=2024-2025',
+        headers=auth_headers(raw_key),
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body['total'] == 1
+    assert body['results'][0]['term'] == 'term1'
+
+
+def test_list_assessments_filters_by_created_after(client):
+    _, raw_key = create_key()
+    s1 = create_student(student_number='STU001')
+    old = create_assessment_row(s1, subject='old-subject')
+    old.date_recorded = datetime(2020, 1, 1)
+    db.session.commit()
+    create_assessment_row(s1, subject='new-subject')
+
+    response = client.get(
+        '/api/v1/assessments?created_after=2026-01-01',
+        headers=auth_headers(raw_key),
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body['total'] == 1
+    assert body['results'][0]['subject'] == 'new-subject'
+
+
+def test_list_assessments_rejects_bad_date_filter(client):
+    _, raw_key = create_key()
+
+    response = client.get(
+        '/api/v1/assessments?created_after=not-a-date',
+        headers=auth_headers(raw_key),
+    )
+    assert response.status_code == 400
+
+
+def test_list_assessments_pagination(client):
+    _, raw_key = create_key()
+    s1 = create_student(student_number='STU001')
+    for i in range(5):
+        create_assessment_row(s1, subject=f'subject-{i}')
+
+    response = client.get(
+        '/api/v1/assessments?limit=2&offset=1',
+        headers=auth_headers(raw_key),
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body['total'] == 5
+    assert body['count'] == 2
+    assert body['limit'] == 2
+    assert body['offset'] == 1
+
+
+def test_list_assessments_limit_capped_at_500(client):
+    _, raw_key = create_key()
+
+    response = client.get('/api/v1/assessments?limit=10000', headers=auth_headers(raw_key))
+
+    assert response.status_code == 200
+    assert response.get_json()['limit'] == 500
+
+
+def test_get_assessment_found(client):
+    _, raw_key = create_key()
+    s1 = create_student(student_number='STU001')
+    a = create_assessment_row(s1)
+
+    response = client.get(f'/api/v1/assessments/{a.id}', headers=auth_headers(raw_key))
+
+    assert response.status_code == 200
+    assert response.get_json()['id'] == a.id
+
+
+def test_get_assessment_not_found(client):
+    _, raw_key = create_key()
+
+    response = client.get('/api/v1/assessments/999', headers=auth_headers(raw_key))
+    assert response.status_code == 404
+
+
+def test_update_assessment_success(client):
+    _, raw_key = create_key()
+    s1 = create_student(student_number='STU001')
+    a = create_assessment_row(s1, score=40.0)
+
+    response = client.put(
+        f'/api/v1/assessments/{a.id}',
+        headers=auth_headers(raw_key),
+        json={'score': 45.0, 'assessor': 'Mrs. Jones'},
+    )
+
+    assert response.status_code == 200
+    refreshed = db.session.get(Assessment, a.id)
+    assert refreshed.score == 45.0
+    assert refreshed.assessor == 'Mrs. Jones'
+
+
+def test_update_assessment_rejects_score_above_max(client):
+    _, raw_key = create_key()
+    s1 = create_student(student_number='STU001')
+    a = create_assessment_row(s1, score=40.0, max_score=50.0)
+
+    response = client.put(
+        f'/api/v1/assessments/{a.id}',
+        headers=auth_headers(raw_key),
+        json={'score': 999},
+    )
+
+    assert response.status_code == 422
+    assert db.session.get(Assessment, a.id).score == 40.0
+
+
+def test_update_assessment_not_found(client):
+    _, raw_key = create_key()
+
+    response = client.put('/api/v1/assessments/999', headers=auth_headers(raw_key), json={'score': 10})
+    assert response.status_code == 404
+
+
+def test_delete_assessment_success(client):
+    _, raw_key = create_key()
+    s1 = create_student(student_number='STU001')
+    a = create_assessment_row(s1)
+    aid = a.id
+
+    response = client.delete(f'/api/v1/assessments/{aid}', headers=auth_headers(raw_key))
+
+    assert response.status_code == 200
+    assert response.get_json()['deleted']['id'] == aid
+    assert db.session.get(Assessment, aid) is None
+
+
+def test_delete_assessment_not_found(client):
+    _, raw_key = create_key()
+
+    response = client.delete('/api/v1/assessments/999', headers=auth_headers(raw_key))
+    assert response.status_code == 404
+
+
+def test_bulk_delete_by_explicit_ids(client):
+    _, raw_key = create_key()
+    s1 = create_student(student_number='STU001')
+    a1 = create_assessment_row(s1, subject='math')
+    a2 = create_assessment_row(s1, subject='english')
+    a3 = create_assessment_row(s1, subject='science')
+
+    response = client.post(
+        '/api/v1/assessments/bulk-delete',
+        headers=auth_headers(raw_key),
+        json={'ids': [a1.id, a2.id, 999999]},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body['deleted_count'] == 2
+    assert body['not_found'] == [999999]
+    assert db.session.get(Assessment, a1.id) is None
+    assert db.session.get(Assessment, a2.id) is None
+    assert db.session.get(Assessment, a3.id) is not None
+
+
+def test_bulk_delete_rejects_empty_ids(client):
+    _, raw_key = create_key()
+
+    response = client.post(
+        '/api/v1/assessments/bulk-delete',
+        headers=auth_headers(raw_key),
+        json={'ids': []},
+    )
+    assert response.status_code == 422
+
+
+def test_bulk_delete_rejects_more_than_500_ids(client):
+    _, raw_key = create_key()
+
+    response = client.post(
+        '/api/v1/assessments/bulk-delete',
+        headers=auth_headers(raw_key),
+        json={'ids': list(range(501))},
+    )
+    assert response.status_code == 422
+
+
+def test_list_and_delete_require_auth(client):
+    assert client.get('/api/v1/assessments').status_code == 401
+    assert client.get('/api/v1/assessments/1').status_code == 401
+    assert client.put('/api/v1/assessments/1', json={}).status_code == 401
+    assert client.delete('/api/v1/assessments/1').status_code == 401
+    assert client.post('/api/v1/assessments/bulk-delete', json={'ids': [1]}).status_code == 401
