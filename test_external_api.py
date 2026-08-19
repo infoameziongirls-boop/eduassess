@@ -142,6 +142,71 @@ def test_lookup_student_missing_query_param(client):
 
 
 # ---------------------------------------------------------------------------
+# Student roster synchronization
+# ---------------------------------------------------------------------------
+
+def test_list_students(client):
+    _, raw_key = create_key()
+    create_student(student_number='STU001')
+
+    response = client.get('/api/v1/students', headers=auth_headers(raw_key))
+
+    assert response.status_code == 200
+    assert response.get_json()['students'][0]['student_number'] == 'STU001'
+
+
+def test_create_student(client):
+    _, raw_key = create_key()
+
+    response = client.post(
+        '/api/v1/students',
+        headers=auth_headers(raw_key),
+        json={'student_number': 'STU002', 'name': 'John Mensah', 'class_name': 'Form 2'},
+    )
+
+    assert response.status_code == 201
+    student = Student.query.filter_by(student_number='STU002').one()
+    assert student.first_name == 'John'
+    assert student.last_name == 'Mensah'
+
+
+def test_update_student(client):
+    _, raw_key = create_key()
+    create_student(student_number='STU003')
+
+    response = client.patch(
+        '/api/v1/students/STU003',
+        headers=auth_headers(raw_key),
+        json={'first_name': 'Janet', 'class_name': 'Form 3'},
+    )
+
+    assert response.status_code == 200
+    student = Student.query.filter_by(student_number='STU003').one()
+    assert student.first_name == 'Janet'
+    assert student.class_name == 'Form 3'
+
+
+def test_bulk_students_upserts_by_student_number(client):
+    _, raw_key = create_key()
+    create_student(student_number='STU004')
+
+    response = client.post(
+        '/api/v1/students/bulk',
+        headers=auth_headers(raw_key),
+        json={'students': [
+            {'student_number': 'STU004', 'name': 'Updated Doe'},
+            {'student_number': 'STU005', 'name': 'New Student'},
+        ]},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body['created'] == 1
+    assert body['updated'] == 1
+    assert Student.query.filter_by(student_number='STU005').count() == 1
+
+
+# ---------------------------------------------------------------------------
 # Single assessment create
 # ---------------------------------------------------------------------------
 

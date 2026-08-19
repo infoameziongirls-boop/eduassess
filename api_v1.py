@@ -1,5 +1,5 @@
 # api_v1.py — Register as a Blueprint
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
 
 from flask import Blueprint, current_app, g, jsonify, request
@@ -234,6 +234,171 @@ def lookup_student():
         'class': student.get_class_display(),
         'study_area': student.get_study_area_display(),
     })
+
+
+# ---------------------------------------------------------------------------
+# Student roster API
+#
+# The browser routes above are session/CSRF protected. These routes are for
+# approved school-system integrations and use the same Bearer API-key
+# middleware as the results API. student_number is the stable upsert key.
+# ---------------------------------------------------------------------------
+
+def _student_payload(student):
+    return {
+        'id': student.id,
+        'student_number': student.student_number,
+        'reference_number': student.reference_number,
+        'first_name': student.first_name,
+        'last_name': student.last_name,
+        'middle_name': student.middle_name,
+        'class_name': student.class_name,
+        'study_area': student.study_area,
+        'date_of_birth': student.date_of_birth.isoformat() if student.date_of_birth else None,
+    }
+
+
+def _validate_student_payload(payload, existing=None):
+    payload = payload if isinstance(payload, dict) else {}
+    errors = []
+
+    student_number = str(payload.get('student_number') or (existing.student_number if existing else '')).strip()
+    first_name = str(payload.get('first_name') or (existing.first_name if existing else '')).strip()
+    last_name = str(payload.get('last_name') or (existing.last_name if existing else '')).strip()
+
+    # Accept integrations that expose one display-name field while keeping
+    # EduAssess's canonical first/last-name storage.
+    if not first_name and not last_name and payload.get('name'):
+        name_parts = str(payload['name']).strip().split()
+        first_name = name_parts[0] if name_parts else ''
+        last_name = ' '.join(name_parts[1:]) if len(name_parts) > 1 else ''
+
+    if not student_number:
+        errors.append('student_number is required')
+    if not first_name:
+        errors.append('first_name is required')
+    if not last_name:
+        errors.append('last_name is required')
+
+    if len(student_number) > 50:
+        errors.append('student_number must be 50 characters or fewer')
+
+    date_of_birth = payload.get('date_of_birth') if 'date_of_birth' in payload else (existing.date_of_birth if existing else None)
+    if isinstance(date_of_birth, str):
+        try:
+            date_of_birth = datetime.fromisoformat(date_of_birth).date()
+        except ValueError:
+            errors.append('date_of_birth must be an ISO date (YYYY-MM-DD)')
+
+    return {
+        'student_number': student_number,
+        'first_name': first_name,
+        'last_name': last_name,
+        'middle_name': str(payload.get('middle_name') or (existing.middle_name if existing else '')).strip() or None,
+        'class_name': str(payload.get('class_name') or (existing.class_name if existing else '')).strip() or None,
+        'study_area': str(payload.get('study_area') or (existing.study_area if existing else '')).strip() or None,
+        'reference_number': str(payload.get('reference_number') or (existing.reference_number if existing else '')).strip() or None,
+        'date_of_birth': date_of_birth,
+    }, errors
+
+
+@api_bp.route('/students', methods=['GET'])
+@require_api_key
+def list_students_api():
+    page = max(request.args.get('page', 1, type=int), 1)
+    per_page = min(max(request.args.get('per_page', 100, type=int), 1), 500)
+    query = Student.query.order_by(Student.student_number)
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+    return jsonify({
+        'students': [_student_payload(student) for student in pagination.items],
+        'pagination': {
+            'page': pagination.page,
+            'per_page': pagination.per_page,
+            'pages': pagination.pages,
+            'total': pagination.total,
+        },
+    })
+
+
+@api_bp.route('/students', methods=['POST'])
+@require_api_key
+def create_student_api():
+    payload = request.get_json(silent=True) or {}
+    student_number = str(payload.get('student_number') or '').strip()
+    existing = Student.query.filter_by(student_number=student_number).first() if student_number else None
+    data, errors = _validate_student_payload(payload, existing)
+
+    if errors:
+        return jsonify({'error': 'Validation failed', 'errors': errors}), 422
+    if existing:
+        return jsonify({'error': f'Student with student_number "{student_number}" already exists'}), 409
+
+    student = Student(**data)
+    if not student.reference_number:
+        student.reference_number = f'STU{int(datetime.now(timezone.utc).timestamp() * 1000) % 1000000:06d}'
+    db.session.add(student)
+    db.session.commit()
+    return jsonify({'student': _student_payload(student), 'created': True}), 201
+
+
+@api_bp.route('/students/<string:student_number>', methods=['PUT', 'PATCH'])
+@require_api_key
+def update_student_api(student_number):
+    student = Student.query.filter_by(student_number=student_number.strip()).first()
+    if not student:
+        return jsonify({'error': f'No student found with student_number "{student_number}"'}), 404
+
+    data, errors = _validate_student_payload(request.get_json(silent=True) or {}, student)
+    if errors:
+        return jsonify({'error': 'Validation failed', 'errors': errors}), 422
+
+    for key, value in data.items():
+        setattr(student, key, value)
+    db.session.commit()
+    return jsonify({'student': _student_payload(student), 'updated': True})
+
+
+@api_bp.route('/students/bulk', methods=['POST'])
+@require_api_key
+def bulk_students_api():
+    payload = request.get_json(silent=True) or {}
+    rows = payload.get('students') if isinstance(payload, dict) else payload
+    if not isinstance(rows, list):
+        return jsonify({'error': 'students must be an array'}), 422
+
+    created = updated = 0
+    errors = []
+    results = []
+
+    for index, item in enumerate(rows, start=1):
+        item = item if isinstance(item, dict) else {}
+        number = str(item.get('student_number') or '').strip()
+        existing = Student.query.filter_by(student_number=number).first() if number else None
+        data, item_errors = _validate_student_payload(item, existing)
+        if item_errors:
+            errors.append({'row': index, 'student_number': number or None, 'errors': item_errors})
+            continue
+
+        if existing:
+            for key, value in data.items():
+                setattr(existing, key, value)
+            student = existing
+            updated += 1
+        else:
+            student = Student(**data)
+            if not student.reference_number:
+                student.reference_number = f'STU{int(datetime.now(timezone.utc).timestamp() * 1000 + index) % 1000000:06d}'
+            db.session.add(student)
+            created += 1
+        results.append(_student_payload(student))
+
+    if errors:
+        db.session.rollback()
+        return jsonify({'error': 'Validation failed', 'created': 0, 'updated': 0, 'errors': errors}), 422
+
+    db.session.commit()
+    return jsonify({'created': created, 'updated': updated, 'students': results}), 200
 
 
 @api_bp.route('/assessments/validate', methods=['POST'])
