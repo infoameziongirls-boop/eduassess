@@ -40,11 +40,35 @@
                         </div>
                     </div>
 
-                    {% if student and student.reference_number %}
-                    <div class="mb-3">
-                        <label class="form-label">Reference Number</label>
-                        <div style="padding:10px 14px;background:var(--surface);border:1.5px solid var(--border);border-radius:9px;font-family:monospace;font-size:.85rem;color:var(--ink-3);">{{ student.reference_number }}</div>
-                        <div style="font-size:.7rem;color:var(--ink-4);margin-top:4px;">Auto-generated — read only</div>
+                    {% if student %}
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.student_id_code.label.text }}</label>
+                            {{ form.student_id_code(class="form-control", autocomplete="off", style="font-family:monospace;") }}
+                            {% for e in form.student_id_code.errors %}<div style="color:var(--rose);font-size:.75rem;mt-1">{{ e }}</div>{% endfor %}
+                            <div style="font-size:.7rem;color:var(--ink-4);margin-top:4px;">Admission-style ID, e.g. ZGS/SC26/001. Editable — change with care, this is the student's official ID.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.reference_number.label.text }}</label>
+                            {{ form.reference_number(class="form-control", autocomplete="off", style="font-family:monospace;") }}
+                            {% for e in form.reference_number.errors %}<div style="color:var(--rose);font-size:.75rem;mt-1">{{ e }}</div>{% endfor %}
+                            <div style="font-size:.7rem;color:var(--ink-4);margin-top:4px;">A separate reference number, e.g. STU240030606000. Editable.</div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.student_id_code.label.text }} <span style="font-weight:400;color:var(--ink-4);">(optional)</span></label>
+                            {{ form.student_id_code(class="form-control", autocomplete="off", style="font-family:monospace;", placeholder="Leave blank to auto-generate, e.g. ZGS/SC26/001") }}
+                            {% for e in form.student_id_code.errors %}<div style="color:var(--rose);font-size:.75rem;mt-1">{{ e }}</div>{% endfor %}
+                            <div style="font-size:.7rem;color:var(--ink-4);margin-top:4px;">Leave blank and the system generates one from the selected study area below (Science/Business/Visual Arts/Home Economics/General Arts).</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">{{ form.reference_number.label.text }} <span style="font-weight:400;color:var(--ink-4);">(optional)</span></label>
+                            {{ form.reference_number(class="form-control", autocomplete="off", style="font-family:monospace;", placeholder="Leave blank to auto-generate, e.g. STU240030") }}
+                            {% for e in form.reference_number.errors %}<div style="color:var(--rose);font-size:.75rem;mt-1">{{ e }}</div>{% endfor %}
+                            <div style="font-size:.7rem;color:var(--ink-4);margin-top:4px;">Leave blank and the system generates one automatically.</div>
+                        </div>
                     </div>
                     {% endif %}
 

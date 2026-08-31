@@ -3,6 +3,8 @@ import os
 import re
 import time
 import math
+import secrets
+import hashlib
 from db import db
 from flask_login import UserMixin
 from sqlalchemy.exc import OperationalError
@@ -32,6 +34,21 @@ class User(UserMixin, db.Model):
     classes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow)
     last_login = db.Column(db.DateTime, nullable=True)
+    # Updated on a throttle by the before_request hook in app.py (not on
+    # every single request — see there for why), used purely to show a
+    # live "online now" indicator. Distinct from last_login on purpose:
+    # last_login is a one-time login-event timestamp (currently unused
+    # elsewhere in the app — not touched here), this is "have they done
+    # anything at all recently", which is what "online" actually means.
+    last_activity = db.Column(db.DateTime, nullable=True)
+
+    ONLINE_THRESHOLD_SECONDS = 300  # 5 minutes of inactivity = "offline"
+
+    def is_online(self):
+        if not self.last_activity:
+            return False
+        delta = utcnow() - self.last_activity
+        return delta.total_seconds() < self.ONLINE_THRESHOLD_SECONDS
 
     assessments = db.relationship(
         "Assessment",
@@ -137,6 +154,15 @@ class Student(UserMixin, db.Model):
     middle_name = db.Column(db.String(120), nullable=True)
     class_name = db.Column(db.String(50), nullable=True)
     reference_number = db.Column(db.String(50), unique=True, nullable=True, index=True)
+    # Distinct from both student_number (login credential, e.g.
+    # STU24003060606C) and reference_number (plain admin-editable
+    # identifier, e.g. STU240030606000). This is the school's admission-
+    # style ID: ZGS/{FAMILY CODE}{YY}/{SEQ}, e.g. ZGS/SC26/001 for the
+    # 1st Science student admitted in 2026 — shared across all variants
+    # of a subject family (Science A and Science B share one "SC"
+    # sequence, not separate ones). See generate_student_id_number() and
+    # STUDY_AREA_FAMILY_CODE in app.py.
+    student_id_code = db.Column(db.String(50), unique=True, nullable=True, index=True)
     date_of_birth = db.Column(db.Date, nullable=True)
     study_area = db.Column(db.String(50), nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow)
@@ -164,9 +190,12 @@ class Student(UserMixin, db.Model):
     )
 
     def full_name(self):
-        if self.middle_name:
-            return f"{self.first_name} {self.middle_name} {self.last_name}"
-        return f"{self.first_name} {self.last_name}"
+        # f-strings render Python's None as the literal text "None", so a
+        # NULL last_name/middle_name (e.g. a mononym student, or legacy
+        # data predating the not-null constraint) must be filtered out
+        # before joining, not just interpolated.
+        parts = [self.first_name, self.middle_name, self.last_name]
+        return " ".join(p for p in parts if p)
 
     def get_class_display(self):
         if not self.class_name:
@@ -394,6 +423,7 @@ class Student(UserMixin, db.Model):
         raw = scores_from_assessments(query)
         return {
             'student_number': self.student_number or '',
+            'student_id':     self.student_id_code or '',
             'last_name':      self.last_name or '',
             'first_name':     self.first_name or '',
             'middle_name':    self.middle_name or '',
@@ -436,33 +466,69 @@ class Assessment(db.Model):
         return 0.0
 
     def get_grade_letter(self):
-        percentage = self.get_percentage()
-        if percentage >= 90:   return "A+"
-        elif percentage >= 80: return "A"
-        elif percentage >= 75: return "B+"
-        elif percentage >= 70: return "B"
-        elif percentage >= 65: return "C+"
-        elif percentage >= 60: return "C"
-        elif percentage >= 55: return "D+"
-        elif percentage >= 50: return "D"
-        else:                  return "F"
+        # Uses the same A1-F9 scale as everywhere else in the app
+        # (template_updater._GPA_TABLE). This used to be a separate
+        # A+/A/B+/B... scale, which meant this per-category badge could
+        # disagree with the subject-level grade shown right next to it.
+        from template_updater import _grade
+        return _grade(self.get_percentage())['grade']
 
     def get_grade_point(self):
-        percentage = self.get_percentage()
-        if percentage >= 80:   return 4.0
-        elif percentage >= 75: return 3.5
-        elif percentage >= 70: return 3.0
-        elif percentage >= 65: return 2.5
-        elif percentage >= 60: return 2.0
-        elif percentage >= 55: return 1.5
-        elif percentage >= 50: return 1.0
-        else:                  return 0.0
+        from template_updater import _grade
+        return _grade(self.get_percentage())['gpa']
 
     def get_subject_display(self):
         return self.subject.replace('_', ' ').title()
 
     def __repr__(self):
         return f"<Assessment {self.category} - {self.subject}: {self.score}/{self.max_score}>"
+
+
+class APIKey(db.Model):
+    """Bearer token for the external results-entry API (see
+    EXTERNAL_RESULTS_API_INTEGRATION.md). Only a SHA-256 hash of the key is
+    ever stored — the raw key is generated once (via `flask create-api-key`),
+    shown to the operator on the terminal, and cannot be recovered from the
+    database afterwards. Rotate a compromised key by deactivating it and
+    generating a new one, rather than trying to change the stored value."""
+    __tablename__ = "api_keys"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
+    key_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    key_prefix = db.Column(db.String(12), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=utcnow)
+    last_used_at = db.Column(db.DateTime, nullable=True)
+
+    owner = db.relationship("User", foreign_keys=[user_id])
+
+    @staticmethod
+    def hash_key(raw_key):
+        return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def generate(cls, name, user=None):
+        """Create and persist a new key, returning (APIKey, raw_key). The
+        raw key is only ever available here — the caller must display it
+        immediately, it is never stored or retrievable again."""
+        raw_key = secrets.token_urlsafe(32)
+        api_key = cls(
+            name=name,
+            key_hash=cls.hash_key(raw_key),
+            key_prefix=raw_key[:8],
+            user_id=user.id if user else None,
+        )
+        db.session.add(api_key)
+        db.session.commit()
+        return api_key, raw_key
+
+    def touch(self):
+        self.last_used_at = utcnow()
+
+    def __repr__(self):
+        return f"<APIKey {self.key_prefix}... name={self.name!r} active={self.is_active}>"
 
 
 class Setting(db.Model):
@@ -868,6 +934,50 @@ def ensure_default_admin_user(app, bcrypt):
         return admin
 
 
+def ensure_user_columns():
+    """
+    Add any missing legacy user table columns without crashing startup.
+    Older SQLite databases can be missing columns such as last_activity and
+    classes even though the model expects them.
+    """
+    try:
+        inspector = inspect(db.engine)
+        if not inspector.has_table('users'):
+            return
+
+        dialect = db.engine.dialect.name
+        columns = {column['name'] for column in inspector.get_columns('users')}
+
+        if dialect == 'postgresql':
+            type_map = {
+                'subject':      'VARCHAR(100)',
+                'class_name':   'VARCHAR(50)',
+                'classes':      'TEXT',
+                'created_at':   'TIMESTAMP',
+                'last_login':   'TIMESTAMP',
+                'last_activity':'TIMESTAMP',
+            }
+        else:
+            type_map = {
+                'subject':      'VARCHAR(100)',
+                'class_name':   'VARCHAR(50)',
+                'classes':      'TEXT',
+                'created_at':   'DATETIME',
+                'last_login':   'DATETIME',
+                'last_activity':'DATETIME',
+            }
+
+        for column_name, column_type in type_map.items():
+            if column_name in columns:
+                continue
+            db.session.execute(text(f'ALTER TABLE users ADD COLUMN {column_name} {column_type}'))
+
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        print(f"[ensure_user_columns] WARNING: could not sync columns: {exc}")
+
+
 def ensure_settings_columns():
     """
     Safely add the results-release columns to an existing settings table.
@@ -954,6 +1064,7 @@ def init_db(app, bcrypt):
                 print(f"Database not ready, retrying in 2 seconds... ({attempt+1}/{max_retries})")
                 time.sleep(2)
 
+        ensure_user_columns()
         ensure_settings_columns()
 
         if not Setting.query.first():

@@ -8,6 +8,7 @@ import json
 import shutil
 import filecmp
 import traceback
+import click
 from functools import wraps
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -39,7 +40,7 @@ from wtforms.validators import (InputRequired, Length, Optional,
                                 NumberRange, ValidationError)
 
 from db import db
-from config import config
+from config import config, Config
 
 # ---------------------------------------------------------------------------
 # Module-level constants
@@ -69,6 +70,18 @@ ASSESSMENT_WEIGHTS = {
     'gp1':  0.05, 'gp2':  0.05,
     'practical': 0.10, 'mid_term': 0.10, 'end_term': 0.50,
 }
+
+# Categories that are ACTIVE assessment-entry / completion-tracking
+# components, per the current student_template.xlsx. ICP1/ICP2 remain
+# valid category codes (CATEGORY_LABELS/CATEGORY_MAX_SCORES/
+# ASSESSMENT_WEIGHTS still define them, for historical data, filtering
+# and Excel import/export) but are supplementary and non-contributing to
+# the final grade — see template_updater.calculate_scores_from_template.
+# Every place in this module that lists "the assessment categories a
+# teacher must fill in" (entry forms, bulk rosters, completion trackers)
+# should reference this constant rather than re-deriving its own list, so
+# there is exactly one definition of "active" to keep in sync.
+ACTIVE_CATEGORIES = ['ica1', 'ica2', 'gp1', 'gp2', 'practical', 'mid_term', 'end_term']
 
 ASSESSMENTS_PER_PAGE = 20
 
@@ -592,7 +605,7 @@ def utility_processor():
 # ---------------------------------------------------------------------------
 from models import (User, Student, Assessment, Setting, ActivityLog, Question,
                     QuestionAttempt, Quiz, QuizAttempt, SystemConfig, Parent,
-                    Message, init_db, ensure_default_admin_user)
+                    Message, APIKey, init_db, ensure_default_admin_user)
 from excel_utils import (ExcelTemplateHandler, ExcelBulkImporter,
                          StudentBulkImporter, TeacherBulkImporter,
                          QuestionBulkImporter, create_default_template,
@@ -706,16 +719,106 @@ app.config['CATEGORY_MAX_SCORES'] = CATEGORY_MAX_SCORES
 app.config['ASSESSMENT_WEIGHTS']  = ASSESSMENT_WEIGHTS
 migrate = Migrate(app, db)
 
-# Simple in-process cache with a 5-minute TTL.
-# If you later add Redis, set CACHE_TYPE="RedisCache" and CACHE_REDIS_URL.
-cache = Cache(app, config={
-    "CACHE_TYPE": "SimpleCache",
-    "CACHE_DEFAULT_TIMEOUT": 300,  # 5 minutes
-})
+# Cache backend for get_incomplete_assessments() and similar. SimpleCache
+# is an in-process dict — under Gunicorn/uWSGI with more than one worker
+# (the normal production setup; see requirements.txt), each worker gets
+# its OWN separate copy, so cache.delete() from a request handled by one
+# worker never touches the others. That silently broke exactly the thing
+# it should have helped with: a "Refresh" button meant to force a live
+# recount would only actually refresh whichever single worker happened to
+# receive that POST, while the rest kept serving stale data for up to 5
+# more minutes. Using Redis (already configured for sessions in
+# production — see config.py's SESSION_REDIS) gives every worker process
+# a shared, consistent cache instead. Falls back to SimpleCache only when
+# no REDIS_URL is set (e.g. local development), same fallback pattern
+# config.py already uses for sessions.
+_cache_redis_url = os.environ.get('REDIS_URL', '')
+if _cache_redis_url and _cache_redis_url != 'memory://':
+    cache = Cache(app, config={
+        "CACHE_TYPE": "RedisCache",
+        "CACHE_REDIS_URL": _cache_redis_url,
+        "CACHE_DEFAULT_TIMEOUT": 300,  # 5 minutes
+    })
+else:
+    cache = Cache(app, config={
+        "CACHE_TYPE": "SimpleCache",
+        "CACHE_DEFAULT_TIMEOUT": 300,  # 5 minutes
+    })
 
 app.register_blueprint(api_bp)
 app.register_blueprint(promotion_bp)
 app.register_blueprint(support_bp)
+
+# CSRF tokens are a browser/session-cookie defense and don't apply to a
+# Bearer-token-authenticated JSON API (there's no cookie for a forged
+# cross-site request to ride on in the first place). Exempting the whole
+# blueprint only affects its POST routes — the two existing GET routes in
+# it were never subject to CSRF checks either way.
+csrf.exempt(api_bp)
+
+
+# ---------------------------------------------------------------------------
+# External API key management
+#
+# There's deliberately no admin-UI form for this: issuing an integration
+# credential is an infrequent, deliberate action best done from a shell
+# with access to the server, not a web form that could be reached by
+# whoever gets into the admin panel. Deactivate + reissue to rotate.
+# ---------------------------------------------------------------------------
+@app.cli.command('create-api-key')
+@click.option('--name', prompt='Key name (e.g. "TemseeEdu sync")',
+              help='A label to identify this key later (shown in logs, never the key itself).')
+@click.option('--user', 'username', default=None,
+              help='Username of an existing admin/teacher to attribute this key to (optional).')
+def create_api_key_command(name, username):
+    """Generate a new external-integration API key and print it once."""
+    owner = None
+    if username:
+        owner = User.query.filter_by(username=username).first()
+        if not owner:
+            click.echo(f'No user found with username "{username}". Not creating a key.')
+            return
+
+    api_key, raw_key = APIKey.generate(name=name, user=owner)
+
+    click.echo('')
+    click.echo('API key created. Copy it now, it will not be shown again:')
+    click.echo('')
+    click.echo(f'  {raw_key}')
+    click.echo('')
+    click.echo(f'(id={api_key.id}, prefix={api_key.key_prefix}..., name="{name}")')
+
+
+@app.cli.command('list-api-keys')
+def list_api_keys_command():
+    """List existing API keys (never shows the raw key, only metadata)."""
+    keys = APIKey.query.order_by(APIKey.created_at.desc()).all()
+    if not keys:
+        click.echo('No API keys have been created yet.')
+        return
+
+    for key in keys:
+        status = 'active' if key.is_active else 'REVOKED'
+        last_used = key.last_used_at.strftime('%Y-%m-%d %H:%M') if key.last_used_at else 'never'
+        owner_name = key.owner.username if key.owner else '(unattributed)'
+        click.echo(
+            f'#{key.id}  {key.key_prefix}...  "{key.name}"  '
+            f'owner={owner_name}  status={status}  last_used={last_used}'
+        )
+
+
+@app.cli.command('revoke-api-key')
+@click.argument('key_id', type=int)
+def revoke_api_key_command(key_id):
+    """Deactivate an API key by id (see `flask list-api-keys`)."""
+    api_key = db.session.get(APIKey, key_id)
+    if not api_key:
+        click.echo(f'No API key with id {key_id}.')
+        return
+
+    api_key.is_active = False
+    db.session.commit()
+    click.echo(f'Revoked key #{api_key.id} ("{api_key.name}").')
 
 
 # ---------------------------------------------------------------------------
@@ -744,10 +847,13 @@ def get_incomplete_assessments():
 
     The aggregation is performed inside PostgreSQL rather than in Python to
     avoid loading up to 18,000 rows on every dashboard request.
-    The result is cached for 5 minutes.
+    The result is cached for 5 minutes (see /admin/api/refresh-incomplete-
+    assessments for a manual, on-demand bust of that cache).
     """
-    required = {'ica1', 'ica2', 'icp1', 'icp2', 'gp1', 'gp2',
-                'practical', 'mid_term', 'end_term'}
+    # ICP1/ICP2 are supplementary, non-contributing categories (see
+    # ACTIVE_CATEGORIES) and are therefore excluded from the "required"
+    # set used to flag incomplete assessment records.
+    required = set(ACTIVE_CATEGORIES)
 
     # Single query: one row per (student, subject, category) — archived excluded.
     rows = (
@@ -766,6 +872,41 @@ def get_incomplete_assessments():
         if not sid or not subj or not cat:
             continue
         ssc.setdefault((sid, subj), set()).add(cat)
+
+    # ------------------------------------------------------------------
+    # The block above only ever looks at (student, subject) pairs that
+    # already have at least one Assessment row. A student with ZERO
+    # assessments recorded for a subject they're actually meant to be
+    # assessed in — e.g. right after execute_promotion() archives every
+    # one of their prior assessments, or simply before a teacher has
+    # entered anything yet this term — never appears in `rows` at all,
+    # so they were silently skipped entirely: the single most incomplete
+    # case (0 of 9 categories done) was exactly the case this never
+    # caught. This is why the "Students Needing Attention" panel could
+    # show nothing even with a school full of freshly-promoted or
+    # not-yet-assessed students.
+    #
+    # Fix: for every student with a resolvable study area, also check
+    # their full expected subject list (core + electives, from
+    # STUDY_AREA_SUBJECTS) — not just subjects they happen to already
+    # have a row for — so a subject with zero assessments is correctly
+    # reported as 100% missing rather than invisible.
+    sas = _get_study_area_subjects_config()
+    if sas:
+        students_with_area = (
+            db.session.query(Student.id, Student.study_area)
+            .filter(Student.study_area.isnot(None))
+            .all()
+        )
+        for sid, area in students_with_area:
+            area_cfg = sas.get(area)
+            if not area_cfg:
+                continue  # unresolvable study_area (see class_management's
+                          # orphaned-students check) — nothing to expect here
+            expected_subjects = list(area_cfg.get('core', [])) + list(area_cfg.get('electives', []))
+            for subj in expected_subjects:
+                ssc.setdefault((sid, subj), set())  # ensure the pair exists,
+                                                     # even with zero categories
 
     if not ssc:
         return []
@@ -794,6 +935,10 @@ def get_incomplete_assessments():
 
 
 GRADE_SCALE = [
+    # Kept in sync with template_updater._GPA_TABLE, which is the single
+    # authoritative source used for every grade/GPA calculation. This list
+    # is display-only (grading-scale reference tables in the UI) — if you
+    # change thresholds, change _GPA_TABLE first, then mirror here.
     {'grade': 'A1', 'range': '80 – 100', 'interpretation': 'Excellent', 'gpa': 4.0, 'grade_point': 1},
     {'grade': 'B2', 'range': '70 – 79', 'interpretation': 'Very Good', 'gpa': 3.5, 'grade_point': 2},
     {'grade': 'B3', 'range': '60 – 69', 'interpretation': 'Good', 'gpa': 3.0, 'grade_point': 3},
@@ -903,31 +1048,28 @@ def calculate_total_grade_points(student):
     if not subject_grade_points:
         return None
 
-    core_candidates = []
-    for key in ['english_language', 'mathematics', 'social_studies']:
-        if key in subject_grade_points:
-            core_candidates.append((key, subject_grade_points[key]))
+    # The four core subjects are fixed, not "best of" — every student takes
+    # all four (or three, for science students — see below). There is no
+    # selection to make among them, unlike electives.
+    #
+    # 'general_science' is this app's subject code for what the grading
+    # policy calls "integrated_science" — same subject, matched here so a
+    # science student correctly falls through to the elective-substitution
+    # branch below (they study chemistry/physics/biology instead).
+    CORE_SUBJECT_KEYS = ['english_language', 'mathematics', 'general_science', 'social_studies']
 
-    if 'general_science' in subject_grade_points:
-        core_candidates.append(('general_science', subject_grade_points['general_science']))
-    else:
-        replacement_candidates = [
-            (key, subject_grade_points[key])
-            for key in ('ict', 'physical_education_health')
-            if key in subject_grade_points
-        ]
-        if replacement_candidates:
-            replacement_candidates.sort(key=lambda item: item[1])
-            core_candidates.append(replacement_candidates[0])
+    present_core_keys = [key for key in CORE_SUBJECT_KEYS if key in subject_grade_points]
+    core_points = [subject_grade_points[key] for key in present_core_keys]
+    used_core_keys = set(present_core_keys)
 
-    core_candidates.sort(key=lambda item: item[1], reverse=True)
-    selected_core = core_candidates[:4]
-    core_points = [point for _, point in selected_core]
-    used_core_keys = {key for key, _ in selected_core}
-
+    # Best N electives, where N makes the total up to 8 subjects. A
+    # student missing a core subject (e.g. a science student with no
+    # general_science/integrated_science) takes one extra elective in its
+    # place rather than a substitute core, per the grading policy.
+    electives_needed = 8 - len(present_core_keys)
     elective_points = sorted(
-        [point for key, point in subject_grade_points.items() if key not in used_core_keys]
-    )[:4]
+        point for key, point in subject_grade_points.items() if key not in used_core_keys
+    )[:electives_needed]
 
     if core_points or elective_points:
         return sum(core_points) + sum(elective_points)
@@ -954,11 +1096,131 @@ def get_grade_class_division(gpa):
 
 
 def generate_unique_reference_number():
+    """
+    Plain reference number (Student.reference_number), e.g. STU240030606000.
+
+    This is intentionally NOT the ZGS/{FAMILY}{YY}/{SEQ} admission-style
+    code — that's a separate identifier, Student.student_id_code, with
+    its own generator below (generate_student_id_number). Keeping these
+    as two distinct, independently-editable fields is deliberate: the
+    reference number is a plain freeform identifier, the student ID is
+    the structured admission number.
+    """
     for _ in range(100):
         ref = f'STU{random.randint(100000, 999999)}'
         if not Student.query.filter_by(reference_number=ref).first():
             return ref
     return f'STU{int(time.time()) % 1000000:06d}'
+
+
+# Family-level code used in the "ZGS/{FAMILY}{YY}/{SEQ}" student ID
+# format. Deliberately coarser than the specific study-area variant —
+# e.g. science_a and science_b BOTH use "SC" and share one sequence, they
+# are not distinguished at this level. All 5 codes below were given
+# explicitly, not derived: "science" -> SC, "business" -> BU,
+# "visual and performing arts" -> VA (not VPA), "home economics" -> HE,
+# "general arts" -> GA.
+STUDY_AREA_FAMILY_CODE = {}
+for _key, _label in Config.STUDY_AREAS:
+    if _key.startswith('science_'):
+        STUDY_AREA_FAMILY_CODE[_key] = 'SC'
+    elif _key.startswith('business_'):
+        STUDY_AREA_FAMILY_CODE[_key] = 'BU'
+    elif _key.startswith('visual_performing_arts_'):
+        STUDY_AREA_FAMILY_CODE[_key] = 'VA'
+    elif _key.startswith('home_economics_'):
+        STUDY_AREA_FAMILY_CODE[_key] = 'HE'
+    elif _key.startswith('general_arts_'):
+        STUDY_AREA_FAMILY_CODE[_key] = 'GA'
+del _key, _label
+
+
+def generate_student_id_number(study_area=None, year=None):
+    """
+    Admission-number-style student ID: ZGS/{FAMILY CODE}{YY}/{SEQ}
+    e.g. a Science student (A or B) admitted in 2026 -> ZGS/SC26/001,
+    the next Science student (regardless of A/B) -> ZGS/SC26/002, etc.
+    Business, Visual Arts, Home Economics, and General Arts each have
+    their own independent family+year sequence the same way.
+
+    Falls back to the plain STU###### scheme when study_area doesn't
+    resolve to one of the 5 known families (e.g. not yet assigned) —
+    editable later via student_edit once the area is set.
+    """
+    yy = f'{(year or datetime.now().year) % 100:02d}'
+    family_code = STUDY_AREA_FAMILY_CODE.get(study_area)
+
+    if not family_code:
+        for _ in range(100):
+            sid = f'STU{random.randint(100000, 999999)}'
+            if not Student.query.filter_by(student_id_code=sid).first():
+                return sid
+        return f'STU{int(time.time()) % 1000000:06d}'
+
+    prefix = f'ZGS/{family_code}{yy}/'
+    existing = (
+        db.session.query(Student.student_id_code)
+        .filter(Student.student_id_code.like(f'{prefix}%'))
+        .all()
+    )
+    used_seqs = set()
+    for (sid,) in existing:
+        tail = sid[len(prefix):]
+        if tail.isdigit():
+            used_seqs.add(int(tail))
+
+    seq = 1
+    while seq in used_seqs:
+        seq += 1
+    return f'{prefix}{seq:03d}'
+
+
+def generate_student_id_batch(study_area, existing_ids, seq_cache, year=None):
+    """
+    Batch-safe variant of generate_student_id_number(), for bulk imports
+    creating many students in one pass before anything is committed —
+    same reasoning as the old generate_reference_number_batch(): the DB
+    can't see a sibling row from the same batch that hasn't been
+    committed yet, so a plain per-row DB check would hand out the same
+    "001" to every new Science student in one import file.
+
+    `existing_ids`: set of every student_id_code already in the DB,
+    mutated in place. `seq_cache`: {prefix: next_seq}, also mutated.
+    """
+    yy = f'{(year or datetime.now().year) % 100:02d}'
+    family_code = STUDY_AREA_FAMILY_CODE.get(study_area)
+
+    if not family_code:
+        for _ in range(100):
+            sid = f'STU{random.randint(100000, 999999)}'
+            if sid not in existing_ids:
+                existing_ids.add(sid)
+                return sid
+        sid = f'STU{int(time.time()) % 1000000:06d}'
+        existing_ids.add(sid)
+        return sid
+
+    prefix = f'ZGS/{family_code}{yy}/'
+    if prefix not in seq_cache:
+        used_seqs = set()
+        for sid in existing_ids:
+            if sid and sid.startswith(prefix):
+                tail = sid[len(prefix):]
+                if tail.isdigit():
+                    used_seqs.add(int(tail))
+        seq = 1
+        while seq in used_seqs:
+            seq += 1
+        seq_cache[prefix] = seq
+
+    seq = seq_cache[prefix]
+    sid = f'{prefix}{seq:03d}'
+    while sid in existing_ids:
+        seq += 1
+        sid = f'{prefix}{seq:03d}'
+    existing_ids.add(sid)
+    seq_cache[prefix] = seq + 1
+    return sid
 
 
 def calculate_short_answer_score(answer, question):
@@ -1069,6 +1331,10 @@ class PasswordResetForm(FlaskForm):
 class StudentForm(FlaskForm):
     student_number = StringField('Student Number',
                                  validators=[InputRequired(), Length(min=1, max=50)])
+    student_id_code = StringField('Student ID',
+                                 validators=[Optional(), Length(max=50)])
+    reference_number = StringField('Reference Number',
+                                 validators=[Optional(), Length(max=50)])
     first_name  = StringField('First name',  validators=[InputRequired()])
     last_name   = StringField('Last name',   validators=[InputRequired()])
     middle_name = StringField('Middle name', validators=[Optional()])
@@ -1085,7 +1351,8 @@ class AssessmentForm(FlaskForm):
     student_name     = StringField('Student Name',     validators=[InputRequired()])
     reference_number = StringField('Reference Number', validators=[Optional()])
     category  = SelectField('Category',
-                            choices=app.config['ASSESSMENT_CATEGORIES'],
+                            choices=[c for c in app.config['ASSESSMENT_CATEGORIES']
+                                     if c[0] in ACTIVE_CATEGORIES],
                             validators=[InputRequired()])
     subject   = SelectField('Subject',
                             choices=[('', '-- Select Subject --')] + app.config['LEARNING_AREAS'],
@@ -1240,6 +1507,31 @@ def admin_required(f):
             abort(403)
         return f(*args, **kwargs)
     return wrapped
+
+
+@app.before_request
+def _track_last_activity():
+    """
+    Powers the "online now" indicator (User.is_online(), the sidebar dot).
+
+    Deliberately throttled to once per ~60 seconds per user rather than
+    writing on every single request: a naive "update last_activity on
+    every request" would add a DB write to every page load and every
+    AJAX call for every logged-in user simultaneously — exactly the kind
+    of thing that stops scaling under real traffic with many concurrent
+    users. A 5-minute online/offline threshold doesn't need
+    second-by-second precision, so a ~60s write throttle costs almost
+    nothing while still feeling "live" to a person watching the dot.
+    """
+    if not current_user.is_authenticated or not hasattr(current_user, 'last_activity'):
+        return
+    now = utcnow()
+    if current_user.last_activity is None or (now - current_user.last_activity).total_seconds() > 60:
+        try:
+            current_user.last_activity = now
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
 
 def teacher_required(f):
@@ -1496,7 +1788,17 @@ def dashboard():
         if assigned:
             incomplete_list = [i for i in incomplete_list if i['subject'] in assigned]
     else:
-        incomplete_list = []   # Admin sees full picture on tracker dashboard
+        # Previously hardcoded to [] with a comment pointing admins to a
+        # separate "tracker dashboard" instead — but the KPI card right
+        # above this on the SAME page ("Needs Attention") always showed 0
+        # regardless, and the detail panel never rendered at all. That's
+        # exactly what read as "the button doesn't work, nothing shows
+        # there": the number and the panel were permanently empty by
+        # design, not broken by a data bug, but indistinguishable from
+        # one to whoever's looking at it. Admins get the unfiltered,
+        # school-wide list here now, same source of truth as the tracker
+        # dashboard, so the number on this page is never misleading.
+        incomplete_list = get_incomplete_assessments()
 
     if current_user.is_teacher():
         recent = (Assessment.query
@@ -1522,13 +1824,25 @@ def dashboard():
         if students_query is not None:
             students = students_query.all()
             student_ids = [s.id for s in students]
-            required_categories = list(app.config.get('CATEGORY_LABELS', {}).keys())
+            # ICP1/ICP2 are supplementary, non-contributing categories
+            # (see ACTIVE_CATEGORIES) and are excluded from the class
+            # progress tracker's completion count for the same reason
+            # they are excluded from get_incomplete_assessments().
+            required_categories = list(ACTIVE_CATEGORIES)
             n_required = len(required_categories)
 
             if student_ids:
+                # student_ids is already scoped to students this teacher is
+                # authorised to see (get_teacher_students_query, above), so
+                # an extra Assessment.teacher_id == current_user.id filter
+                # only excludes legitimate scores for their own students —
+                # e.g. anything an admin entered on their behalf (teacher_id
+                # is None for those) or a co-teacher/cover teacher entered.
+                # That mismatch was why this "Class Progress Tracker" could
+                # still show a student as incomplete after a score for them
+                # had genuinely been recorded.
                 assessments = (Assessment.query
                                .filter(Assessment.student_id.in_(student_ids),
-                                       Assessment.teacher_id == current_user.id,
                                        Assessment.archived == False)
                                .all())
                 assessments_by_student = defaultdict(list)
@@ -1592,13 +1906,32 @@ def dashboard():
 
     settings = Setting.query.first()
 
+    # Unique students, not (student, subject) pairs — a student missing
+    # categories in two subjects should count once here, matching what a
+    # person means by "N students need attention", and matching the same
+    # dedup done in /admin/api/incomplete-assessments so the number never
+    # disagrees between the static page and a live refresh.
+    affected_students_count = len({item['student'].id for item in incomplete_list})
+
+    # Cap what renders inline so a full school's worth of incomplete
+    # records doesn't turn the dashboard into a wall of cards — the
+    # in-depth, paginated/filterable version of this already exists at
+    # /admin/teacher-tracking for admins. Sort so the same students show
+    # first on every load rather than dict-ordering noise.
+    incomplete_display = sorted(
+        incomplete_list, key=lambda i: i['student'].full_name()
+    )[:30]
+    incomplete_display_truncated = len(incomplete_list) > len(incomplete_display)
+
     return render_template(
         'dashboard.html',
         student_count=student_count,
         assessment_count=assessment_count,
         users_count=users_count,
-        affected_students_count=len(incomplete_list),
-        incomplete_students=incomplete_list,
+        affected_students_count=affected_students_count,
+        incomplete_students=incomplete_display,
+        incomplete_display_truncated=incomplete_display_truncated,
+        incomplete_total_count=len(incomplete_list),
         recent=recent,
         teacher_student_summaries=teacher_student_summaries,
         grouped_students=None,
@@ -1751,6 +2084,18 @@ def student_dashboard():
     quiz_objs   = {q.id: q for q in Quiz.query.filter(Quiz.id.in_(quiz_ids)).all()} if quiz_ids else {}
     quiz_details = {a.id: quiz_objs[a.quiz_id] for a in quiz_attempts if a.quiz_id in quiz_objs}
 
+    # ── Incomplete-assessment ("IC") flag for THIS student ─────────────────
+    # Reuses the same cached, already-computed get_incomplete_assessments()
+    # list used by the admin/teacher dashboards, filtered down to this one
+    # student — no extra query, and it stays consistent with what an
+    # admin/teacher sees for the same student rather than being computed
+    # by a second, possibly-divergent code path.
+    student_missing = [
+        item for item in get_incomplete_assessments()
+        if item['student'].id == student.id
+    ]
+    student_is_incomplete = bool(student_missing)
+
     return render_template(
         'student_dashboard.html',
         student=student,
@@ -1778,6 +2123,8 @@ def student_dashboard():
         quiz_details=quiz_details,
         overall_gpa=overall_summary.get('gpa'),
         CATEGORY_LABELS=CATEGORY_LABELS,
+        student_missing=student_missing,
+        student_is_incomplete=student_is_incomplete,
     )
 
 
@@ -1847,6 +2194,7 @@ def students():
                 Student.first_name.ilike(f'%{search}%'),
                 Student.last_name.ilike(f'%{search}%'),
                 Student.reference_number.ilike(f'%{search}%'),
+                Student.student_id_code.ilike(f'%{search}%'),
             )
         )
     all_students = q.order_by(Student.class_name, Student.last_name).all()
@@ -1890,21 +2238,43 @@ def student_new():
         if Student.query.filter_by(student_number=form.student_number.data.strip()).first():
             flash('Student number already exists', 'warning')
         else:
-            ref = generate_unique_reference_number()
+            resolved_study_area = canonical_study_area_key(form.study_area.data) or None
+
+            manual_ref = (form.reference_number.data or '').strip()
+            if manual_ref:
+                if Student.query.filter_by(reference_number=manual_ref).first():
+                    flash('Reference number already in use by another student.', 'warning')
+                    return render_template('student_form.html', form=form, student=None)
+                ref = manual_ref
+            else:
+                ref = generate_unique_reference_number()
+
+            manual_sid = (form.student_id_code.data or '').strip()
+            if manual_sid:
+                if Student.query.filter_by(student_id_code=manual_sid).first():
+                    flash('Student ID already in use by another student.', 'warning')
+                    return render_template('student_form.html', form=form, student=None)
+                sid = manual_sid
+            else:
+                # Auto-generated in the ZGS/{FAMILY CODE}{YY}/{SEQ}
+                # admission format — see generate_student_id_number() above.
+                sid = generate_student_id_number(study_area=resolved_study_area)
+
             s = Student(
                 student_number=form.student_number.data.strip(),
                 first_name=form.first_name.data.strip(),
                 last_name=form.last_name.data.strip(),
                 middle_name=form.middle_name.data.strip() if form.middle_name.data else None,
                 class_name=canonical_class_key(form.class_name.data) or None,
-                study_area=canonical_study_area_key(form.study_area.data) or None,
+                study_area=resolved_study_area,
                 reference_number=ref,
+                student_id_code=sid,
             )
             db.session.add(s)
             db.session.commit()
             log_activity(current_user, 'create_student',
                          f'Created {s.full_name()} ({s.student_number})')
-            flash(f'Student added. Reference Number: {ref}', 'success')
+            flash(f'Student added. Student ID: {sid} · Reference Number: {ref}', 'success')
             return redirect(url_for('students'))
     return render_template('student_form.html', form=form, student=None)
 
@@ -1917,7 +2287,45 @@ def student_edit(student_id):
     student = Student.query.get_or_404(student_id)
     form = StudentForm(obj=student)
     if form.validate_on_submit():
-        student.student_number = form.student_number.data.strip()
+        new_number = form.student_number.data.strip()
+        new_ref    = (form.reference_number.data or '').strip()
+        new_sid    = (form.student_id_code.data or '').strip()
+
+        # All three are unique columns — check before touching the row so
+        # a collision surfaces as a normal flash message instead of an
+        # unhandled IntegrityError (500) from the DB constraint. This
+        # check was already missing for student_number even before
+        # reference_number/student_id_code became editable here.
+        conflict = Student.query.filter(
+            Student.id != student.id, Student.student_number == new_number
+        ).first()
+        if conflict:
+            flash(f'Student number "{new_number}" is already used by {conflict.full_name()}.', 'warning')
+            return render_template('student_form.html', form=form, student=student)
+
+        if new_ref:
+            conflict = Student.query.filter(
+                Student.id != student.id, Student.reference_number == new_ref
+            ).first()
+            if conflict:
+                flash(f'Reference number "{new_ref}" is already used by {conflict.full_name()}.', 'warning')
+                return render_template('student_form.html', form=form, student=student)
+
+        if new_sid:
+            conflict = Student.query.filter(
+                Student.id != student.id, Student.student_id_code == new_sid
+            ).first()
+            if conflict:
+                flash(f'Student ID "{new_sid}" is already used by {conflict.full_name()}.', 'warning')
+                return render_template('student_form.html', form=form, student=student)
+
+        student.student_number = new_number
+        # Blanking a field intentionally clears it (Optional validator
+        # allows empty) rather than silently keeping the old value — an
+        # admin correcting a wrong reference number/student ID needs
+        # blank-then-retype to actually work, not be quietly ignored.
+        student.reference_number = new_ref or None
+        student.student_id_code  = new_sid or None
         student.first_name  = form.first_name.data.strip()
         student.last_name   = form.last_name.data.strip()
         student.middle_name = form.middle_name.data.strip() if form.middle_name.data else None
@@ -2050,6 +2458,15 @@ def student_view(student_id):
                     'grade': gr2['grade'], 'assessments': alist,
                 }
 
+    # ── Incomplete-assessment ("IC") flag ───────────────────────────────────
+    # Same cached list used by the dashboards and the student's own view —
+    # one source of truth, no extra query.
+    student_missing = [
+        item for item in get_incomplete_assessments()
+        if item['student'].id == student.id
+    ]
+    student_is_incomplete = bool(student_missing)
+
     return render_template(
         'student_view.html',
         student=student, assessments=assessments,
@@ -2064,6 +2481,8 @@ def student_view(student_id):
         filtered_grade_point=filtered_grade_point,
         show_aggregate=show_aggregate,
         grading_class=grading_class,
+        student_missing=student_missing,
+        student_is_incomplete=student_is_incomplete,
     )
 
 
@@ -2105,6 +2524,11 @@ def student_bulk_import():
                 row[0] for row in
                 db.session.query(Student.reference_number).all()
             }
+            existing_sids = {
+                row[0] for row in
+                db.session.query(Student.student_id_code).all()
+            }
+            sid_seq_cache = {}  # per-family-prefix sequence counter for this batch
 
             ok = 0
             errors = []
@@ -2120,13 +2544,23 @@ def student_bulk_import():
                         errors.append(f'{snum} already exists')
                         continue
 
+                    # Plain reference number (STU######) — not tied to
+                    # study area, so no batch-collision risk to worry
+                    # about beyond the existing_refs set membership check.
+                    ref = None
                     for _ in range(100):
-                        ref = f'STU{random.randint(100000, 999999)}'
-                        if ref not in existing_refs:
-                            existing_refs.add(ref)
+                        candidate = f'STU{random.randint(100000, 999999)}'
+                        if candidate not in existing_refs:
+                            existing_refs.add(candidate)
+                            ref = candidate
                             break
-                    else:
+                    if ref is None:
                         ref = f'STU{int(time.time()) % 1000000:06d}'
+                        existing_refs.add(ref)
+
+                    sid = generate_student_id_batch(
+                        data.get('study_area'), existing_sids, sid_seq_cache
+                    )
 
                     new_students.append(Student(
                         student_number=snum,
@@ -2136,6 +2570,7 @@ def student_bulk_import():
                         class_name=(data.get('class_name') or '').strip() or None,
                         study_area=(data.get('study_area') or '').strip() or None,
                         reference_number=ref,
+                        student_id_code=sid,
                     ))
                     existing_numbers.add(snum)
                     ok += 1
@@ -2364,12 +2799,20 @@ def new_assessment():
             flash('You do not have permission to create assessments for this student.', 'danger')
             abort(403)
 
+        # archived=False: an archived assessment must not block re-entry.
+        # Without this filter, a teacher who archives a mistaken entry (or
+        # an admin who archives one on their behalf) gets told the record
+        # "already exists" on every attempt to re-enter it, even though it
+        # is invisible everywhere else in the app (dashboards, student
+        # view, exports all filter archived=False) — so there is no way
+        # to see or recover it, only a block on creating a fresh one.
         if Assessment.query.filter_by(
                 student_id=student.id, category=form.category.data,
                 subject=form.subject.data, term=form.term.data,
                 academic_year=form.academic_year.data,
                 session=form.session.data,
-                teacher_id=current_user.id).first():
+                teacher_id=current_user.id,
+                archived=False).first():
             flash('Assessment already exists for this student/category/term.', 'warning')
             return redirect(url_for('student_view', student_id=student.id))
 
@@ -2387,7 +2830,14 @@ def new_assessment():
             term=form.term.data, academic_year=form.academic_year.data,
             session=form.session.data,
             assessor=form.assessor.data or current_user.username,
-            teacher_id=current_user.id, comments=form.comments.data,
+            # None (not current_user.id) when an admin enters this on a
+            # teacher's behalf — matches the convention already used by
+            # the bulk importers. Stamping the admin's own id here was
+            # what made admin-entered scores invisible on teacher-scoped
+            # trackers below: they'd be attributed to an account that
+            # isn't a teacher at all, rather than to no one in particular.
+            teacher_id=(current_user.id if current_user.is_teacher() else None),
+            comments=form.comments.data,
         )
         db.session.add(a)
         cache.delete("incomplete_assessments")
@@ -2950,6 +3400,7 @@ def admin_activity_logs():
 @login_required
 @admin_required
 def class_management():
+    from models import Student
     teachers = User.query.filter_by(role='teacher').all()
     teacher_assignments = {}
     for t in teachers:
@@ -2963,9 +3414,27 @@ def class_management():
     assigned_set = set()
     for v in teacher_assignments.values():
         assigned_set.update(v['assigned_areas'])
+
+    # Students whose study_area doesn't match any currently-valid area
+    # code. This catches students left behind by a curriculum update that
+    # renamed or removed area codes (e.g. this app's own 'business_c' /
+    # 'business_d' removal, or 'visual_performing_arts' splitting into
+    # '_a'/'_b') — those students would otherwise silently stop appearing
+    # in any teacher's authorised view (get_teacher_students_query only
+    # matches a student to a teacher via a valid study_area), with no
+    # visible error anywhere. They need a person to pick the correct new
+    # area for them; there's no way to infer it automatically from the
+    # old code alone.
+    valid_keys = set(all_keys)
+    orphaned_students = [
+        s for s in Student.query.order_by(Student.class_name, Student.last_name).all()
+        if s.study_area and s.study_area not in valid_keys
+    ]
+
     return render_template('class_management.html',
                            study_areas=get_study_areas(),
                            study_area_subjects=get_study_area_subjects(),
+                           orphaned_students=orphaned_students,
                            class_levels=app.config['CLASS_LEVELS'],
                            learning_areas=app.config['LEARNING_AREAS'],
                            teacher_assignments=teacher_assignments,
@@ -3180,6 +3649,65 @@ def api_refresh_study_area_config():
     return jsonify({'success': True, 'message': 'STUDY_AREAS and STUDY_AREA_SUBJECTS refreshed from database.'})
 
 
+@app.route('/admin/api/incomplete-assessments', methods=['GET', 'POST'])
+@login_required
+@admin_required
+@csrf.exempt
+def api_incomplete_assessments():
+    """
+    Live-refresh endpoint for the "Students Needing Attention" panel.
+
+    get_incomplete_assessments() is cached for 5 minutes for normal page
+    loads (dashboards are hit far more often than assessment data actually
+    changes, and that cache is what keeps this affordable under real
+    traffic — see the note on cache.cached() above). GET here just reads
+    that same cache, so refreshing the panel is still cheap.
+
+    POST additionally busts the cache first, so an admin who just knows a
+    teacher entered new scores can force a genuinely live recount instead
+    of waiting out the 5-minute window — this is the "Refresh" button's
+    actual action, not just a page reload.
+    """
+    if request.method == 'POST':
+        cache.delete('incomplete_assessments')
+
+    incomplete = get_incomplete_assessments()
+    category_labels = app.config.get('CATEGORY_LABELS', {})
+
+    items_all = [{
+        'student_id':     item['student'].id,
+        'student_name':   item['student'].full_name(),
+        'student_number': item['student'].student_number,
+        'subject':        item['subject'],
+        'missing_categories': [
+            {'code': c, 'label': category_labels.get(c, c)}
+            for c in item['missing_categories']
+        ],
+        'view_url': url_for('student_view', student_id=item['student'].id),
+        'entry_url': url_for('new_assessment', student_id=item['student'].id),
+    } for item in incomplete]
+
+    # One card per (student, subject) in get_incomplete_assessments(), but
+    # the dashboard groups by student — collapse here so the count shown
+    # matches affected_students_count on the main dashboard exactly.
+    affected_student_count = len({i['student_id'] for i in items_all})
+
+    # Same 30-item cap as the initial server-rendered page (see dashboard()
+    # above) — a "live" refresh shouldn't suddenly dump the whole school
+    # onto the page just because it went through JS instead of a reload.
+    items_all.sort(key=lambda i: i['student_name'])
+    items = items_all[:30]
+
+    return jsonify({
+        'success': True,
+        'count': affected_student_count,
+        'total_count': len(items_all),
+        'truncated': len(items_all) > len(items),
+        'items': items,
+        'refreshed_at': utcnow().strftime('%Y-%m-%d %H:%M:%S UTC'),
+    })
+
+
 @app.route('/admin/api/study-area-subjects/<area_key>', methods=['GET', 'POST'])
 @login_required
 @admin_required
@@ -3223,12 +3751,13 @@ def apply_default_study_area_subjects():
     """
     Seed the STUDY_AREA_SUBJECTS config with the school's official
     subject allocation per study area, exactly as specified in the
-    school curriculum document.
+    updated school curriculum document.
     """
 
     # ------------------------------------------------------------------
     # Common core subjects shared by most study areas
-    # (Science A and Science B are the exception — see below)
+    # (Science A, Science B, and General Arts C are the exceptions —
+    # they omit General Science, per the curriculum document)
     # ------------------------------------------------------------------
     COMMON_CORE = [
         'mathematics',
@@ -3239,7 +3768,6 @@ def apply_default_study_area_subjects():
         'ict',
     ]
 
-    # Science A and B omit General Science from their core list
     SCIENCE_CORE = [
         'mathematics',
         'social_studies',
@@ -3249,19 +3777,27 @@ def apply_default_study_area_subjects():
     ]
 
     # ------------------------------------------------------------------
-    # Full subject allocation — every study area from the document
+    # Full subject allocation — every study area from the updated document
     # ------------------------------------------------------------------
     sas = {
 
         # ── Visual and Performing Arts ─────────────────────────────────
-        'visual_performing_arts': {
+        'visual_performing_arts_a': {
+            'core': COMMON_CORE,
+            'electives': [
+                'arts_design_foundation',
+                'arts_design_studio',
+                'design_communication_technology',
+                'music',
+            ],
+        },
+        'visual_performing_arts_b': {
             'core': COMMON_CORE,
             'electives': [
                 'clothing_textile',
                 'arts_design_foundation',
                 'arts_design_studio',
                 'design_communication_technology',
-                'music',
             ],
         },
 
@@ -3273,7 +3809,6 @@ def apply_default_study_area_subjects():
                 'food_nutrition',
                 'biology',
                 'economics',
-                'music',
             ],
         },
         'home_economics_b': {
@@ -3283,7 +3818,6 @@ def apply_default_study_area_subjects():
                 'clothing_textile',
                 'biology',
                 'economics',
-                'music',
             ],
         },
         'home_economics_c': {
@@ -3293,7 +3827,6 @@ def apply_default_study_area_subjects():
                 'food_nutrition',
                 'biology',
                 'arts_design_studio',
-                'music',
             ],
         },
         'home_economics_d': {
@@ -3303,7 +3836,6 @@ def apply_default_study_area_subjects():
                 'clothing_textile',
                 'biology',
                 'arts_design_studio',
-                'music',
             ],
         },
         'home_economics_e': {
@@ -3313,7 +3845,6 @@ def apply_default_study_area_subjects():
                 'food_nutrition',
                 'biology',
                 'french',
-                'music',
             ],
         },
         'home_economics_f': {
@@ -3323,11 +3854,11 @@ def apply_default_study_area_subjects():
                 'clothing_textile',
                 'biology',
                 'french',
-                'music',
             ],
         },
 
         # ── Business ───────────────────────────────────────────────────
+        # (business_c and business_d removed per the updated document)
         'business_a': {
             'core': COMMON_CORE,
             'electives': [
@@ -3348,26 +3879,6 @@ def apply_default_study_area_subjects():
                 'geography',
             ],
         },
-        'business_c': {
-            'core': COMMON_CORE,
-            'electives': [
-                'business_management',
-                'accounting',
-                'economics',
-                'additional_mathematics',
-                'french',
-            ],
-        },
-        'business_d': {
-            'core': COMMON_CORE,
-            'electives': [
-                'business_management',
-                'accounting',
-                'economics',
-                'computing_in_business',
-                'french',
-            ],
-        },
 
         # ── Science ────────────────────────────────────────────────────
         # NOTE: Science A and B do NOT have General Science as a core
@@ -3379,7 +3890,6 @@ def apply_default_study_area_subjects():
                 'chemistry',
                 'physics',
                 'additional_mathematics',
-                'geography',
                 'economics',
             ],
         },
@@ -3391,107 +3901,107 @@ def apply_default_study_area_subjects():
                 'physics',
                 'additional_mathematics',
                 'geography',
-                'french',
             ],
         },
 
         # ── General Arts ───────────────────────────────────────────────
-        'general_arts_1': {
+        'general_arts_a': {
             'core': COMMON_CORE,
             'electives': [
                 'lit_in_english',
                 'christian_religious_studies',
                 'history',
                 'ghanaian_language',
+            ],
+        },
+        'general_arts_b': {
+            'core': COMMON_CORE,
+            'electives': [
+                'lit_in_english',
+                'christian_religious_studies',
+                'history',
                 'french',
             ],
         },
-        'general_arts_2': {
-            'core': COMMON_CORE,
+        # General Arts C is the one General Arts variant without General
+        # Science as a core subject, per the curriculum document.
+        'general_arts_c': {
+            'core': SCIENCE_CORE,
             'electives': [
                 'geography',
                 'economics',
                 'government',
-                'religious_moral_education',
                 'additional_mathematics',
             ],
         },
-        'general_arts_3a': {
+        'general_arts_d': {
             'core': COMMON_CORE,
             'electives': [
                 'history',
                 'music',
                 'lit_in_english',
-                'religious_moral_education',
                 'ghanaian_language',
             ],
         },
-        'general_arts_3b': {
+        'general_arts_e': {
             'core': COMMON_CORE,
             'electives': [
                 'history',
                 'music',
                 'lit_in_english',
-                'religious_moral_education',
                 'french',
             ],
         },
-        'general_arts_4a': {
+        'general_arts_f': {
             'core': COMMON_CORE,
             'electives': [
                 'music',
                 'economics',
                 'geography',
-                'religious_moral_education',
                 'ghanaian_language',
             ],
         },
-        'general_arts_4b': {
+        'general_arts_g': {
             'core': COMMON_CORE,
             'electives': [
                 'music',
                 'economics',
                 'geography',
-                'religious_moral_education',
                 'french',
             ],
         },
-        'general_arts_5a': {
+        'general_arts_h': {
             'core': COMMON_CORE,
             'electives': [
                 'music',
                 'history',
                 'government',
                 'ghanaian_language',
-                'religious_moral_education',
             ],
         },
-        'general_arts_5b': {
+        'general_arts_i': {
             'core': COMMON_CORE,
             'electives': [
                 'music',
                 'history',
                 'government',
                 'french',
-                'religious_moral_education',
             ],
         },
-        'general_arts_6a': {
+        'general_arts_j': {
             'core': COMMON_CORE,
             'electives': [
                 'government',
                 'economics',
                 'biology',
-                'chemistry',
                 'christian_religious_studies',
             ],
         },
-        'general_arts_6b': {
+        'general_arts_k': {
             'core': COMMON_CORE,
             'electives': [
                 'government',
                 'economics',
-                'biology',
                 'management_in_living',
                 'christian_religious_studies',
             ],
@@ -3500,6 +4010,24 @@ def apply_default_study_area_subjects():
 
     SystemConfig.set_config('STUDY_AREA_SUBJECTS', sas)
     app.config['STUDY_AREA_SUBJECTS'] = sas
+
+    # STUDY_AREAS itself (the area codes/labels, as opposed to their
+    # subject allocation above) is ALSO cached in the database-backed
+    # SystemConfig — see load_persistent_config() at startup, which loads
+    # whatever is already stored there and would otherwise keep an
+    # already-deployed installation on the old area list forever, no
+    # matter what config.py says. Read the list from the Config class
+    # directly here (not app.config['STUDY_AREAS'], which by this point
+    # is whatever load_persistent_config() already loaded from the OLD
+    # database row at startup — reading it back would just re-save the
+    # stale list). Pushing the current code-defined list explicitly here,
+    # in the same click as the subject allocation, keeps both in sync as
+    # one atomic "apply the updated curriculum" action.
+    from config import Config as _Config
+    study_areas = _Config.STUDY_AREAS
+    SystemConfig.set_config('STUDY_AREAS', study_areas)
+    app.config['STUDY_AREAS'] = study_areas
+
     flash(
         f'Successfully loaded the school curriculum into {len(sas)} study areas.',
         'success'
@@ -4326,7 +4854,45 @@ def export_all_students_excel():
         abort(403)
     subject    = request.args.get('subject')
     class_name = request.args.get('class')
-    q = Student.query
+
+    if current_user.is_teacher():
+        # Default this to the teacher's own subject/classes rather than the
+        # whole school. Previously this route had no ownership scoping at
+        # all — subject/class were the only filters, both optional — so a
+        # teacher's plain "Export" link (no query params) pulled every
+        # student in every class for every subject, one sheet per
+        # subject+class. That's a privacy gap on its own (a teacher could
+        # see other teachers' subjects/classes), and it's also exactly
+        # what made the sheet-name-collision bug so likely to hit: more
+        # subject+class combinations in one workbook means more chances
+        # for two long names to truncate to the same 31-character sheet
+        # name and silently lose data.
+        #
+        # get_teacher_students_query() is the same authorisation check
+        # used elsewhere (class assignment + study-area match); reusing
+        # it here keeps this route consistent with the rest of the app
+        # rather than inventing a slightly different rule. It returns
+        # None when the teacher isn't configured to access anything, in
+        # which case this export should show nothing, not everything.
+        q = get_teacher_students_query(current_user)
+        if q is None:
+            flash('You are not assigned to a subject/class, so there is nothing to export.', 'warning')
+            return redirect(url_for('students'))
+
+        # An explicit ?subject=/?class= is still honoured, but validated
+        # against what this teacher is actually assigned — not trusted
+        # as-is — so a teacher can't widen their own export by editing
+        # the URL.
+        if subject and subject != current_user.subject:
+            abort(403)
+        subject = current_user.subject
+
+        teacher_classes = current_user.get_classes_list()
+        if class_name and teacher_classes and class_name not in teacher_classes:
+            abort(403)
+    else:
+        q = Student.query
+
     if subject:
         subq = (db.session.query(Assessment.student_id)
                 .filter(Assessment.subject == subject).distinct())
@@ -4372,9 +4938,27 @@ def export_assessments_excel():
     subject    = request.args.get('subject', '').strip()
     class_name = request.args.get('class',   '').strip()
     category   = request.args.get('category','').strip()
-    q = (Assessment.query.filter_by(teacher_id=current_user.id, archived=False)
-         if current_user.is_teacher()
-         else Assessment.query.filter_by(archived=False))
+
+    # Scope by what the teacher is AUTHORISED to see (their assigned
+    # subject + classes) rather than by teacher_id on the Assessment row
+    # itself. teacher_id only records who happened to type a given score
+    # in — it is None for anything bulk-imported by an admin on a
+    # teacher's behalf (see import_excel / import_class_scoresheet), and
+    # it doesn't account for co-teaching/cover-teacher setups either. A
+    # teacher_id filter here silently drops those rows from the export
+    # even though the score is genuinely theirs, which is why teachers
+    # were seeing scores that display correctly everywhere else (none of
+    # which filter by teacher_id) but "go missing" only on this export.
+    if current_user.is_teacher():
+        q = Assessment.query.filter_by(archived=False)
+        if current_user.subject:
+            q = q.filter_by(subject=current_user.subject)
+        teacher_classes = current_user.get_classes_list()
+        if teacher_classes:
+            q = q.filter(Assessment.class_name.in_(teacher_classes))
+    else:
+        q = Assessment.query.filter_by(archived=False)
+
     q = q.options(joinedload(Assessment.student))
     if subject:    q = q.filter_by(subject=subject)
     if class_name: q = q.filter_by(class_name=class_name)
@@ -4501,7 +5085,7 @@ def bulk_roster_form():
         study_area_subjects=study_area_subjects,
         subject_choices=subject_choices,
         terms=app.config['TERMS'],
-        categories=app.config['ASSESSMENT_CATEGORIES'],
+        categories=[c for c in app.config['ASSESSMENT_CATEGORIES'] if c[0] in ACTIVE_CATEGORIES],
         default_assessor=(current_user.full_name() if hasattr(current_user, 'full_name') else current_user.username),
     )
 
@@ -4662,12 +5246,16 @@ def import_class_scoresheet():
 
             existing_map = {}
             if all_student_ids:
+                # archived=False: same reasoning as new_assessment() above —
+                # an archived row must not count as "existing" and block a
+                # fresh bulk re-entry for that student/category/term.
                 existing_assessments = Assessment.query.filter(
                     Assessment.student_id.in_(all_student_ids),
                     Assessment.subject == subject,
                     Assessment.term == term,
                     Assessment.academic_year == academic_year,
                     Assessment.session == session,
+                    Assessment.archived == False,
                 ).all()
                 existing_map = {(a.student_id, a.category): a for a in existing_assessments}
 
@@ -4896,12 +5484,14 @@ def global_search():
             Student.first_name.ilike(f'%{query}%'),
             Student.last_name.ilike(f'%{query}%'),
             Student.reference_number.ilike(f'%{query}%'),
+            Student.student_id_code.ilike(f'%{query}%'),
         )
     ).limit(10).all()
 
     return jsonify({'students': [
         {'id': s.id, 'name': s.full_name(),
          'student_number': s.student_number,
+         'student_id': s.student_id_code,
          'class': s.get_class_display(),
          'url': url_for('student_view', student_id=s.id)}
         for s in results
@@ -4953,11 +5543,11 @@ def admin_teacher_tracking():
     selected_subject_key = canonical_subject_key(selected_subject) if selected_subject else None
 
     # ── Required categories (same set used in get_incomplete_assessments) ─
-    REQUIRED_CATS = [
-        'ica1', 'ica2', 'icp1', 'icp2',
-        'gp1', 'gp2', 'practical', 'mid_term', 'end_term',
-    ]
-    n_required = len(REQUIRED_CATS)  # 9
+    # ICP1/ICP2 are supplementary, non-contributing categories and are
+    # excluded here as well, so completion percentages reflect only the
+    # seven active grading components.
+    REQUIRED_CATS = list(ACTIVE_CATEGORIES)
+    n_required = len(REQUIRED_CATS)  # 7
 
     # ── Avatar colours (rotate by teacher id) ────────────────────────────
     AVATAR_COLORS = [
@@ -4976,33 +5566,9 @@ def admin_teacher_tracking():
     # ── Build subject label map ───────────────────────────────────────────
     subject_label_map = dict(app.config.get('LEARNING_AREAS', []))
 
-    # ── Prefetch ALL non-archived assessments in one query ────────────────
-    # (avoids N+1 queries — we'll slice per teacher below)
-    teacher_ids = [t.id for t in teachers]
-    all_assessments = (
-        Assessment.query
-        .filter(
-            Assessment.teacher_id.in_(teacher_ids),
-            Assessment.archived == False,
-        )
-        .with_entities(
-            Assessment.teacher_id,
-            Assessment.student_id,
-            Assessment.subject,
-            Assessment.category,
-            Assessment.date_recorded,
-        )
-        .all()
-    )
-
-    # Index: teacher_id → list of assessment rows
-    from collections import defaultdict
-    assess_by_teacher = defaultdict(list)
-    for row in all_assessments:
-        assess_by_teacher[row.teacher_id].append(row)
-
     # ── Prefetch students visible to each teacher ─────────────────────────
-    # We call get_teacher_students_query() per teacher but batch-cache students
+    # (moved ahead of the assessment prefetch below, since the assessment
+    # query is now scoped by these student ids rather than by teacher_id)
     all_student_ids = set()
     teacher_student_ids = {}  # teacher_id → set of student ids
     for teacher in teachers:
@@ -5021,6 +5587,42 @@ def admin_teacher_tracking():
         for s in Student.query.filter(Student.id.in_(all_student_ids)).all()
     } if all_student_ids else {}
 
+    # ── Prefetch ALL non-archived assessments for these students ──────────
+    # (avoids N+1 queries — we'll slice per teacher below)
+    #
+    # Scoped by student_id, NOT by Assessment.teacher_id.in_(teacher_ids).
+    # teacher_id only records who happened to type a score in — it's None
+    # for anything an admin bulk-imported or entered directly on a
+    # teacher's behalf (see new_assessment() / import_class_scoresheet()),
+    # and doesn't cover co-teaching either. Filtering by teacher_id here
+    # meant any such score was invisible on this dashboard even though the
+    # student genuinely had it recorded — a teacher's completion stats
+    # (and this dashboard's own view of them) simply never picked it up.
+    # Attribution to the right teacher row below already happens correctly
+    # via each teacher's own `sids` (their authorised students), so no
+    # teacher_id filter is needed to get the right teacher-to-score mapping.
+    all_assessments = (
+        Assessment.query
+        .filter(
+            Assessment.student_id.in_(all_student_ids),
+            Assessment.archived == False,
+        )
+        .with_entities(
+            Assessment.teacher_id,
+            Assessment.student_id,
+            Assessment.subject,
+            Assessment.category,
+            Assessment.date_recorded,
+        )
+        .all()
+    ) if all_student_ids else []
+
+    # Index: student_id → list of assessment rows
+    from collections import defaultdict
+    assess_by_student = defaultdict(list)
+    for row in all_assessments:
+        assess_by_student[row.student_id].append(row)
+
     # ── Build per-teacher data rows ───────────────────────────────────────
     teacher_rows = []
     agg_filed      = 0
@@ -5033,12 +5635,12 @@ def admin_teacher_tracking():
         sids        = teacher_student_ids.get(teacher.id, set())
         student_count = len(sids)
 
-        # Filter assessments to this teacher + optionally a subject
-        rows = assess_by_teacher.get(teacher.id, [])
+        # Assessments for students in this teacher's scope, from any
+        # source (this teacher, an admin, a co-teacher) — see the prefetch
+        # comment above for why this is no longer teacher_id-filtered.
+        rows = [r for sid in sids for r in assess_by_student.get(sid, [])]
         if selected_subject_key:
             rows = [r for r in rows if canonical_subject_key(r.subject) == selected_subject_key]
-        # Only keep rows for students in this teacher's scope
-        rows = [r for r in rows if r.student_id in sids]
 
         # Build: { student_id: { category: True } }
         stu_cats = defaultdict(set)

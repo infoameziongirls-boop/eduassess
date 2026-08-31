@@ -50,10 +50,10 @@ def test_calculate_scores_from_template_returns_expected_results():
     assert result['ica_total'] == 85.0
     assert result['icp_total'] == 65.0
     assert result['gp_total'] == 45.0
-    assert result['total_class_score'] == 365.0
-    assert result['avg_class_score'] == 37.0
+    assert result['total_class_score'] == 300.0
+    assert result['avg_class_score'] == 38.0
     assert result['avg_exam_score'] == 43.0
-    assert result['final_score'] == 80.0
+    assert result['final_score'] == 81.0
     assert result['gpa'] == 4.0
     assert result['grade'] == 'A1'
 

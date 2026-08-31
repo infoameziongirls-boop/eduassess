@@ -146,6 +146,9 @@
                                                     <br>
                                                     <small class="text-muted">
                                                         <i class="bi bi-hash"></i> {{ student.student_number }}
+                                                        {% if student.student_id_code %}
+                                                        | <i class="bi bi-person-vcard"></i> {{ student.student_id_code }}
+                                                        {% endif %}
                                                         {% if student.reference_number and student.reference_number != student.student_number %}
                                                         | <i class="bi bi-tag"></i> {{ student.reference_number }}
                                                         {% endif %}

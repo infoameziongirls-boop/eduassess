@@ -80,6 +80,7 @@
                     <th>Name</th>
                     <th>Form</th>
                     <th>Learning Area</th>
+                    <th>Student ID</th>
                     <th>Reference</th>
                     <th>Assessments</th>
                     <th>Actions</th>
@@ -89,7 +90,7 @@
                 {% for group_name, group_students in student_groups.items() %}
                 {% if current_group_by != 'none' %}
                 <tr style="background:var(--surface);">
-                    <td colspan="8" style="padding:10px 16px;">
+                    <td colspan="9" style="padding:10px 16px;">
                         <span style="font-family:var(--font-display);font-weight:700;font-size:.78rem;color:var(--ink-3);text-transform:uppercase;letter-spacing:.6px;">
                             {{ group_name }}
                         </span>
@@ -110,6 +111,13 @@
                     <td>
                         {% if student.study_area %}
                         <span class="badge badge-teal">{{ student.get_study_area_display() }}</span>
+                        {% else %}
+                        <span style="color:var(--ink-4);">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if student.student_id_code %}
+                        <code style="font-size:.72rem;color:var(--brand);background:var(--brand-dim);padding:2px 6px;border-radius:4px;border:1px solid var(--border);font-weight:600;">{{ student.student_id_code }}</code>
                         {% else %}
                         <span style="color:var(--ink-4);">—</span>
                         {% endif %}

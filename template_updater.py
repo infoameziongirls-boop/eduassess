@@ -41,8 +41,8 @@ Per-student columns (1-based):
   P (16)  =MIN(100,(SUM(N:O)))                    FORMULA — never overwrite
   Q (17)  practical  INPUT
   R (18)  mid_term   INPUT
-  S (19)  =MIN(500,(SUM(J,M,P,Q,R)))              FORMULA — never overwrite
-  T (20)  =S/500*100                              FORMULA — never overwrite
+  S (19)  =MIN(400,(SUM(J,P,Q,R)))               FORMULA — never overwrite
+  T (20)  =S/400*100                              FORMULA — never overwrite
   U (21)  =MIN(50,(ROUNDUP(T/2,0)))              FORMULA — never overwrite
   V (22)  end_term   INPUT
   W (23)  =MIN(50,(ROUNDUP(V/2,0)))              FORMULA — never overwrite
@@ -50,6 +50,13 @@ Per-student columns (1-based):
   Y (25)  =(X/100)                               FORMULA — never overwrite
   Z (26)  GPA  IF-chain — returns "4.0".."0.0"  FORMULA — never overwrite
   AA (27) Grade IF-chain — returns "A1".."F9"   FORMULA — never overwrite
+
+NOTE ON ICP1 / ICP2 (Individual Class Project, columns K, L, subtotal M):
+  As of the current template revision, ICP1/ICP2 are SUPPLEMENTARY fields.
+  Column M (their subtotal) is intentionally excluded from the S-column
+  formula above. They are read, stored and preserved on export, but they
+  do not participate in the grading chain (S, T, U, X, GPA, Grade). Do not
+  reintroduce M into the total_class_score computation below.
 """
 
 import math
@@ -254,18 +261,18 @@ _CAT_TO_COL = {
 
 STUDENT_START_ROW = 10   # First student data row (row 9 is the header row)
 
-# GPA table — mirrors the Z-column IF chain in the template.
+# GPA table — school grading scale (A1-F9).
 # Python consumers receive numeric floats for comparison; the template itself
 # returns string "4.0", "3.5" etc. for display.
 _GPA_TABLE = [
     (80, 4.0, 'A1'),
     (70, 3.5, 'B2'),
-    (65, 3.0, 'B3'),
-    (60, 2.5, 'C4'),
-    (55, 2.0, 'C5'),
-    (50, 1.5, 'C6'),
-    (45, 1.0, 'D7'),
-    (40, 0.5, 'E8'),
+    (60, 3.0, 'B3'),
+    (55, 2.5, 'C4'),
+    (50, 2.0, 'C5'),
+    (45, 1.5, 'C6'),
+    (40, 1.0, 'D7'),
+    (35, 0.5, 'E8'),
     (0,  0.0, 'F9'),
 ]
 
@@ -308,17 +315,22 @@ def calculate_scores_from_template(raw_scores: dict) -> dict:
     mid_term  = _v('mid_term')
     end_term  = _v('end_term')
 
-    # Mirrors J, M, P columns
+    # Mirrors J, M, P columns.
+    # icp_total (column M) is computed and returned for display/reporting
+    # purposes only — it is intentionally NOT a term in total_class_score
+    # below, per the current template's S-column formula.
     ica_total = min(100.0, ica1 + ica2)
     icp_total = min(100.0, icp1 + icp2)
     gp_total  = min(100.0, gp1  + gp2)
 
-    # Mirrors S column: =MIN(500,(SUM(J,M,P,Q,R)))
-    total_class_score = min(500.0, ica_total + icp_total + gp_total
+    # Mirrors S column: =MIN(400,(SUM(J,P,Q,R)))
+    # ICP1/ICP2 (icp_total / column M) are supplementary and are
+    # deliberately excluded from this sum.
+    total_class_score = min(400.0, ica_total + gp_total
                                    + practical + mid_term)
 
-    # Mirrors T column: =S/500*100
-    pct_100 = (total_class_score / 500.0) * 100.0
+    # Mirrors T column: =S/400*100
+    pct_100 = (total_class_score / 400.0) * 100.0
 
     # Mirrors U column: =MIN(50,(ROUNDUP(T/2,0)))
     avg_class_score = min(50.0, math.ceil(pct_100 / 2.0))
@@ -667,11 +679,16 @@ class _ZipSheetDuplicator:
 
         Expected keys in student_dict
         ──────────────────────────────
-        student_number  — goes to column B (2)
+        student_id      — goes to column B (2)   [the sheet's own header
+                           literally says "Student ID."; this is
+                           Student.student_id_code, e.g. ZGS/SC26/001 —
+                           NOT student_number, which isn't shown here]
         last_name       — goes to column C (3)   [Surname]
         first_name      — goes to column D (4)
         middle_name     — goes to column E (5)   [Other Name, may be empty]
-        ref_id          — goes to column F (6)
+        ref_id          — goes to column F (6)   [Reference Number —
+                           Student.reference_number, a separate plain
+                           editable identifier, distinct from student_id]
         study_area      — goes to column G (7)
         ica1..end_term  — input score columns per _CAT_TO_COL
         """
@@ -681,15 +698,16 @@ class _ZipSheetDuplicator:
 
         # Column A: serial number
         _set_cell_numeric(tree, ns, row, 1, serial)
-        # Column B: Student Number
-        _set_cell_string(tree, ns, row, 2, student_dict.get('student_number', ''))
+        # Column B: Student ID (Student.student_id_code — the sheet's
+        # header literally reads "Student ID.")
+        _set_cell_string(tree, ns, row, 2, student_dict.get('student_id', ''))
         # Column C: Surname
         _set_cell_string(tree, ns, row, 3, student_dict.get('last_name', ''))
         # Column D: First Name
         _set_cell_string(tree, ns, row, 4, student_dict.get('first_name', ''))
         # Column E: Other Name
         _set_cell_string(tree, ns, row, 5, student_dict.get('middle_name', '') or '')
-        # Column F: Reference Number
+        # Column F: Reference Number (distinct from the Student ID above)
         _set_cell_string(tree, ns, row, 6, student_dict.get('ref_id', ''))
         # Column G: Study Area
         _set_cell_string(tree, ns, row, 7, student_dict.get('study_area', ''))
@@ -937,6 +955,7 @@ class AssessmentTemplateUpdater:
             )
             for subj, cls in order
         ]
+        labels = _dedupe_sheet_names(labels)
 
         dup = _ZipSheetDuplicator(self.template_path)
         dup.prepare(labels[1:] if len(order) > 1 else [])
@@ -994,6 +1013,7 @@ class AssessmentTemplateUpdater:
             )
             for subj, cls in order
         ]
+        labels = _dedupe_sheet_names(labels)
 
         dup = _ZipSheetDuplicator(self.template_path)
         dup.prepare(labels[1:])
@@ -1066,6 +1086,7 @@ class AssessmentTemplateUpdater:
             )
             for subj, cls in order
         ]
+        labels = _dedupe_sheet_names(labels)
 
         dup = _ZipSheetDuplicator(self.template_path)
         dup.prepare(labels[1:])
@@ -1104,18 +1125,24 @@ def _write_student_row(ws, row: int, sd: dict):
     Write data columns only; formula columns are never touched.
 
     Columns written (1-based):
-      A(1)  serial        B(2)  student_number  C(3)  last_name
-      D(4)  first_name    E(5)  middle_name     F(6)  ref_id
+      A(1)  serial        B(2)  student_id (student_id_code) C(3)  last_name
+      D(4)  first_name    E(5)  middle_name     F(6)  ref_id (reference_number)
       G(7)  study_area    H-V   score inputs (per _CAT_TO_COL)
+
+    NOTE: column B is 'student_id', not 'student_number' — the sheet's
+    own header literally reads "Student ID." and holds the
+    ZGS/{FAMILY}{YY}/{SEQ} admission-style code, distinct from both
+    student_number (login credential) and ref_id/reference_number
+    (column F, a separate plain editable identifier).
     """
     serial = row - STUDENT_START_ROW + 1
     ws.cell(row=row, column=1,  value=serial)
-    ws.cell(row=row, column=2,  value=sd.get('student_number', ''))
-    ws.cell(row=row, column=3,  value=sd.get('last_name',      ''))
-    ws.cell(row=row, column=4,  value=sd.get('first_name',     ''))
-    ws.cell(row=row, column=5,  value=sd.get('middle_name',    '') or '')
-    ws.cell(row=row, column=6,  value=sd.get('ref_id',         ''))
-    ws.cell(row=row, column=7,  value=sd.get('study_area',     ''))
+    ws.cell(row=row, column=2,  value=sd.get('student_id',      ''))
+    ws.cell(row=row, column=3,  value=sd.get('last_name',       ''))
+    ws.cell(row=row, column=4,  value=sd.get('first_name',      ''))
+    ws.cell(row=row, column=5,  value=sd.get('middle_name',     '') or '')
+    ws.cell(row=row, column=6,  value=sd.get('ref_id',          ''))
+    ws.cell(row=row, column=7,  value=sd.get('study_area',      ''))
     for cat, col in _CAT_TO_COL.items():
         raw = sd.get(cat, 0)
         ws.cell(row=row, column=col,
@@ -1153,6 +1180,43 @@ def _safe_sheet_name(name: str) -> str:
     for ch in r'/\?*[]:\'':
         name = name.replace(ch, '-')
     return name[:31]
+
+
+def _dedupe_sheet_names(names: list) -> list:
+    """
+    Make a list of (already 31-char-truncated) sheet names unique.
+
+    Two different (subject, class) groups can truncate to the exact same
+    31-character name — e.g. two long subject names that only differ after
+    character 31. Excel requires every sheet name in a workbook to be
+    unique; writing two identical names produces a workbook Excel treats
+    as corrupt, and it will silently drop or hide one of the sheets rather
+    than error out — which is why entered results for one class/subject
+    combination could vanish from the export with no visible cause.
+    Suffixing " (2)", " (3)"... on repeats (trimming the base name so the
+    31-char limit is still respected) keeps every sheet distinct and
+    visible.
+    """
+    seen: dict = {}
+    result = []
+    for name in names:
+        base = name
+        if base not in seen:
+            seen[base] = 1
+            result.append(base)
+            continue
+        seen[base] += 1
+        suffix = f" ({seen[base]})"
+        candidate = base[:31 - len(suffix)] + suffix
+        # Extremely unlikely, but guard against the suffixed name itself
+        # colliding with something already used.
+        while candidate in seen:
+            seen[base] += 1
+            suffix = f" ({seen[base]})"
+            candidate = base[:31 - len(suffix)] + suffix
+        seen[candidate] = 1
+        result.append(candidate)
+    return result
 
 
 def _shift_formula(formula: str, from_row: int, to_row: int) -> str:
