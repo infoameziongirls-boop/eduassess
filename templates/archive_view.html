@@ -319,7 +319,7 @@ table.at{width:100%;border-collapse:separate;border-spacing:0;min-width:800px}
 </div>
 
 <form id="bulkForm" method="post" action="{{ url_for('assessment_bulk_action') }}">
-  {{ csrf_token() }}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="action" id="bulkAction" value="">
 
   <div class="bulk a4" id="bulkBar">
@@ -388,7 +388,7 @@ table.at{width:100%;border-collapse:separate;border-spacing:0;min-width:800px}
             <td class="dt">{{ assessment.date_recorded.strftime('%d %b %Y') }}</td>
             <td class="actions-cell">
               <form method="post" action="{{ url_for('assessment_unarchive', assessment_id=assessment.id) }}">
-                {{ csrf_token() }}
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-restore" style="padding:5px 10px;font-size:12px">Restore</button>
               </form>
             </td>

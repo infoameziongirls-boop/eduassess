@@ -1526,7 +1526,15 @@ def _track_last_activity():
     if not current_user.is_authenticated or not hasattr(current_user, 'last_activity'):
         return
     now = utcnow()
-    if current_user.last_activity is None or (now - current_user.last_activity).total_seconds() > 60:
+    last = current_user.last_activity
+    # Same naive-vs-aware issue as User.is_online() in models.py — a
+    # value re-fetched from the DB mid-request can come back naive even
+    # though it was written as timezone-aware, depending on the backend.
+    # Normalize before comparing.
+    if last is not None and last.tzinfo is not None:
+        last = last.replace(tzinfo=None)
+    now_naive = now.replace(tzinfo=None)
+    if last is None or (now_naive - last).total_seconds() > 60:
         try:
             current_user.last_activity = now
             db.session.commit()
@@ -1566,12 +1574,31 @@ def parent_required(f):
 # ---------------------------------------------------------------------------
 @app.context_processor
 def inject_config():
+    # Latest broadcast message for the rolling announcement bar in
+    # base.html. Teachers and students only, per the request — admins
+    # are the ones sending these, they don't need to see their own
+    # announcement scroll past them. A single cheap, indexed lookup
+    # (recipient_id is a FK) run once per page render; broadcasts are
+    # infrequent enough that this doesn't need its own cache layer the
+    # way get_incomplete_assessments() does.
+    active_broadcast = None
+    if (current_user.is_authenticated
+            and hasattr(current_user, 'is_teacher')
+            and (current_user.is_teacher() or current_user.is_student())):
+        active_broadcast = (
+            Message.query
+            .filter_by(recipient_id=current_user.id, is_broadcast=True)
+            .order_by(Message.created_at.desc())
+            .first()
+        )
+
     return {
         'CATEGORY_LABELS':    CATEGORY_LABELS,
         'ASSESSMENT_WEIGHTS': app.config['ASSESSMENT_WEIGHTS'],
         'LEARNING_AREAS':     app.config['LEARNING_AREAS'],
         'CLASS_LEVELS':       app.config['CLASS_LEVELS'],
         'now':                utcnow(),
+        'active_broadcast':   active_broadcast,
     }
 
 
@@ -1625,6 +1652,15 @@ def _wsgi_error_catcher(environ, start_response):
     try:
         return _orig_wsgi_app(environ, start_response)
     except Exception as e:
+        # Log the exception so we can see what's happening
+        import traceback
+        app.logger.exception(f'WSGI-level exception on {environ.get("REQUEST_METHOD")} {environ.get("PATH_INFO")}: {e}')
+        try:
+            with open('tmp_wsgi_error.log', 'a', encoding='utf-8') as f:
+                f.write(f'\n[WSGI] {environ.get("REQUEST_METHOD")} {environ.get("PATH_INFO")}\n')
+                traceback.print_exc(file=f)
+        except Exception:
+            pass
         try:
             start_response('500 Internal Server Error', [('Content-Type', 'text/html')])
         except Exception:
@@ -5877,6 +5913,45 @@ def admin_send_message():
             flash('Subject and content are required', 'danger')
             return render_template('admin_send_message.html')
 
+        # Student User accounts are created lazily — only the first time
+        # a student actually logs in (see student_login()). A Student
+        # with an academic record who has never logged in has no User
+        # row at all, and Message.recipient_id is a foreign key to
+        # User.id — so a broadcast could only ever reach whichever
+        # students happened to have already logged in at least once,
+        # silently dropping everyone else with no error or warning. Any
+        # broadcast that includes students needs to close that gap first,
+        # provisioning an account for every student who doesn't have one
+        # yet, the same way student_login() does (username=student_number,
+        # password defaulted to the student number) — so a message
+        # actually reaches every current student, not just past logins.
+        # ... (same reasoning as before: "anything other than 'teachers'
+        # explicitly" includes students, matching the routing below exactly)
+        if recipient_type != 'teachers':
+            existing_usernames = {
+                u.username for u in User.query.filter_by(role='student').all()
+            }
+            missing = (Student.query
+                       .filter(Student.student_number.isnot(None))
+                       .filter(~Student.student_number.in_(existing_usernames))
+                       .all())
+            created_count = 0
+            for student in missing:
+                snum = (student.student_number or '').strip()
+                if not snum or snum in existing_usernames:
+                    continue
+                pw_hash = bcrypt.generate_password_hash(snum).decode('utf-8')
+                db.session.add(User(username=snum, password_hash=pw_hash, role='student'))
+                existing_usernames.add(snum)
+                created_count += 1
+            if created_count:
+                db.session.commit()
+                app.logger.info(
+                    f'admin_send_message: provisioned {created_count} missing '
+                    f'student account(s) before broadcast so delivery is not '
+                    f'limited to students who had already logged in.'
+                )
+
         if recipient_type == 'teachers':
             recipients = User.query.filter_by(role='teacher').all()
         elif recipient_type == 'students':
@@ -5896,7 +5971,10 @@ def admin_send_message():
                 )
                 db.session.add(message)
             db.session.commit()
-            flash(f'Message sent to {len(recipients)} recipient(s)', 'success')
+            flash(f'Message sent to {len(recipients)} recipient(s)'
+                  + (f' ({created_count} new student account(s) created to receive it)'
+                     if recipient_type != 'teachers' and created_count else ''),
+                  'success')
             return redirect(url_for('admin_messages'))
         except Exception as e:
             db.session.rollback()

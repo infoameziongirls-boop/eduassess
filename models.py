@@ -47,7 +47,20 @@ class User(UserMixin, db.Model):
     def is_online(self):
         if not self.last_activity:
             return False
-        delta = utcnow() - self.last_activity
+        # SQLAlchemy expires in-memory objects on commit by default, so
+        # the value just written by the before_request hook in app.py
+        # (timezone-aware, via this file's own utcnow()) gets re-fetched
+        # from the DB on the very next read within the same request —
+        # and SQLite's DateTime column silently drops timezone info on
+        # that round-trip, coming back naive. Subtracting an aware
+        # datetime from a naive one raises TypeError, which is exactly
+        # what broke every page right after login (this runs in
+        # base.html on every authenticated page). Normalize both sides
+        # to naive UTC before subtracting so this is correct regardless
+        # of what a given DB backend's round-trip does to tzinfo.
+        now = utcnow().replace(tzinfo=None)
+        last = self.last_activity.replace(tzinfo=None) if self.last_activity.tzinfo else self.last_activity
+        delta = now - last
         return delta.total_seconds() < self.ONLINE_THRESHOLD_SECONDS
 
     assessments = db.relationship(
@@ -934,50 +947,6 @@ def ensure_default_admin_user(app, bcrypt):
         return admin
 
 
-def ensure_user_columns():
-    """
-    Add any missing legacy user table columns without crashing startup.
-    Older SQLite databases can be missing columns such as last_activity and
-    classes even though the model expects them.
-    """
-    try:
-        inspector = inspect(db.engine)
-        if not inspector.has_table('users'):
-            return
-
-        dialect = db.engine.dialect.name
-        columns = {column['name'] for column in inspector.get_columns('users')}
-
-        if dialect == 'postgresql':
-            type_map = {
-                'subject':      'VARCHAR(100)',
-                'class_name':   'VARCHAR(50)',
-                'classes':      'TEXT',
-                'created_at':   'TIMESTAMP',
-                'last_login':   'TIMESTAMP',
-                'last_activity':'TIMESTAMP',
-            }
-        else:
-            type_map = {
-                'subject':      'VARCHAR(100)',
-                'class_name':   'VARCHAR(50)',
-                'classes':      'TEXT',
-                'created_at':   'DATETIME',
-                'last_login':   'DATETIME',
-                'last_activity':'DATETIME',
-            }
-
-        for column_name, column_type in type_map.items():
-            if column_name in columns:
-                continue
-            db.session.execute(text(f'ALTER TABLE users ADD COLUMN {column_name} {column_type}'))
-
-        db.session.commit()
-    except Exception as exc:
-        db.session.rollback()
-        print(f"[ensure_user_columns] WARNING: could not sync columns: {exc}")
-
-
 def ensure_settings_columns():
     """
     Safely add the results-release columns to an existing settings table.
@@ -1064,7 +1033,6 @@ def init_db(app, bcrypt):
                 print(f"Database not ready, retrying in 2 seconds... ({attempt+1}/{max_retries})")
                 time.sleep(2)
 
-        ensure_user_columns()
         ensure_settings_columns()
 
         if not Setting.query.first():

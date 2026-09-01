@@ -805,11 +805,111 @@
         .pw-wrap { position: relative; }
         .pw-toggle { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--ink-4); cursor: pointer; padding: 0; display: flex; align-items: center; }
         .pw-toggle:hover { color: var(--ink-2); }
+        /* ===== BROADCAST ANNOUNCEMENT BAR ===== */
+        .broadcast-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: linear-gradient(90deg, var(--brand), var(--teal));
+            color: #fff;
+            padding: 8px 14px;
+            position: relative;
+            z-index: 1200;
+            overflow: hidden;
+        }
+        .broadcast-icon {
+            flex-shrink: 0;
+            font-size: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: broadcast-ring 2.2s ease-in-out infinite;
+        }
+        @keyframes broadcast-ring {
+            0%, 100% { transform: rotate(0deg); }
+            10%      { transform: rotate(-12deg); }
+            20%      { transform: rotate(10deg); }
+            30%      { transform: rotate(-6deg); }
+            40%      { transform: rotate(0deg); }
+        }
+        .broadcast-track {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            display: flex;
+            white-space: nowrap;
+            /* Two identical copies of the text sit side by side (see
+               base.html markup); translating the whole track exactly
+               -50% loops seamlessly from the 2nd copy back to the 1st
+               with no visible jump or gap. Duration scales with how
+               long the message actually is, set inline per-message. */
+            animation: broadcast-scroll linear infinite;
+        }
+        @keyframes broadcast-scroll {
+            from { transform: translateX(0); }
+            to   { transform: translateX(-50%); }
+        }
+        .broadcast-text {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding-right: 60px;
+            font-size: .82rem;
+            font-weight: 500;
+        }
+        .broadcast-subject { font-weight: 800; }
+        .broadcast-sep { opacity: .6; }
+        .broadcast-close {
+            flex-shrink: 0;
+            background: rgba(255,255,255,.18);
+            border: none;
+            color: #fff;
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            cursor: pointer;
+            transition: background .15s;
+        }
+        .broadcast-close:hover { background: rgba(255,255,255,.32); }
+        .broadcast-bar.dismissing { animation: broadcast-collapse .25s ease forwards; }
+        @keyframes broadcast-collapse {
+            to { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .broadcast-track { animation: none; overflow-x: auto; }
+            .broadcast-icon { animation: none; }
+        }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
 <body>
 {% if current_user.is_authenticated %}
+
+{% if active_broadcast %}
+<!-- ===== BROADCAST ANNOUNCEMENT BAR ===== -->
+<div class="broadcast-bar" id="broadcastBar" data-message-id="{{ active_broadcast.id }}">
+    <div class="broadcast-icon"><i class="bi bi-megaphone-fill"></i></div>
+    <div class="broadcast-track">
+        <div class="broadcast-text">
+            <span class="broadcast-subject">{{ active_broadcast.subject }}</span>
+            <span class="broadcast-sep">&mdash;</span>
+            <span>{{ active_broadcast.content }}</span>
+        </div>
+        <div class="broadcast-text" aria-hidden="true">
+            <span class="broadcast-subject">{{ active_broadcast.subject }}</span>
+            <span class="broadcast-sep">&mdash;</span>
+            <span>{{ active_broadcast.content }}</span>
+        </div>
+    </div>
+    <button type="button" class="broadcast-close" id="broadcastClose" title="Dismiss">
+        <i class="bi bi-x-lg"></i>
+    </button>
+</div>
+{% endif %}
 
 <!-- Sidebar Overlay (mobile) -->
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
@@ -1242,6 +1342,44 @@
         document.getElementById('sidebar').classList.remove('open');
         document.getElementById('sidebarOverlay').classList.remove('open');
     }
+
+    // Broadcast announcement bar: speed scales with message length (so
+    // a short message doesn't whip past unreadably fast, and a long one
+    // doesn't crawl), and dismissing it is remembered for the rest of
+    // this browser session (sessionStorage, not localStorage — a new
+    // login, or a genuinely new broadcast with a different id, shows
+    // again; it doesn't just vanish forever the first time anyone closes it).
+    (function initBroadcastBar() {
+        const bar = document.getElementById('broadcastBar');
+        if (!bar) return;
+
+        const messageId = bar.getAttribute('data-message-id');
+        const dismissKey = 'broadcast_dismissed_' + messageId;
+        if (sessionStorage.getItem(dismissKey)) {
+            bar.style.display = 'none';
+            return;
+        }
+
+        const track = bar.querySelector('.broadcast-track');
+        const firstCopy = track.querySelector('.broadcast-text');
+        // Pixels-per-second scroll speed. Measured after layout so it
+        // reflects the actual rendered text width, not a guess.
+        requestAnimationFrame(() => {
+            const width = firstCopy.offsetWidth;
+            const pixelsPerSecond = 90;
+            const duration = Math.max(8, width / pixelsPerSecond);
+            track.style.animationDuration = duration + 's';
+        });
+
+        const closeBtn = document.getElementById('broadcastClose');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', function () {
+                sessionStorage.setItem(dismissKey, '1');
+                bar.classList.add('dismissing');
+                setTimeout(() => { bar.style.display = 'none'; }, 260);
+            });
+        }
+    })();
 
     // Auto-dismiss alerts
     document.addEventListener('DOMContentLoaded', function () {

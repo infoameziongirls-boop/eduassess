@@ -141,40 +141,6 @@
                             </button>
                             {% endif %}
                         </div>
-
-                        <!-- Delete Modal -->
-                        {% if current_user.is_admin() %}
-                        <div class="modal fade" id="delModal{{ student.id }}" tabindex="-1">
-                            <div class="modal-dialog modal-dialog-centered">
-                                <div class="modal-content">
-                                    <div class="modal-header" style="border-bottom-color:var(--rose-dim);background:var(--rose-dim);">
-                                        <h5 class="modal-title" style="color:var(--rose);"><i class="bi bi-exclamation-triangle me-2"></i>Delete Student</h5>
-                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                    </div>
-                                    <div class="modal-body">
-                                        <p style="font-size:.85rem;color:var(--ink-2);margin-bottom:14px;">
-                                            You are about to permanently delete this student and all associated data.
-                                        </p>
-                                        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;font-size:.82rem;">
-                                            <div style="font-weight:700;">{{ student.full_name() }}</div>
-                                            <div style="color:var(--ink-4);margin-top:2px;">{{ student.student_number }} • {{ student.class_name or 'No class' }}</div>
-                                        </div>
-                                        <div class="alert alert-danger" style="margin-top:12px;font-size:.78rem;">
-                                            <i class="bi bi-exclamation-triangle-fill"></i>
-                                            This will also delete all assessments and quiz attempts. This cannot be undone.
-                                        </div>
-                                    </div>
-                                    <div class="modal-footer">
-                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                        <form action="{{ url_for('student_delete', student_id=student.id) }}" method="POST" class="d-inline">
-                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                            <button type="submit" class="btn btn-danger"><i class="bi bi-trash"></i> Delete Student</button>
-                                        </form>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -192,4 +158,54 @@
         </table>
     </div>
 </div>
+
+<!-- Delete-student confirmation modals — deliberately placed here, as
+     siblings of the .card above, not nested inside it. Bootstrap modals
+     use position:fixed to anchor to the viewport, but .card has
+     overflow:hidden AND (via .animate-in's fadeSlideIn keyframes, kept
+     applied permanently by animation-fill-mode:both) a transform — and
+     a transform on any ancestor makes IT the positioning context for a
+     position:fixed descendant instead of the viewport. Nested inside
+     .card like they used to be, these modals still technically opened,
+     but rendered clipped to the card's small bounding box and
+     mispositioned — invisible in practice, which is exactly what looked
+     like "the page hangs" when the delete button was clicked: nothing
+     visibly happened, even though the button worked correctly the
+     whole time. -->
+{% if current_user.is_admin() %}
+{% for group_name, group_students in student_groups.items() %}
+{% for student in group_students %}
+<div class="modal fade" id="delModal{{ student.id }}" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header" style="border-bottom-color:var(--rose-dim);background:var(--rose-dim);">
+                <h5 class="modal-title" style="color:var(--rose);"><i class="bi bi-exclamation-triangle me-2"></i>Delete Student</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:.85rem;color:var(--ink-2);margin-bottom:14px;">
+                    You are about to permanently delete this student and all associated data.
+                </p>
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;font-size:.82rem;">
+                    <div style="font-weight:700;">{{ student.full_name() }}</div>
+                    <div style="color:var(--ink-4);margin-top:2px;">{{ student.student_number }} • {{ student.class_name or 'No class' }}</div>
+                </div>
+                <div class="alert alert-danger" style="margin-top:12px;font-size:.78rem;">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    This will also delete all assessments and quiz attempts. This cannot be undone.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form action="{{ url_for('student_delete', student_id=student.id) }}" method="POST" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-danger"><i class="bi bi-trash"></i> Delete Student</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% endfor %}
+{% endif %}
 {% endblock %}

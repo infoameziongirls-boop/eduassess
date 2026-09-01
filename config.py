@@ -135,7 +135,8 @@ class Config:
     # Study / Learning Areas
     # ------------------------------------------------------------------ #
     STUDY_AREAS = [
-        ("visual_performing_arts", "Visual and Performing Arts"),
+        ("visual_performing_arts_a", "Visual and Performing Arts A"),
+        ("visual_performing_arts_b", "Visual and Performing Arts B"),
         ("home_economics_a",       "Home Economics A"),
         ("home_economics_b",       "Home Economics B"),
         ("home_economics_c",       "Home Economics C"),
@@ -144,20 +145,19 @@ class Config:
         ("home_economics_f",       "Home Economics F"),
         ("business_a",             "Business A"),
         ("business_b",             "Business B"),
-        ("business_c",             "Business C"),
-        ("business_d",             "Business D"),
         ("science_a",              "Science A"),
         ("science_b",              "Science B"),
-        ("general_arts_1",         "General Arts 1"),
-        ("general_arts_2",         "General Arts 2"),
-        ("general_arts_3a",        "General Arts 3A"),
-        ("general_arts_3b",        "General Arts 3B"),
-        ("general_arts_4a",        "General Arts 4A"),
-        ("general_arts_4b",        "General Arts 4B"),
-        ("general_arts_5a",        "General Arts 5A"),
-        ("general_arts_5b",        "General Arts 5B"),
-        ("general_arts_6a",        "General Arts 6A"),
-        ("general_arts_6b",        "General Arts 6B"),
+        ("general_arts_a",         "General Arts A"),
+        ("general_arts_b",         "General Arts B"),
+        ("general_arts_c",         "General Arts C"),
+        ("general_arts_d",         "General Arts D"),
+        ("general_arts_e",         "General Arts E"),
+        ("general_arts_f",         "General Arts F"),
+        ("general_arts_g",         "General Arts G"),
+        ("general_arts_h",         "General Arts H"),
+        ("general_arts_i",         "General Arts I"),
+        ("general_arts_j",         "General Arts J"),
+        ("general_arts_k",         "General Arts K"),
     ]
 
     STUDY_AREA_SUBJECTS: dict = {}
