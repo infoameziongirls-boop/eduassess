@@ -3235,24 +3235,143 @@ def assessment_unarchive(assessment_id):
 @login_required
 @admin_required
 def assessments_archived():
+    """
+    Archive browser, organized as folders: Class/Form → Academic Year →
+    Semester → the actual archived records. Navigation depth is driven
+    entirely by which query params are present — no class_name means
+    "show me the class folders", class_name+academic_year but no term
+    means "show me the semester folders inside that year", and so on.
+    Each level is reachable directly (bookmarkable, back-button-safe).
+    """
     from sqlalchemy import func
 
-    page         = request.args.get('page',          1,  type=int)
-    per_page     = app.config['ASSESSMENTS_PER_PAGE']
-    search       = request.args.get('search',       '').strip()
-    sel_subject  = request.args.get('subject',      '').strip()
-    sel_class    = request.args.get('class_name',   '').strip()
-    sel_term     = request.args.get('term',         '').strip()
-    sel_year     = request.args.get('academic_year','').strip()
-    group        = request.args.get('group',        'all').strip()
+    sel_class   = request.args.get('class_name',    '').strip()
+    sel_year    = request.args.get('academic_year', '').strip()
+    sel_term    = request.args.get('term',          '').strip()
+    search      = request.args.get('search',        '').strip()
+    sel_subject = request.args.get('subject',       '').strip()
+    page        = request.args.get('page', 1, type=int)
+    per_page    = app.config['ASSESSMENTS_PER_PAGE']
 
-    q = Assessment.query.filter_by(archived=True)
+    base_q = Assessment.query.filter_by(archived=True)
 
-    if group and group != 'all':
-        parts = group.split('__')
-        if len(parts) == 2:
-            q = q.filter_by(academic_year=parts[0], term=parts[1])
+    total_archived    = base_q.count()
+    archived_students = (db.session.query(func.count(Assessment.student_id.distinct()))
+                           .filter_by(archived=True).scalar() or 0)
+    last_record = base_q.order_by(Assessment.date_recorded.desc()).first()
+    last_archive_date = (last_record.date_recorded.strftime('%d %b %Y')
+                         if last_record else None)
 
+    # Class/Form display order follows CLASS_LEVELS config, not
+    # alphabetical — "Form 2" sorting before "Form 10" alphabetically
+    # would look wrong to a person even though it's technically correct
+    # string order. Anything not in that config (legacy/typo'd class
+    # names) is appended afterward, alphabetically, rather than hidden.
+    class_order = [key for key, _ in app.config.get('CLASS_LEVELS', [])]
+    def _class_sort_key(name):
+        try:
+            return (0, class_order.index(name))
+        except ValueError:
+            return (1, name or '')
+
+    term_order = [key for key, _ in app.config.get('TERMS', [])]
+    term_label_map = dict(app.config.get('TERMS', []))
+    def _term_sort_key(t):
+        try:
+            return (0, term_order.index(t))
+        except ValueError:
+            return (1, t or '')
+
+    common_kwargs = dict(
+        total_archived=total_archived,
+        archived_students=archived_students,
+        last_archive_date=last_archive_date,
+        learning_areas=app.config['LEARNING_AREAS'],
+        class_levels=app.config['CLASS_LEVELS'],
+        terms=app.config.get('TERMS', []),
+        selected_class=sel_class,
+        selected_year=sel_year,
+        selected_term=sel_term,
+        search=search,
+        selected_subject=sel_subject,
+    )
+
+    # ── LEVEL 1: class/form folders ─────────────────────────────────────
+    if not sel_class:
+        rows = (db.session.query(
+                    Assessment.class_name,
+                    func.count(Assessment.id),
+                    func.count(Assessment.student_id.distinct()),
+                )
+                .filter_by(archived=True)
+                .group_by(Assessment.class_name)
+                .all())
+        class_folders = sorted(
+            [{
+                'class_name': cls or 'Unassigned Class',
+                'raw_class_name': cls or '',
+                'count': cnt,
+                'student_count': stu_cnt,
+            } for cls, cnt, stu_cnt in rows],
+            key=lambda f: _class_sort_key(f['raw_class_name'])
+        )
+        return render_template('archive_view.html', view_level='classes',
+                               class_folders=class_folders, **common_kwargs)
+
+    # ── LEVEL 2: academic-year folders inside this class ────────────────
+    if not sel_year:
+        class_filter = None if sel_class == 'Unassigned Class' else sel_class
+        rows = (db.session.query(
+                    Assessment.academic_year,
+                    func.count(Assessment.id),
+                    func.count(Assessment.student_id.distinct()),
+                )
+                .filter_by(archived=True, class_name=class_filter)
+                .group_by(Assessment.academic_year)
+                .all())
+        year_folders = sorted(
+            [{
+                'academic_year': ay or 'Unknown Year',
+                'raw_academic_year': ay or '',
+                'count': cnt,
+                'student_count': stu_cnt,
+            } for ay, cnt, stu_cnt in rows],
+            key=lambda f: f['raw_academic_year'], reverse=True
+        )
+        return render_template('archive_view.html', view_level='years',
+                               year_folders=year_folders, **common_kwargs)
+
+    # ── LEVEL 3: semester/term folders inside this class + year ─────────
+    if not sel_term:
+        year_filter = None if sel_year == 'Unknown Year' else sel_year
+        class_filter = None if sel_class == 'Unassigned Class' else sel_class
+        rows = (db.session.query(
+                    Assessment.term,
+                    func.count(Assessment.id),
+                    func.count(Assessment.student_id.distinct()),
+                )
+                .filter_by(archived=True, class_name=class_filter, academic_year=year_filter)
+                .group_by(Assessment.term)
+                .all())
+        term_folders = sorted(
+            [{
+                'term': t or 'unknown',
+                'raw_term': t or '',
+                'term_label': term_label_map.get(t, (t or 'Unknown Term')),
+                'count': cnt,
+                'student_count': stu_cnt,
+            } for t, cnt, stu_cnt in rows],
+            key=lambda f: _term_sort_key(f['raw_term'])
+        )
+        return render_template('archive_view.html', view_level='terms',
+                               term_folders=term_folders, **common_kwargs)
+
+    # ── LEVEL 4: the actual archived records in this Class / Year / Term ──
+    class_filter = None if sel_class == 'Unassigned Class' else sel_class
+    year_filter  = None if sel_year == 'Unknown Year' else sel_year
+    term_filter  = None if sel_term == 'unknown' else sel_term
+
+    q = base_q.filter_by(class_name=class_filter, academic_year=year_filter, term=term_filter)
     if search:
         q = q.join(Student, Assessment.student_id == Student.id).filter(
             db.or_(
@@ -3261,70 +3380,17 @@ def assessments_archived():
                 Student.student_number.ilike(f'%{search}%'),
             )
         )
-    if sel_subject:  q = q.filter_by(subject=sel_subject)
-    if sel_class:    q = q.filter_by(class_name=sel_class)
-    if sel_term:     q = q.filter_by(term=sel_term)
-    if sel_year:     q = q.filter_by(academic_year=sel_year)
+    if sel_subject:
+        q = q.filter_by(subject=sel_subject)
 
     pagination = (q.options(joinedload(Assessment.student))
                    .order_by(Assessment.date_recorded.desc())
                    .paginate(page=page, per_page=per_page, error_out=False))
-
     pagination.items = [a for a in pagination.items if a.student is not None]
 
-    total_archived    = Assessment.query.filter_by(archived=True).count()
-    archived_students = (db.session.query(func.count(Assessment.student_id.distinct()))
-                           .filter_by(archived=True).scalar() or 0)
-
-    archived_pairs = (db.session.query(Assessment.academic_year, Assessment.term)
-                       .filter_by(archived=True)
-                       .group_by(Assessment.academic_year, Assessment.term)
-                       .order_by(Assessment.academic_year.desc(), Assessment.term)
-                       .all())
-    archived_terms = len(archived_pairs)
-
-    last_record = (Assessment.query.filter_by(archived=True)
-                    .order_by(Assessment.date_recorded.desc()).first())
-    last_archive_date = (last_record.date_recorded.strftime('%d %b %Y')
-                         if last_record else None)
-
-    term_label_map = dict(app.config.get('TERMS', []))
-    term_summary = []
-    for year, term in archived_pairs:
-        count = (Assessment.query
-                   .filter_by(archived=True, academic_year=year, term=term)
-                   .count())
-        stu_count = (db.session.query(func.count(Assessment.student_id.distinct()))
-                      .filter_by(archived=True, academic_year=year, term=term)
-                      .scalar() or 0)
-        term_summary.append({
-            'key':           f'{year}__{term}',
-            'academic_year': year or '—',
-            'term':          term or '—',
-            'term_label':    term_label_map.get(term, (term or '').replace('term', 'Term ')),
-            'count':         count,
-            'student_count': stu_count,
-        })
-
-    return render_template(
-        'archive_view.html',
-        assessments=pagination.items,
-        pagination=pagination,
-        search=search,
-        selected_subject=sel_subject,
-        selected_class=sel_class,
-        selected_term=sel_term,
-        selected_year=sel_year,
-        group=group,
-        learning_areas=app.config['LEARNING_AREAS'],
-        class_levels=app.config['CLASS_LEVELS'],
-        terms=app.config.get('TERMS', []),
-        total_archived=total_archived,
-        archived_students=archived_students,
-        archived_terms=archived_terms,
-        last_archive_date=last_archive_date,
-        term_summary=term_summary,
-    )
+    return render_template('archive_view.html', view_level='records',
+                           assessments=pagination.items, pagination=pagination,
+                           **common_kwargs)
 
 
 @app.route('/assessments/bulk-action', methods=['POST'])

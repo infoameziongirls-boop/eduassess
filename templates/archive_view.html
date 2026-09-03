@@ -154,6 +154,23 @@ table.at{width:100%;border-collapse:separate;border-spacing:0;min-width:800px}
 .sh-t{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:var(--ink);white-space:nowrap}
 .sh-line{flex:1;height:1px;background:linear-gradient(90deg,rgba(201,165,62,.4) 0%,transparent)}
 .sh-badge{font-family:'DM Mono',monospace;font-size:10px;background:var(--ink);color:var(--brand-light);padding:3px 8px;border-radius:30px;text-transform:uppercase;letter-spacing:.07em}
+
+/* BREADCRUMB */
+.arch-crumb{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:16px;font-size:13px}
+.arch-crumb a{color:var(--ink-4);text-decoration:none;display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:7px;transition:background .15s,color .15s}
+.arch-crumb a:hover{background:var(--brand-glow);color:#7a5010}
+.arch-crumb .crumb-current{color:var(--ink);font-weight:700;padding:5px 10px}
+.arch-crumb .crumb-sep{color:var(--ink-4);opacity:.5}
+
+/* FOLDER GRID */
+.folder-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;margin-bottom:20px}
+.folder-card{background:var(--surface-2);border:1.5px solid var(--border);border-radius:var(--radius-lg);padding:20px 18px;text-decoration:none;display:flex;flex-direction:column;gap:10px;transition:transform .22s var(--ease),border-color .22s,box-shadow .22s;position:relative;overflow:hidden}
+.folder-card:hover{transform:translateY(-3px);border-color:var(--brand);box-shadow:0 8px 22px rgba(201,165,62,.14)}
+.folder-card .folder-ico{font-size:30px;line-height:1}
+.folder-card .folder-name{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;color:var(--ink)}
+.folder-card .folder-meta{font-size:12px;color:var(--ink-4);font-family:'DM Mono',monospace;display:flex;gap:10px}
+.folder-empty{text-align:center;padding:50px 20px;color:var(--ink-4);}
+.folder-empty .folder-ico{font-size:40px;opacity:.2;margin-bottom:10px}
 </style>
 {% endblock %}
 
@@ -172,7 +189,7 @@ table.at{width:100%;border-collapse:separate;border-spacing:0;min-width:800px}
           Admin Only · Secure Store
         </div>
         <h1 class="hero-h1">Assessment Archive</h1>
-        <p class="hero-sub">Browse, search, restore or permanently delete archived records. All archives are preserved across promotion cycles.</p>
+        <p class="hero-sub">Organized by Class → Academic Year → Semester. All archives are preserved across promotion cycles — nothing here is deleted until you choose to.</p>
       </div>
       <div class="kpi-row">
         <div class="kpi">
@@ -184,10 +201,6 @@ table.at{width:100%;border-collapse:separate;border-spacing:0;min-width:800px}
           <div class="kpi-l">Students</div>
         </div>
         <div class="kpi">
-          <div class="kpi-v">{{ archived_terms or 0 }}</div>
-          <div class="kpi-l">Terms</div>
-        </div>
-        <div class="kpi">
           <div class="kpi-v" style="font-size:1.1rem">{{ last_archive_date or '—' }}</div>
           <div class="kpi-l">Last Archive</div>
         </div>
@@ -196,59 +209,104 @@ table.at{width:100%;border-collapse:separate;border-spacing:0;min-width:800px}
   </div>
 </div>
 
-<div class="a2" style="margin-bottom:18px">
-  <div class="sh">
-    <span class="sh-t"><i class="ti ti-folders" aria-hidden="true" style="margin-right:5px"></i>Archived Terms</span>
-    <span class="sh-line"></span>
-    <span class="sh-badge">{{ archived_terms or 0 }} terms</span>
-  </div>
-  <div class="scards">
-    <div class="sc sc-gold">
-      <div class="sc-ico">📁</div>
-      <div class="sc-v">{{ total_archived or 0 }}</div>
-      <div class="sc-l">Total Records</div>
-      <div class="sc-sub">{{ archived_students or 0 }} students</div>
-    </div>
-    <div class="sc sc-green">
-      <div class="sc-ico">📅</div>
-      <div class="sc-v">{{ archived_terms or 0 }}</div>
-      <div class="sc-l">Archived Terms</div>
-      <div class="sc-sub">Track term groups</div>
-    </div>
-    <div class="sc sc-blue">
-      <div class="sc-ico">🎓</div>
-      <div class="sc-v">{{ archived_students or 0 }}</div>
-      <div class="sc-l">Students Affected</div>
-      <div class="sc-sub">Across all archived terms</div>
-    </div>
-    <div class="sc sc-amber">
-      <div class="sc-ico">📊</div>
-      <div class="sc-v">{{ last_archive_date or '—' }}</div>
-      <div class="sc-l">Last Archive Date</div>
-      <div class="sc-sub">Most recent archive event</div>
-    </div>
-  </div>
+<!-- ===== BREADCRUMB — always shows the current folder path, each
+     segment a clickable link back up to that level ===== -->
+<div class="a2 arch-crumb">
+  <a href="{{ url_for('assessments_archived') }}"><i class="ti ti-archive" aria-hidden="true"></i> Archive</a>
+  {% if selected_class %}
+  <span class="crumb-sep">/</span>
+  {% if selected_year %}
+  <a href="{{ url_for('assessments_archived', class_name=selected_class) }}">{{ selected_class }}</a>
+  {% else %}
+  <span class="crumb-current">{{ selected_class }}</span>
+  {% endif %}
+  {% endif %}
+  {% if selected_year %}
+  <span class="crumb-sep">/</span>
+  {% if selected_term %}
+  <a href="{{ url_for('assessments_archived', class_name=selected_class, academic_year=selected_year) }}">{{ selected_year }}</a>
+  {% else %}
+  <span class="crumb-current">{{ selected_year }}</span>
+  {% endif %}
+  {% endif %}
+  {% if selected_term %}
+  <span class="crumb-sep">/</span>
+  <span class="crumb-current">{{ terms|selectattr('0', 'equalto', selected_term)|map(attribute='1')|first or selected_term }}</span>
+  {% endif %}
 </div>
 
+{% if view_level == 'classes' %}
+<!-- ===== LEVEL 1: CLASS/FORM FOLDERS ===== -->
 <div class="a3">
-  <div class="tabs" id="tabsRow">
-    <a href="{{ url_for('assessments_archived', group='all', search=search, subject=selected_subject, class_name=selected_class, term=selected_term, academic_year=selected_year) }}" class="tab {{ 'active' if group == 'all' else '' }}">
-      <i class="ti ti-archive" aria-hidden="true" style="font-size:14px"></i>
-      All Records
-      <span class="tab-pip">{{ total_archived or 0 }}</span>
+  <div class="sh">
+    <span class="sh-t"><i class="ti ti-folders" aria-hidden="true" style="margin-right:5px"></i>Browse by Class</span>
+    <span class="sh-line"></span>
+    <span class="sh-badge">{{ class_folders|length }} class{{ 'es' if class_folders|length != 1 else '' }}</span>
+  </div>
+  {% if class_folders %}
+  <div class="folder-grid">
+    {% for f in class_folders %}
+    <a href="{{ url_for('assessments_archived', class_name=f.class_name) }}" class="folder-card">
+      <div class="folder-ico">📁</div>
+      <div class="folder-name">{{ f.class_name }}</div>
+      <div class="folder-meta"><span>{{ f.count }} records</span><span>·</span><span>{{ f.student_count }} students</span></div>
     </a>
-    {% for item in term_summary %}
-    <a href="{{ url_for('assessments_archived', group=item.key, search=search, subject=selected_subject, class_name=selected_class, term=selected_term, academic_year=selected_year) }}" class="tab {{ 'active' if group == item.key else '' }}">
-      <i class="ti ti-calendar" aria-hidden="true" style="font-size:14px"></i>
-      {{ item.term_label }} · {{ item.academic_year }}
-      <span class="tab-pip">{{ item.count }}</span>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="folder-empty">
+    <div class="folder-ico">🗄</div>
+    <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;color:var(--ink);margin-bottom:6px;">Archive is empty</div>
+    <p style="font-size:13px;max-width:320px;margin:0 auto;">Archived assessments will appear here, organized by class, once a term is archived from <a href="{{ url_for('admin_settings') }}" style="color:var(--brand);">Settings</a>.</p>
+  </div>
+  {% endif %}
+</div>
+
+{% elif view_level == 'years' %}
+<!-- ===== LEVEL 2: ACADEMIC YEAR FOLDERS (within a class) ===== -->
+<div class="a3">
+  <div class="sh">
+    <span class="sh-t"><i class="ti ti-calendar" aria-hidden="true" style="margin-right:5px"></i>{{ selected_class }} — Browse by Academic Year</span>
+    <span class="sh-line"></span>
+    <span class="sh-badge">{{ year_folders|length }} year{{ 's' if year_folders|length != 1 else '' }}</span>
+  </div>
+  <div class="folder-grid">
+    {% for f in year_folders %}
+    <a href="{{ url_for('assessments_archived', class_name=selected_class, academic_year=f.academic_year) }}" class="folder-card">
+      <div class="folder-ico">📅</div>
+      <div class="folder-name">{{ f.academic_year }}</div>
+      <div class="folder-meta"><span>{{ f.count }} records</span><span>·</span><span>{{ f.student_count }} students</span></div>
     </a>
     {% endfor %}
   </div>
 </div>
 
+{% elif view_level == 'terms' %}
+<!-- ===== LEVEL 3: SEMESTER/TERM FOLDERS (within a class + year) ===== -->
+<div class="a3">
+  <div class="sh">
+    <span class="sh-t"><i class="ti ti-calendar-event" aria-hidden="true" style="margin-right:5px"></i>{{ selected_class }} · {{ selected_year }} — Browse by Semester</span>
+    <span class="sh-line"></span>
+    <span class="sh-badge">{{ term_folders|length }} semester{{ 's' if term_folders|length != 1 else '' }}</span>
+  </div>
+  <div class="folder-grid">
+    {% for f in term_folders %}
+    <a href="{{ url_for('assessments_archived', class_name=selected_class, academic_year=selected_year, term=f.term) }}" class="folder-card">
+      <div class="folder-ico">🗂️</div>
+      <div class="folder-name">{{ f.term_label }}</div>
+      <div class="folder-meta"><span>{{ f.count }} records</span><span>·</span><span>{{ f.student_count }} students</span></div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+{% else %}
+<!-- ===== LEVEL 4: THE ACTUAL RECORDS in this Class / Year / Semester ===== -->
 <div class="a3">
   <form method="get" action="{{ url_for('assessments_archived') }}" class="filter-wrap">
+    <input type="hidden" name="class_name" value="{{ selected_class }}">
+    <input type="hidden" name="academic_year" value="{{ selected_year }}">
+    <input type="hidden" name="term" value="{{ selected_term }}">
     <div class="filter-grid">
       <div class="field">
         <label>Search Student</label>
@@ -269,50 +327,9 @@ table.at{width:100%;border-collapse:separate;border-spacing:0;min-width:800px}
           </select>
         </div>
       </div>
-      <div class="field">
-        <label>Class</label>
-        <div class="sel-wrap">
-          <select name="class_name">
-            <option value="">All Classes</option>
-            {% for cls in class_levels %}
-              <option value="{{ cls }}" {{ 'selected' if selected_class == cls else '' }}>{{ cls }}</option>
-            {% endfor %}
-          </select>
-        </div>
-      </div>
-      <div class="field">
-        <label>Term</label>
-        <div class="sel-wrap">
-          <select name="term">
-            <option value="">All Terms</option>
-            {% for term in terms %}
-              {% if term is string %}
-                <option value="{{ term }}" {{ 'selected' if selected_term == term else '' }}>{{ term }}</option>
-              {% else %}
-                <option value="{{ term[0] }}" {{ 'selected' if selected_term == term[0] else '' }}>{{ term[1] if term[1] else term[0] }}</option>
-              {% endif %}
-            {% endfor %}
-          </select>
-        </div>
-      </div>
-      <div class="field">
-        <label>Academic Year</label>
-        <input type="text" name="academic_year" placeholder="e.g. 2024-2025" value="{{ selected_year or '' }}">
-      </div>
-      <div class="field">
-        <label>Filter Group</label>
-        <div class="sel-wrap">
-          <select name="group">
-            <option value="all" {{ 'selected' if group == 'all' else '' }}>All Terms</option>
-            {% for item in term_summary %}
-              <option value="{{ item.key }}" {{ 'selected' if group == item.key else '' }}>{{ item.term_label }} · {{ item.academic_year }}</option>
-            {% endfor %}
-          </select>
-        </div>
-      </div>
       <div class="filter-btns">
         <button type="submit" class="btn btn-gold"><i class="ti ti-search" aria-hidden="true" style="font-size:14px"></i> Search</button>
-        <a href="{{ url_for('assessments_archived') }}" class="btn btn-ghost"><i class="ti ti-refresh" aria-hidden="true" style="font-size:14px"></i> Reset</a>
+        <a href="{{ url_for('assessments_archived', class_name=selected_class, academic_year=selected_year, term=selected_term) }}" class="btn btn-ghost"><i class="ti ti-refresh" aria-hidden="true" style="font-size:14px"></i> Reset</a>
       </div>
     </div>
   </form>
@@ -336,7 +353,7 @@ table.at{width:100%;border-collapse:separate;border-spacing:0;min-width:800px}
   <div class="tbl-card a4">
     <div class="tbl-hd">
       <div>
-        <div class="tbl-hd-t"><i class="ti ti-archive" aria-hidden="true" style="font-size:15px;margin-right:6px"></i>Archive Records</div>
+        <div class="tbl-hd-t"><i class="ti ti-archive" aria-hidden="true" style="font-size:15px;margin-right:6px"></i>{{ selected_class }} · {{ terms|selectattr('0', 'equalto', selected_term)|map(attribute='1')|first or selected_term }} · {{ selected_year }}</div>
         <div class="tbl-hd-m" id="recCount">{{ pagination.total if pagination and pagination.total is not none else 0 }} records</div>
       </div>
       <div class="tbl-hd-r">
@@ -399,8 +416,8 @@ table.at{width:100%;border-collapse:separate;border-spacing:0;min-width:800px}
             <td colspan="12">
               <div class="empty">
                 <div class="empty-ico">🗄</div>
-                <div class="empty-t">No Archived Records Found</div>
-                <p class="empty-s">The archive is empty. Archived assessments appear here after you archive a term from <a href="{{ url_for('admin_settings') }}">Settings</a>.</p>
+                <div class="empty-t">No Records Match These Filters</div>
+                <p class="empty-s">Try clearing the search/subject filter, or <a href="{{ url_for('assessments_archived', class_name=selected_class, academic_year=selected_year, term=selected_term) }}">reset this folder view</a>.</p>
               </div>
             </td>
           </tr>
@@ -412,21 +429,21 @@ table.at{width:100%;border-collapse:separate;border-spacing:0;min-width:800px}
     <div class="pager">
       <span class="pager-i">Showing {{ pagination.page }} of {{ pagination.pages }} pages</span>
       <div class="pager-links">
-        <a class="pg {{ 'off' if not pagination.has_prev else '' }}" href="{{ url_for('assessments_archived', page=pagination.page-1, search=search, subject=selected_subject, class_name=selected_class, term=selected_term, academic_year=selected_year, group=group) }}">‹</a>
+        <a class="pg {{ 'off' if not pagination.has_prev else '' }}" href="{{ url_for('assessments_archived', page=pagination.page-1, search=search, subject=selected_subject, class_name=selected_class, term=selected_term, academic_year=selected_year) }}">‹</a>
         {% for p in range(1, pagination.pages + 1) %}
-          <a class="pg {{ 'active' if p == pagination.page else '' }}" href="{{ url_for('assessments_archived', page=p, search=search, subject=selected_subject, class_name=selected_class, term=selected_term, academic_year=selected_year, group=group) }}">{{ p }}</a>
+          <a class="pg {{ 'active' if p == pagination.page else '' }}" href="{{ url_for('assessments_archived', page=p, search=search, subject=selected_subject, class_name=selected_class, term=selected_term, academic_year=selected_year) }}">{{ p }}</a>
         {% endfor %}
-        <a class="pg {{ 'off' if not pagination.has_next else '' }}" href="{{ url_for('assessments_archived', page=pagination.page+1, search=search, subject=selected_subject, class_name=selected_class, term=selected_term, academic_year=selected_year, group=group) }}">›</a>
+        <a class="pg {{ 'off' if not pagination.has_next else '' }}" href="{{ url_for('assessments_archived', page=pagination.page+1, search=search, subject=selected_subject, class_name=selected_class, term=selected_term, academic_year=selected_year) }}">›</a>
       </div>
     </div>
   </div>
 </form>
+{% endif %}
 
 <div class="qa a5">
   <span class="qa-lbl">Quick Actions</span>
   <div class="qa-btns">
     <a href="{{ url_for('admin_settings') }}" class="btn btn-ghost" style="font-size:12px;padding:7px 13px"><i class="ti ti-settings" aria-hidden="true" style="font-size:13px"></i> Archive Settings</a>
-    <a href="{{ url_for('admin_settings') }}" class="btn btn-ghost" style="font-size:12px;padding:7px 13px"><i class="ti ti-clipboard-list" aria-hidden="true" style="font-size:13px"></i> Activity Log</a>
     <a href="{{ url_for('assessments_list') }}" class="btn btn-ghost" style="font-size:12px;padding:7px 13px"><i class="ti ti-arrow-left" aria-hidden="true" style="font-size:13px"></i> Live Assessments</a>
     <a href="{{ url_for('dashboard') }}" class="btn btn-gold" style="font-size:12px;padding:7px 13px"><i class="ti ti-home" aria-hidden="true" style="font-size:13px"></i> Dashboard</a>
   </div>
@@ -441,6 +458,7 @@ function updateSelection(input){
 }
 function updateBulk(){
   const bar = document.getElementById('bulkBar');
+  if(!bar) return;
   document.getElementById('bulkN').textContent = sel.size;
   bar.classList.toggle('on', sel.size > 0);
 }
@@ -470,6 +488,7 @@ function submitBulk(action){
 let sc=-1, sd=1;
 function srt(col){
   const tbl = document.getElementById('archTable');
+  if(!tbl) return;
   const ths = tbl.querySelectorAll('thead th');
   const tbody = tbl.querySelector('tbody');
   const rows = Array.from(tbody.querySelectorAll('tr'));

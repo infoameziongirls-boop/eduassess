@@ -143,15 +143,12 @@ def test_template_rendering():
                 'selected_class': '',
                 'selected_term': '',
                 'selected_year': '',
-                'group': 'all',
                 'learning_areas': ['Math', 'Science'],
                 'class_levels': ['Form 1', 'Form 2', 'Form 3'],
                 'terms': [('term1', 'Term 1')],
                 'total_archived': 0,
                 'archived_students': 0,
-                'archived_terms': 0,
                 'last_archive_date': None,
-                'term_summary': [],
             }
         }
         
