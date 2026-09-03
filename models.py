@@ -554,6 +554,19 @@ class Setting(db.Model):
     assessment_active = db.Column(db.Boolean, default=True)
 
     # ------------------------------------------------------------------ #
+    # School identity — shown on printed results and the academic
+    # transcript header (name/address/contact/GPS, matching a standard
+    # Ghanaian school letterhead format). All optional/admin-editable;
+    # a blank field is simply omitted from the transcript header rather
+    # than printing "None".
+    # ------------------------------------------------------------------ #
+    school_name         = db.Column(db.String(200), nullable=True)
+    school_address      = db.Column(db.String(300), nullable=True)
+    school_phone        = db.Column(db.String(50),  nullable=True)
+    school_email        = db.Column(db.String(120), nullable=True)
+    school_gps_address  = db.Column(db.String(50),  nullable=True)
+
+    # ------------------------------------------------------------------ #
     # Results release control
     #   - results_released:      manual admin override switch. If True,
     #                             results are visible regardless of the
@@ -949,12 +962,10 @@ def ensure_default_admin_user(app, bcrypt):
 
 def ensure_settings_columns():
     """
-    Safely add the results-release columns to an existing settings table.
-
-    Must use the correct type name for whichever database is connected —
-    Postgres/Neon does NOT understand "DATETIME" (that's SQLite's
-    spelling; Postgres uses "TIMESTAMP") — and must never let a migration
-    hiccup crash app boot, since this runs on every startup via init_db().
+    Safely add the settings columns needed by the app, including both
+    results-release and school-identity fields. This is required for older
+    SQLite/SQLite-backed local DBs created before the transcript feature was
+    added.
     """
     try:
         inspector = inspect(db.engine)
@@ -966,6 +977,15 @@ def ensure_settings_columns():
 
         if dialect == 'postgresql':
             type_map = {
+                'current_term':          'VARCHAR(32) DEFAULT "term1"',
+                'current_academic_year':'VARCHAR(32) DEFAULT "2024-2025"',
+                'current_session':       'VARCHAR(32) DEFAULT "First Term"',
+                'assessment_active':     'BOOLEAN DEFAULT TRUE',
+                'school_name':          'VARCHAR(200)',
+                'school_address':       'VARCHAR(300)',
+                'school_phone':         'VARCHAR(50)',
+                'school_email':         'VARCHAR(120)',
+                'school_gps_address':   'VARCHAR(50)',
                 'results_released':     'BOOLEAN DEFAULT FALSE',
                 'results_release_date': 'TIMESTAMP',
                 'results_released_at':  'TIMESTAMP',
@@ -973,6 +993,15 @@ def ensure_settings_columns():
             }
         else:
             type_map = {
+                'current_term':          'VARCHAR(32) DEFAULT "term1"',
+                'current_academic_year':'VARCHAR(32) DEFAULT "2024-2025"',
+                'current_session':       'VARCHAR(32) DEFAULT "First Term"',
+                'assessment_active':     'BOOLEAN DEFAULT 1',
+                'school_name':          'VARCHAR(200)',
+                'school_address':       'VARCHAR(300)',
+                'school_phone':         'VARCHAR(50)',
+                'school_email':         'VARCHAR(120)',
+                'school_gps_address':   'VARCHAR(50)',
                 'results_released':     'BOOLEAN DEFAULT 0',
                 'results_release_date': 'DATETIME',
                 'results_released_at':  'DATETIME',

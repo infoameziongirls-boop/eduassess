@@ -558,7 +558,7 @@
           <td>
             <div style="display:flex; align-items:center; gap:.75rem;">
               <div class="student-avatar">
-                {{ entry.student.first_name[0] }}{{ entry.student.last_name[0] }}
+                {{ entry.student.first_name[0] if entry.student.first_name else '' }}{{ entry.student.last_name[0] if entry.student.last_name else '' }}
               </div>
               <div class="student-info">
                 <span class="student-name">{{ entry.student.full_name() }}</span>

@@ -117,7 +117,7 @@
                                 {% for student in students %}
                                 <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid var(--border);font-size:.78rem;">
                                     <div>
-                                        <div style="font-weight:600;color:var(--ink);">{{ student.last_name }}, {{ student.first_name }}</div>
+                                        <div style="font-weight:600;color:var(--ink);">{{ (student.last_name + ', ') if student.last_name else '' }}{{ student.first_name }}</div>
                                         <div style="color:var(--ink-4);font-size:.7rem;">{{ student.student_number }}</div>
                                     </div>
                                     <a href="{{ url_for('student_view', student_id=student.id) }}" class="btn btn-icon btn-sm btn-outline" title="View">

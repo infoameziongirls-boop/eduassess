@@ -1095,6 +1095,132 @@ def get_grade_class_division(gpa):
     return 'Fail Division'
 
 
+def build_academic_transcript(student):
+    """
+    Full multi-year academic transcript for a student, in the same shape
+    as a WAEC-style transcript: one table per academic year, with a
+    Semester (term) sub-column pair (GPA / Final Grade) per subject row,
+    plus a running Cumulative GPA / Credits Earned / Class Division line
+    under each semester.
+
+    Deliberately queries ALL assessments, including archived ones —
+    unlike the current-dashboard views (which correctly hide archived
+    records), a transcript's whole purpose is the full historical
+    record. execute_promotion() archives a student's prior-year
+    assessments as a normal, expected step when they move up a form —
+    that data isn't a mistake to hide here, it's Year 1's actual record.
+
+    "Credits Earned" isn't a concept this system tracks natively (there's
+    no per-subject credit-hour weighting anywhere in the schema) — it's
+    defined here as a running count of completed subject+term entries
+    (each subject graded in a given semester = 1 credit), which is a
+    reasonable, defensible stand-in but a judgment call worth knowing
+    about if the school has a different definition in mind.
+    """
+    assessments = Assessment.query.filter_by(student_id=student.id).all()
+    if not assessments:
+        return {'subjects': [], 'years': [], 'has_data': False}
+
+    term_order = [key for key, _ in app.config.get('TERMS', [])]
+    term_labels = dict(app.config.get('TERMS', []))
+    subject_labels = dict(app.config.get('LEARNING_AREAS', []))
+
+    # Group raw assessment rows by (academic_year, term, subject)
+    buckets = {}
+    all_subjects = set()
+    all_years = set()
+    for a in assessments:
+        ay = a.academic_year or 'Unknown'
+        term = a.term or 'term1'
+        subj = a.subject
+        if not subj:
+            continue
+        buckets.setdefault((ay, term, subj), []).append(a)
+        all_subjects.add(subj)
+        all_years.add(ay)
+
+    # Chronological order: academic_year strings like "2024-2025" sort
+    # correctly as plain strings (the leading year drives the sort).
+    sorted_years = sorted(all_years)
+    sorted_subjects = sorted(all_subjects, key=lambda s: subject_labels.get(s, s))
+
+    # Running cumulative trackers, carried across the whole loop in
+    # chronological order — this is what makes "cumulative" mean
+    # "to date", the standard meaning on a real transcript, not just
+    # "this semester's average" repeated under a misleading label.
+    cumulative_gpa_values = []
+    cumulative_credits = 0
+
+    years_out = []
+    for idx, ay in enumerate(sorted_years, start=1):
+        year_terms = []
+        for term_key in term_order:
+            # Does this (year, term) have any data at all? Skip cleanly
+            # if not, rather than printing an all-blank semester table.
+            term_has_data = any(
+                (ay, term_key, subj) in buckets for subj in sorted_subjects
+            )
+            if not term_has_data:
+                continue
+
+            grades = {}
+            for subj in sorted_subjects:
+                rows = buckets.get((ay, term_key, subj))
+                if not rows:
+                    grades[subj] = None
+                    continue
+                raw = scores_from_assessments(rows)
+                if not raw:
+                    grades[subj] = None
+                    continue
+                result = calculate_scores_from_template(raw)
+                gpa_val = result.get('gpa')
+                grade_val = result.get('grade')
+                if gpa_val in (None, 'N/A') or grade_val in (None, 'N/A'):
+                    grades[subj] = None
+                    continue
+                grades[subj] = {'gpa': float(gpa_val), 'grade': grade_val}
+                cumulative_gpa_values.append(float(gpa_val))
+                cumulative_credits += 1
+
+            running_cum_gpa = (
+                round(sum(cumulative_gpa_values) / len(cumulative_gpa_values), 2)
+                if cumulative_gpa_values else 0.0
+            )
+
+            year_terms.append({
+                'term_key': term_key,
+                'term_label': term_labels.get(term_key, term_key),
+                'grades': grades,
+                'cumulative_gpa': running_cum_gpa,
+                'credits_earned': cumulative_credits,
+                'class_division': get_grade_class_division(running_cum_gpa),
+            })
+
+        if year_terms:
+            years_out.append({
+                'year_label': f'Year {idx}',
+                'academic_year': ay,
+                'terms': year_terms,
+            })
+
+    return {
+        'subjects': sorted_subjects,
+        'subject_labels': subject_labels,
+        'years': years_out,
+        'has_data': bool(years_out),
+        'final_cumulative_gpa': (
+            round(sum(cumulative_gpa_values) / len(cumulative_gpa_values), 2)
+            if cumulative_gpa_values else 0.0
+        ),
+        'final_credits_earned': cumulative_credits,
+        'final_class_division': get_grade_class_division(
+            round(sum(cumulative_gpa_values) / len(cumulative_gpa_values), 2)
+            if cumulative_gpa_values else 0.0
+        ),
+    }
+
+
 def generate_unique_reference_number():
     """
     Plain reference number (Student.reference_number), e.g. STU240030606000.
@@ -1445,6 +1571,14 @@ class SettingsForm(FlaskForm):
                                         validators=[InputRequired()])
     current_session      = StringField('Current Session', validators=[InputRequired()])
     assessment_active    = BooleanField('Assessment Entry Active', default=True)
+
+    # School identity, shown on the academic transcript header and any
+    # printed results — see Setting model for why these are all optional.
+    school_name        = StringField('School Name', validators=[Optional(), Length(max=200)])
+    school_address     = StringField('School Address', validators=[Optional(), Length(max=300)])
+    school_phone       = StringField('School Phone', validators=[Optional(), Length(max=50)])
+    school_email       = StringField('School Email', validators=[Optional(), Length(max=120)])
+    school_gps_address = StringField('School GPS Address (Ghana Post GPS)', validators=[Optional(), Length(max=50)])
 
 
 class ResultsReleaseForm(FlaskForm):
@@ -2522,6 +2656,54 @@ def student_view(student_id):
     )
 
 
+@app.route('/students/<int:student_id>/transcript')
+@login_required
+def student_transcript(student_id):
+    """Admin/teacher-facing academic transcript for a specific student."""
+    student = Student.query.get_or_404(student_id)
+
+    if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
+        if not teacher_can_view_student(current_user, student):
+            abort(403)
+
+    settings = Setting.query.first()
+    transcript = build_academic_transcript(student)
+
+    return render_template(
+        'transcript.html',
+        student=student,
+        transcript=transcript,
+        settings=settings,
+        grade_scale=GRADE_SCALE,
+    )
+
+
+@app.route('/student/transcript')
+@login_required
+def student_transcript_self():
+    """Student's own academic transcript — available for as long as they
+    remain in the system, spanning every year and semester on record."""
+    if not (hasattr(current_user, 'is_student') and current_user.is_student()):
+        abort(403)
+
+    student = Student.query.filter_by(student_number=current_user.username).first_or_404()
+
+    settings = Setting.query.first()
+    if not settings or not settings.is_results_visible():
+        flash('Results have not been released yet — your transcript will be available once they are.', 'warning')
+        return redirect(url_for('student_dashboard'))
+
+    transcript = build_academic_transcript(student)
+
+    return render_template(
+        'transcript.html',
+        student=student,
+        transcript=transcript,
+        settings=settings,
+        grade_scale=GRADE_SCALE,
+    )
+
+
 @app.route('/students/<int:student_id>/detail')
 @login_required
 def student_detail(student_id):
@@ -3343,10 +3525,63 @@ def admin_settings():
         settings.current_academic_year = form.current_academic_year.data
         settings.current_session       = form.current_session.data
         settings.assessment_active     = form.assessment_active.data
+        settings.school_name           = (form.school_name.data or '').strip() or None
+        settings.school_address        = (form.school_address.data or '').strip() or None
+        settings.school_phone          = (form.school_phone.data or '').strip() or None
+        settings.school_email          = (form.school_email.data or '').strip() or None
+        settings.school_gps_address    = (form.school_gps_address.data or '').strip() or None
         db.session.commit()
         flash('Settings updated', 'success')
         return redirect(url_for('admin_settings'))
-    return render_template('admin_settings.html', form=form, settings=settings)
+
+    icp_active_count = (
+        Assessment.query
+        .filter(Assessment.category.in_(['icp1', 'icp2']), Assessment.archived == False)
+        .count()
+    )
+    return render_template('admin_settings.html', form=form, settings=settings,
+                           icp_active_count=icp_active_count)
+
+
+@app.route('/admin/archive-icp-assessments', methods=['POST'])
+@login_required
+@admin_required
+def archive_icp_assessments():
+    """
+    Bulk-archives every currently non-archived ICP1/ICP2 assessment
+    record. These categories are supplementary/non-contributing and
+    already excluded from new-entry forms and the "missing categories"
+    tracker (see ACTIVE_CATEGORIES) — but any that were entered before
+    that policy took effect still show up on current student/teacher/
+    admin dashboards as real historical data, which is accurate but not
+    what's wanted going forward.
+
+    Archiving (not deleting) is deliberate: it's the exact mechanism
+    this app already uses everywhere else for "old but don't destroy"
+    (e.g. execute_promotion() on a class promotion) — the records stay
+    fully intact for audit/export and remain individually restorable
+    via the existing Archive view, they just stop appearing on the
+    current-facing dashboards.
+    """
+    icp_assessments = (
+        Assessment.query
+        .filter(Assessment.category.in_(['icp1', 'icp2']), Assessment.archived == False)
+        .all()
+    )
+    count = len(icp_assessments)
+    for a in icp_assessments:
+        a.archived = True
+    db.session.commit()
+
+    log_activity(
+        current_user,
+        'archive_icp_assessments',
+        f'Bulk-archived {count} existing ICP1/ICP2 assessment record(s)'
+    )
+    flash(f'Archived {count} existing ICP1/ICP2 assessment record(s). '
+          f'They remain visible and individually restorable from the Archive view.',
+          'success')
+    return redirect(url_for('admin_settings'))
 
 
 @app.route('/admin/results-release', methods=['GET', 'POST'])

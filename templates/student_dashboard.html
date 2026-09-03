@@ -2,6 +2,13 @@
 {% block title %}Student Dashboard - {{ student.full_name() }} - EduAssess Module{% endblock %}
 {% block content %}
 <style>
+/* ── Print: "Print Result" button prints just this dashboard's results,
+   hiding all navigation chrome — separate from the dedicated
+   transcript page, which has its own full print layout. ── */
+@media print {
+    .sidebar, .sidebar-overlay, .topbar, .broadcast-bar, .no-print { display: none !important; }
+    .main-content { margin: 0 !important; padding: 0 !important; }
+}
 /* ── Design tokens ─────────────────────────────────────────────────── */
 :root {
   --edu-blue:        #1a56a0;
@@ -426,6 +433,12 @@
           <div class="mt-3 d-flex flex-wrap gap-2">
             <a href="#" class="btn btn-sm btn-outline-primary">View Class Division</a>
             <a href="#" class="btn btn-sm btn-outline-secondary">{{ 'Aggregate View' if show_aggregate else 'Subject View' }}</a>
+            <button type="button" class="btn btn-sm btn-success" onclick="window.print()">
+              <i class="bi bi-printer-fill"></i> Print Result
+            </button>
+            <a href="{{ url_for('student_transcript_self') }}" class="btn btn-sm btn-outline-success">
+              <i class="bi bi-file-earmark-text"></i> View Academic Transcript
+            </a>
           </div>
         </div>
       </div>

@@ -30,10 +30,16 @@ def run():
         print(f"Connected to: {dialect}")
 
         if dialect == "postgresql":
-            # Postgres supports "ADD COLUMN IF NOT EXISTS" natively —
-            # no need to introspect first, and no room for a type-name
-            # mismatch since we spell out real Postgres types directly.
             statements = [
+                "ALTER TABLE settings ADD COLUMN IF NOT EXISTS current_term VARCHAR(32) DEFAULT 'term1'",
+                "ALTER TABLE settings ADD COLUMN IF NOT EXISTS current_academic_year VARCHAR(32) DEFAULT '2024-2025'",
+                "ALTER TABLE settings ADD COLUMN IF NOT EXISTS current_session VARCHAR(32) DEFAULT 'First Term'",
+                "ALTER TABLE settings ADD COLUMN IF NOT EXISTS assessment_active BOOLEAN DEFAULT TRUE",
+                "ALTER TABLE settings ADD COLUMN IF NOT EXISTS school_name VARCHAR(200)",
+                "ALTER TABLE settings ADD COLUMN IF NOT EXISTS school_address VARCHAR(300)",
+                "ALTER TABLE settings ADD COLUMN IF NOT EXISTS school_phone VARCHAR(50)",
+                "ALTER TABLE settings ADD COLUMN IF NOT EXISTS school_email VARCHAR(120)",
+                "ALTER TABLE settings ADD COLUMN IF NOT EXISTS school_gps_address VARCHAR(50)",
                 "ALTER TABLE settings ADD COLUMN IF NOT EXISTS results_released BOOLEAN DEFAULT FALSE",
                 "ALTER TABLE settings ADD COLUMN IF NOT EXISTS results_release_date TIMESTAMP",
                 "ALTER TABLE settings ADD COLUMN IF NOT EXISTS results_released_at TIMESTAMP",
@@ -50,16 +56,23 @@ def run():
             db.session.commit()
 
         elif dialect == "sqlite":
-            # SQLite's ALTER TABLE doesn't support IF NOT EXISTS reliably
-            # across versions, so check first via the inspector.
             inspector = inspect(db.engine)
             existing = {c['name'] for c in inspector.get_columns('settings')}
 
             additions = [
-                ("results_released",     "BOOLEAN DEFAULT 0"),
+                ("current_term", "VARCHAR(32) DEFAULT 'term1'"),
+                ("current_academic_year", "VARCHAR(32) DEFAULT '2024-2025'"),
+                ("current_session", "VARCHAR(32) DEFAULT 'First Term'"),
+                ("assessment_active", "BOOLEAN DEFAULT 1"),
+                ("school_name", "VARCHAR(200)"),
+                ("school_address", "VARCHAR(300)"),
+                ("school_phone", "VARCHAR(50)"),
+                ("school_email", "VARCHAR(120)"),
+                ("school_gps_address", "VARCHAR(50)"),
+                ("results_released", "BOOLEAN DEFAULT 0"),
                 ("results_release_date", "DATETIME"),
-                ("results_released_at",  "DATETIME"),
-                ("results_released_by",  "INTEGER"),
+                ("results_released_at", "DATETIME"),
+                ("results_released_by", "INTEGER"),
             ]
             for column, col_type in additions:
                 if column in existing:

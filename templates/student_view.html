@@ -1,6 +1,16 @@
 {% extends "base.html" %}
 {% block title %}{{ student.full_name() }}{% endblock %}
 {% block page_title %}Student Profile{% endblock %}
+{% block extra_css %}
+<style>
+/* "Print Result" prints just this profile page's assessment content,
+   hiding all navigation chrome. */
+@media print {
+    .sidebar, .sidebar-overlay, .topbar, .broadcast-bar, .no-print { display: none !important; }
+    .main-content { margin: 0 !important; padding: 0 !important; }
+}
+</style>
+{% endblock %}
 {% block breadcrumbs %}
 <span class="sep">/</span>
 <a href="{{ url_for('students') }}">Students</a>
@@ -21,7 +31,7 @@
         <div style="position:absolute;bottom:-20px;left:40%;width:100px;height:100px;border-radius:50%;background:rgba(0,194,168,.08);pointer-events:none;"></div>
         <div style="display:flex;align-items:flex-start;gap:18px;position:relative;">
             <div style="width:60px;height:60px;border-radius:16px;background:linear-gradient(135deg, var(--brand), var(--teal));display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:800;font-size:1.4rem;color:#fff;flex-shrink:0;box-shadow:0 4px 16px rgba(43,91,255,.4);">
-                {{ student.first_name[0] }}{{ student.last_name[0] }}
+                {{ student.first_name[0] if student.first_name else '' }}{{ student.last_name[0] if student.last_name else '' }}
             </div>
             <div style="flex:1;">
                 <h2 style="font-family:var(--font-display);font-weight:800;font-size:1.3rem;color:#fff;margin:0 0 4px;">{{ student.full_name() }}</h2>
@@ -251,11 +261,19 @@
 <div class="card animate-in delay-4">
     <div class="card-header">
         <span class="card-title">All Assessments</span>
-        {% if current_user.is_admin() or current_user.is_teacher() %}
-        <a href="{{ url_for('new_assessment') }}?student={{ student.student_number }}" class="btn btn-primary btn-sm">
-            <i class="bi bi-plus"></i> Add Assessment
-        </a>
-        {% endif %}
+        <div class="d-flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-success btn-sm no-print" onclick="window.print()">
+                <i class="bi bi-printer-fill"></i> Print Result
+            </button>
+            <a href="{{ url_for('student_transcript', student_id=student.id) }}" class="btn btn-outline-success btn-sm no-print">
+                <i class="bi bi-file-earmark-text"></i> Academic Transcript
+            </a>
+            {% if current_user.is_admin() or current_user.is_teacher() %}
+            <a href="{{ url_for('new_assessment') }}?student={{ student.student_number }}" class="btn btn-primary btn-sm">
+                <i class="bi bi-plus"></i> Add Assessment
+            </a>
+            {% endif %}
+        </div>
     </div>
     <div class="table-wrap" style="border-radius:0;border:none;border-top:1px solid var(--border);">
         <table class="table">

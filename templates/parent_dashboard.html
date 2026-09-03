@@ -19,7 +19,7 @@
             <div style="background:linear-gradient(135deg, var(--ink) 0%, var(--ink-2) 100%);padding:20px;border-radius:var(--radius-lg) var(--radius-lg) 0 0;">
                 <div style="display:flex;align-items:center;gap:12px;">
                     <div style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg, var(--brand), var(--teal));display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:800;font-size:1rem;color:#fff;">
-                        {{ data.student.first_name[0] }}{{ data.student.last_name[0] }}
+                        {{ data.student.first_name[0] if data.student.first_name else '' }}{{ data.student.last_name[0] if data.student.last_name else '' }}
                     </div>
                     <div>
                         <div style="font-family:var(--font-display);font-weight:700;color:#fff;font-size:.95rem;">{{ data.student.full_name() }}</div>

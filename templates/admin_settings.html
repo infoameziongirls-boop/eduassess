@@ -53,6 +53,34 @@
                             </div>
                         </div>
                     </div>
+
+                    <hr style="margin:24px 0;border-color:var(--border);">
+                    <div style="font-size:.78rem;font-weight:700;color:var(--ink-4);text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px;">
+                        School Identity <span style="font-weight:400;text-transform:none;">— shown on the academic transcript header and printed results</span>
+                    </div>
+                    <div class="row g-3 mb-4">
+                        <div class="col-12">
+                            <label class="form-label">{{ form.school_name.label.text }}</label>
+                            {{ form.school_name(class="form-control", placeholder="e.g., A.M.E. Zion Girls' Senior High School") }}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">{{ form.school_address.label.text }}</label>
+                            {{ form.school_address(class="form-control", placeholder="e.g., Headmistress, Box KU 74, Winneba.") }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">{{ form.school_phone.label.text }}</label>
+                            {{ form.school_phone(class="form-control", placeholder="e.g., 0208176887") }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">{{ form.school_email.label.text }}</label>
+                            {{ form.school_email(class="form-control", placeholder="e.g., info@school.edu.gh") }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">{{ form.school_gps_address.label.text }}</label>
+                            {{ form.school_gps_address(class="form-control", placeholder="e.g., CE-014-6376") }}
+                        </div>
+                    </div>
+
                     <div style="display:flex;gap:10px;">
                         <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Save Settings</button>
                         <a href="{{ url_for('dashboard') }}" class="btn btn-outline">Cancel</a>
@@ -60,6 +88,41 @@
                 </form>
             </div>
         </div>
+
+        {% if icp_active_count is defined %}
+        <div class="card" style="margin-top:20px;{% if icp_active_count %}border-color:var(--amber);{% endif %}">
+            <div class="card-header">
+                <span class="card-title">Legacy ICP1/ICP2 Records</span>
+            </div>
+            <div class="card-body" style="padding:20px;">
+                {% if icp_active_count %}
+                <p style="font-size:.85rem;color:var(--ink-2);">
+                    <b>{{ icp_active_count }}</b> assessment record(s) still exist under the ICP1/ICP2
+                    categories (Individual Class Project 1 &amp; 2) from before these were made
+                    supplementary/non-contributing. They're currently still visible on student,
+                    teacher, and admin dashboards as active historical data.
+                </p>
+                <p style="font-size:.8rem;color:var(--ink-4);">
+                    Archiving them removes them from current-facing dashboards — they are
+                    <b>not deleted</b>, and remain fully visible and individually restorable from the
+                    <a href="{{ url_for('assessments_archived') }}">Archive view</a> at any time.
+                </p>
+                <form method="POST" action="{{ url_for('archive_icp_assessments') }}"
+                      onsubmit="return confirm('Archive all ' + {{ icp_active_count }} + ' existing ICP1/ICP2 assessment record(s)?\n\nThey will no longer appear on current dashboards, but will remain fully intact and restorable from the Archive view.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-warning">
+                        <i class="bi bi-archive"></i> Archive {{ icp_active_count }} ICP1/ICP2 Record(s)
+                    </button>
+                </form>
+                {% else %}
+                <p style="font-size:.85rem;color:var(--ink-4);margin-bottom:0;">
+                    <i class="bi bi-check-circle" style="color:var(--green);"></i>
+                    No active ICP1/ICP2 assessment records remain — nothing to archive.
+                </p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <div class="col-lg-5">

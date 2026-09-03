@@ -129,6 +129,9 @@
                             <a href="{{ url_for('student_view', student_id=student.id) }}" class="btn btn-icon btn-sm btn-outline" title="View">
                                 <i class="bi bi-eye" style="font-size:11px;"></i>
                             </a>
+                            <a href="{{ url_for('student_transcript', student_id=student.id) }}" class="btn btn-icon btn-sm btn-outline" title="Academic Transcript" style="color:var(--green);border-color:var(--green-dim);">
+                                <i class="bi bi-file-earmark-text" style="font-size:11px;"></i>
+                            </a>
                             {% if current_user.is_admin() or current_user.is_teacher() %}
                             <a href="{{ url_for('student_edit', student_id=student.id) }}" class="btn btn-icon btn-sm btn-outline" title="Edit" style="color:var(--amber);border-color:var(--amber-dim);">
                                 <i class="bi bi-pencil" style="font-size:11px;"></i>
