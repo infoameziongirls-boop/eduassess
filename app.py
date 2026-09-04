@@ -3650,15 +3650,24 @@ def archive_icp_assessments():
     via the existing Archive view, they just stop appearing on the
     current-facing dashboards.
     """
-    icp_assessments = (
-        Assessment.query
-        .filter(Assessment.category.in_(['icp1', 'icp2']), Assessment.archived == False)
-        .all()
-    )
-    count = len(icp_assessments)
-    for a in icp_assessments:
-        a.archived = True
-    db.session.commit()
+    # Archive in one database-side UPDATE. Loading every assessment into the
+    # ORM and flushing one UPDATE per row can exceed Gunicorn's request timeout
+    # when a production database contains a large historical dataset.
+    try:
+        count = (
+            Assessment.query
+            .filter(
+                Assessment.category.in_(['icp1', 'icp2']),
+                Assessment.archived == False,
+            )
+            .update({Assessment.archived: True}, synchronize_session=False)
+        )
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        app.logger.exception('Failed to archive ICP assessments')
+        flash('Could not archive ICP assessments. Please try again.', 'danger')
+        return redirect(url_for('admin_settings'))
 
     log_activity(
         current_user,
