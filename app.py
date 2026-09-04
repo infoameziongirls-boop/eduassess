@@ -1110,12 +1110,17 @@ def build_academic_transcript(student):
     assessments as a normal, expected step when they move up a form —
     that data isn't a mistake to hide here, it's Year 1's actual record.
 
-    "Credits Earned" isn't a concept this system tracks natively (there's
-    no per-subject credit-hour weighting anywhere in the schema) — it's
-    defined here as a running count of completed subject+term entries
-    (each subject graded in a given semester = 1 credit), which is a
-    reasonable, defensible stand-in but a judgment call worth knowing
-    about if the school has a different definition in mind.
+    "Credits Earned" isn't a concept this system tracked natively before
+    (there's no per-subject credit-hour weighting in the schema) — per
+    the school's own definition, it's the sum of the RAW scores (the
+    0-100 percentage each subject earned, not the 1-9 grade point) from
+    her best 8 subjects, mirroring the same "best 8" shape as the
+    existing aggregate calculation (calculate_total_grade_points) but
+    summing raw scores instead of grade points. "Best 8" is tracked
+    cumulatively: each subject only counts once, at its single best raw
+    score seen across every term processed so far — so if a subject's
+    score improves in a later semester, that improvement is what counts
+    toward credits from that point on, not the earlier lower score.
     """
     assessments = Assessment.query.filter_by(student_id=student.id).all()
     if not assessments:
@@ -1149,7 +1154,14 @@ def build_academic_transcript(student):
     # "to date", the standard meaning on a real transcript, not just
     # "this semester's average" repeated under a misleading label.
     cumulative_gpa_values = []
-    cumulative_credits = 0
+    # subject -> best raw score (0-100) seen for that subject so far,
+    # across every term processed up to this point. Credits Earned at
+    # any point is the sum of the top 8 values in this dict.
+    subject_best_raw = {}
+
+    def _credits_from_best8():
+        top8 = sorted(subject_best_raw.values(), reverse=True)[:8]
+        return round(sum(top8), 1)
 
     years_out = []
     for idx, ay in enumerate(sorted_years, start=1):
@@ -1176,12 +1188,20 @@ def build_academic_transcript(student):
                 result = calculate_scores_from_template(raw)
                 gpa_val = result.get('gpa')
                 grade_val = result.get('grade')
+                raw_score_val = result.get('final_score')
                 if gpa_val in (None, 'N/A') or grade_val in (None, 'N/A'):
                     grades[subj] = None
                     continue
-                grades[subj] = {'gpa': float(gpa_val), 'grade': grade_val}
+                grades[subj] = {
+                    'gpa': float(gpa_val),
+                    'grade': grade_val,
+                    'raw_score': float(raw_score_val) if raw_score_val is not None else 0.0,
+                }
                 cumulative_gpa_values.append(float(gpa_val))
-                cumulative_credits += 1
+                if raw_score_val is not None:
+                    subject_best_raw[subj] = max(
+                        subject_best_raw.get(subj, 0.0), float(raw_score_val)
+                    )
 
             running_cum_gpa = (
                 round(sum(cumulative_gpa_values) / len(cumulative_gpa_values), 2)
@@ -1193,7 +1213,7 @@ def build_academic_transcript(student):
                 'term_label': term_labels.get(term_key, term_key),
                 'grades': grades,
                 'cumulative_gpa': running_cum_gpa,
-                'credits_earned': cumulative_credits,
+                'credits_earned': _credits_from_best8(),
                 'class_division': get_grade_class_division(running_cum_gpa),
             })
 
@@ -1213,7 +1233,7 @@ def build_academic_transcript(student):
             round(sum(cumulative_gpa_values) / len(cumulative_gpa_values), 2)
             if cumulative_gpa_values else 0.0
         ),
-        'final_credits_earned': cumulative_credits,
+        'final_credits_earned': _credits_from_best8(),
         'final_class_division': get_grade_class_division(
             round(sum(cumulative_gpa_values) / len(cumulative_gpa_values), 2)
             if cumulative_gpa_values else 0.0
