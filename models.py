@@ -15,6 +15,16 @@ def utcnow():
     return datetime.now(timezone.utc)
 
 
+def optional_name(value):
+    """Return an optional name, treating imported sentinel text as empty."""
+    if value is None:
+        return None
+    value = str(value).strip()
+    if not value or value.lower() in {'none', 'null', 'n/a', 'na'}:
+        return None
+    return value
+
+
 class SubjectArea:
     CORE_SUBJECTS = ['Mathematics', 'English Language', 'General Science', 'Social Studies']
     SCIENCES = ['Biology', 'Chemistry', 'Physics', 'Additional Mathematics']
@@ -207,7 +217,8 @@ class Student(UserMixin, db.Model):
         # NULL last_name/middle_name (e.g. a mononym student, or legacy
         # data predating the not-null constraint) must be filtered out
         # before joining, not just interpolated.
-        parts = [self.first_name, self.middle_name, self.last_name]
+        parts = [optional_name(self.first_name), optional_name(self.middle_name),
+             optional_name(self.last_name)]
         return " ".join(p for p in parts if p)
 
     def get_class_display(self):
@@ -1062,6 +1073,13 @@ def ensure_student_columns():
             ))
             db.session.commit()
             print('[ensure_student_columns] Added students.student_id_code column')
+
+        db.session.execute(text(
+            "UPDATE students SET middle_name = NULL "
+            "WHERE middle_name IS NOT NULL "
+            "AND LOWER(TRIM(middle_name)) IN ('none', 'null', 'n/a', 'na')"
+        ))
+        db.session.commit()
 
         db.session.execute(text(
             'CREATE UNIQUE INDEX IF NOT EXISTS '

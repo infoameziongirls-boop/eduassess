@@ -605,7 +605,8 @@ def utility_processor():
 # ---------------------------------------------------------------------------
 from models import (User, Student, Assessment, Setting, ActivityLog, Question,
                     QuestionAttempt, Quiz, QuizAttempt, SystemConfig, Parent,
-                    Message, APIKey, init_db, ensure_default_admin_user)
+                    Message, APIKey, init_db, ensure_default_admin_user,
+                    optional_name)
 from excel_utils import (ExcelTemplateHandler, ExcelBulkImporter,
                          StudentBulkImporter, TeacherBulkImporter,
                          QuestionBulkImporter, create_default_template,
@@ -2454,7 +2455,7 @@ def student_new():
                 student_number=form.student_number.data.strip(),
                 first_name=form.first_name.data.strip(),
                 last_name=form.last_name.data.strip(),
-                middle_name=form.middle_name.data.strip() if form.middle_name.data else None,
+                middle_name=optional_name(form.middle_name.data),
                 class_name=canonical_class_key(form.class_name.data) or None,
                 study_area=resolved_study_area,
                 reference_number=ref,
@@ -2518,7 +2519,7 @@ def student_edit(student_id):
         student.student_id_code  = new_sid or None
         student.first_name  = form.first_name.data.strip()
         student.last_name   = form.last_name.data.strip()
-        student.middle_name = form.middle_name.data.strip() if form.middle_name.data else None
+        student.middle_name = optional_name(form.middle_name.data)
         student.class_name  = canonical_class_key(form.class_name.data) or None
         student.study_area  = canonical_study_area_key(form.study_area.data) or None
         db.session.commit()
@@ -2804,7 +2805,7 @@ def student_bulk_import():
                         student_number=snum,
                         first_name=(data.get('first_name') or '').strip(),
                         last_name=(data.get('last_name') or '').strip(),
-                        middle_name=(data.get('middle_name') or '').strip() or None,
+                        middle_name=optional_name(data.get('middle_name')),
                         class_name=(data.get('class_name') or '').strip() or None,
                         study_area=(data.get('study_area') or '').strip() or None,
                         reference_number=ref,

@@ -6,7 +6,7 @@ from flask import Blueprint, current_app, g, jsonify, request
 from flask_login import login_required, current_user
 
 from db import db
-from models import APIKey, Student, Assessment, Quiz, QuizAttempt, Setting
+from models import APIKey, Student, Assessment, Quiz, QuizAttempt, Setting, optional_name
 
 api_bp = Blueprint('api_v1', __name__, url_prefix='/api/v1')
 
@@ -294,7 +294,9 @@ def _validate_student_payload(payload, existing=None):
         'student_number': student_number,
         'first_name': first_name,
         'last_name': last_name,
-        'middle_name': str(payload.get('middle_name') or (existing.middle_name if existing else '')).strip() or None,
+        'middle_name': optional_name(
+            payload.get('middle_name') or (existing.middle_name if existing else '')
+        ),
         'class_name': str(payload.get('class_name') or (existing.class_name if existing else '')).strip() or None,
         'study_area': str(payload.get('study_area') or (existing.study_area if existing else '')).strip() or None,
         'reference_number': str(payload.get('reference_number') or (existing.reference_number if existing else '')).strip() or None,
