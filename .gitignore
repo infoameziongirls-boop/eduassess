@@ -94,6 +94,7 @@ tmp_*
 *.txt
 *.log
 *.html
+!templates/transcript.html
 
 # OS
 .DS_Store

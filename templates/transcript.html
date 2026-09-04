@@ -1,0 +1,343 @@
+{% extends "base.html" %}
+{% block title %}Transcript — {{ student.full_name() }}{% endblock %}
+{% block page_title %}Academic Transcript{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ===== On-screen toolbar (hidden entirely when printing) ===== */
+    .transcript-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+        padding: 14px 18px;
+        background: var(--surface-2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+    }
+    .transcript-toolbar .btn-print {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 18px;
+        border-radius: 9px;
+        border: none;
+        background: var(--brand);
+        color: #fff;
+        font-weight: 600;
+        font-size: .85rem;
+        cursor: pointer;
+    }
+    .transcript-toolbar .btn-print:hover { opacity: .92; }
+
+    /* ===== The transcript sheet itself ===== */
+    .transcript-sheet {
+        background: #fff;
+        color: #111;
+        border: 1px solid #ccc;
+        border-radius: 10px;
+        padding: 32px 36px;
+        max-width: 950px;
+        margin: 0 auto;
+        font-family: Georgia, 'Times New Roman', serif;
+    }
+    .t-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 20px;
+        border-bottom: 2px solid #1a1a1a;
+        padding-bottom: 14px;
+        margin-bottom: 14px;
+    }
+    .t-school-name { font-weight: 700; font-size: 1.05rem; letter-spacing: .3px; }
+    .t-school-details { font-size: .78rem; line-height: 1.55; margin-top: 4px; color: #333; }
+    .t-school-details b { color: #111; }
+    .t-student-details { text-align: right; font-size: .8rem; line-height: 1.6; }
+    .t-student-name { font-weight: 700; font-size: 1rem; margin-bottom: 4px; }
+    .t-title {
+        text-align: center;
+        font-weight: 700;
+        font-size: 1.15rem;
+        letter-spacing: 1px;
+        margin: 18px 0 4px;
+    }
+    .t-divider { text-align: center; letter-spacing: 6px; color: #b8860b; margin-bottom: 18px; font-size: .8rem; }
+
+    .t-year-block { margin-bottom: 22px; page-break-inside: avoid; }
+    .t-years-row {
+        display: flex;
+        gap: 18px;
+        align-items: flex-start;
+    }
+    .t-years-row .t-year-block { flex: 1; min-width: 0; margin-bottom: 0; }
+    /* Compact variant used for the side-by-side Year 1 / Year 2 layout —
+       smaller type and tighter padding so two full subject tables still
+       fit comfortably side by side on one page width. */
+    .t-year-compact .t-year-title { font-size: .76rem; padding: 6px 9px; }
+    .t-year-compact table.t-table { font-size: .68rem; }
+    .t-year-compact table.t-table th,
+    .t-year-compact table.t-table td { padding: 4px 5px; }
+    .t-year-compact .t-sem-summary { font-size: .66rem; gap: 3px 10px; padding: 6px 9px; }
+    .t-year-title {
+        font-weight: 700;
+        font-size: .88rem;
+        background: #e9e9e9;
+        padding: 7px 12px;
+        border: 1px solid #999;
+        border-bottom: none;
+    }
+    table.t-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+    table.t-table th, table.t-table td {
+        border: 1px solid #999;
+        padding: 6px 9px;
+        text-align: center;
+    }
+    table.t-table thead tr:first-child th { background: #d9d9d9; font-weight: 700; }
+    table.t-table thead tr:last-child th { background: #efefef; font-weight: 600; font-size: .72rem; }
+    table.t-table td.subj-name { text-align: left; font-weight: 500; }
+    table.t-table tbody tr:nth-child(even) { background: #fafafa; }
+    td.grade-fail { color: #b00020; font-weight: 700; }
+
+    .t-sem-summary {
+        margin-top: 6px;
+        font-size: .76rem;
+        color: #333;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 18px;
+        padding: 8px 12px;
+        background: #f6f6f6;
+        border: 1px solid #ddd;
+        border-top: none;
+    }
+    .t-sem-summary .sem-label { font-weight: 700; color: #111; }
+    .t-sem-summary b { color: #111; }
+
+    .t-no-data { text-align: center; padding: 8px; color: #777; font-size: .78rem; }
+
+    .t-final-summary {
+        margin-top: 26px;
+        padding: 14px 18px;
+        border: 2px solid #1a1a1a;
+        border-radius: 6px;
+        font-size: .85rem;
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .t-final-summary b { font-size: .92rem; }
+
+    /* ===== Signature / official stamp — sits at the end of whichever
+       page the last year's content lands on (Year 3's page, when a
+       student has one; otherwise straight after Year 1/2). ===== */
+    .t-sign-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 40px;
+        margin-top: 46px;
+        padding: 0 10px;
+        page-break-inside: avoid;
+    }
+    .t-sign-cell { flex: 1; text-align: center; }
+    .t-sign-line {
+        border-bottom: 1px solid #333;
+        height: 46px;
+        margin-bottom: 6px;
+    }
+    .t-stamp-box {
+        border: 1px dashed #999;
+        border-bottom: 1px dashed #999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #999;
+        font-size: .7rem;
+        letter-spacing: .5px;
+    }
+    .t-sign-label { font-size: .76rem; font-weight: 600; color: #333; }
+
+    .t-grade-scale { margin-top: 30px; page-break-before: always; }
+    .t-grade-scale-title { text-align: center; font-weight: 700; font-size: 1rem; margin-bottom: 14px; letter-spacing: .5px; }
+    table.t-scale-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    table.t-scale-table th, table.t-scale-table td {
+        border: 1px solid #999; padding: 8px 12px; text-align: center;
+    }
+    table.t-scale-table thead th { background: #d9d9d9; font-weight: 700; }
+    table.t-scale-table tbody tr:nth-child(even) { background: #f2f2f2; }
+
+    .t-footer-note {
+        margin-top: 30px;
+        text-align: center;
+        font-size: .7rem;
+        color: #888;
+        border-top: 1px solid #ddd;
+        padding-top: 10px;
+    }
+
+    @media print {
+        .sidebar, .sidebar-overlay, .topbar, .broadcast-bar, .transcript-toolbar,
+        .no-print { display: none !important; }
+        .main-content { margin: 0 !important; padding: 0 !important; }
+        body { background: #fff !important; }
+        .transcript-sheet { border: none; border-radius: 0; padding: 0; max-width: 100%; }
+        .t-year-block { page-break-inside: avoid; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="transcript-toolbar no-print">
+    <div>
+        <div style="font-weight:700;font-size:.95rem;">Academic Transcript</div>
+        <div style="font-size:.78rem;color:var(--ink-4);">{{ student.full_name() }} — {{ student.student_number }}</div>
+    </div>
+    <button type="button" class="btn-print" onclick="window.print()">
+        <i class="bi bi-printer-fill"></i> Print / Save as PDF
+    </button>
+</div>
+
+<div class="transcript-sheet">
+    <div class="t-header">
+        <div>
+            <div class="t-school-name">{{ settings.school_name or 'School Name Not Set' }}</div>
+            <div class="t-school-details">
+                {% if settings.school_address %}<b>Addr:</b> {{ settings.school_address }}<br>{% endif %}
+                {% if settings.school_phone %}<b>Tel:</b> {{ settings.school_phone }}<br>{% endif %}
+                {% if settings.school_email %}<b>E-Mail:</b> {{ settings.school_email }}<br>{% endif %}
+                {% if settings.school_gps_address %}<b>GPS Addr:</b> {{ settings.school_gps_address }}{% endif %}
+            </div>
+        </div>
+        <div class="t-student-details">
+            <div class="t-student-name">{{ student.full_name()|upper }}</div>
+            <div><b>Study Area:</b> {{ student.get_study_area_display() or '—' }}</div>
+            {% if student.date_of_birth %}<div><b>Date of Birth:</b> {{ student.date_of_birth.strftime('%Y-%m-%d') }}</div>{% endif %}
+            <div><b>Year of Admission:</b> {{ student.created_at.strftime('%Y') if student.created_at else '—' }}</div>
+            <div><b>Reference ID:</b> {{ student.reference_number or student.student_id_code or '—' }}</div>
+        </div>
+    </div>
+
+    <div class="t-title">OFFICIAL REPORT</div>
+    <div class="t-divider">&#9733;&#9733;&#9733;</div>
+
+{% macro render_year(year, transcript, compact=False) %}
+<div class="t-year-block {% if compact %}t-year-compact{% endif %}">
+    <div class="t-year-title">{{ year.year_label }} Academic Record — {{ year.academic_year }}</div>
+    <table class="t-table">
+        <thead>
+            <tr>
+                <th rowspan="2">Course Title</th>
+                {% for term in year.terms %}
+                <th colspan="2">{{ term.term_label }}</th>
+                {% endfor %}
+            </tr>
+            <tr>
+                {% for term in year.terms %}
+                <th>GPA</th>
+                <th>Grade</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for subj in transcript.subjects %}
+            {% set ns = namespace(has_data=false) %}
+            {% for term in year.terms %}
+                {% if term.grades.get(subj) %}{% set ns.has_data = true %}{% endif %}
+            {% endfor %}
+            {% if ns.has_data %}
+            <tr>
+                <td class="subj-name">{{ transcript.subject_labels.get(subj, subj|replace('_',' ')|title) }}</td>
+                {% for term in year.terms %}
+                {% set g = term.grades.get(subj) %}
+                {% if g %}
+                <td>{{ '%.1f'|format(g.gpa) }}</td>
+                <td {% if g.grade == 'F9' %}class="grade-fail"{% endif %}>{{ g.grade }}</td>
+                {% else %}
+                <td>—</td><td>—</td>
+                {% endif %}
+                {% endfor %}
+            </tr>
+            {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% for term in year.terms %}
+    <div class="t-sem-summary">
+        <span class="sem-label">{{ term.term_label }}:</span>
+        <span>Cum. GPA: <b>{{ '%.1f'|format(term.cumulative_gpa) }}</b></span>
+        <span>Credits: <b>{{ term.credits_earned }}</b></span>
+        <span>Division: <b>{{ term.class_division }}</b></span>
+    </div>
+    {% endfor %}
+</div>
+{% endmacro %}
+
+    {% if not transcript.has_data %}
+    <div class="t-no-data" style="padding:30px 0;">No academic records are available yet for this student.</div>
+    {% endif %}
+
+    {% if transcript.years|length > 0 %}
+    <!-- Year 1 and Year 2 side by side to save vertical space; Year 3
+         onward (if present) moves to its own page/section below, with
+         room at the end for the assistant headmaster's signature and
+         the official stamp. -->
+    <div class="t-years-row">
+        {% for year in transcript.years[:2] %}
+        {{ render_year(year, transcript, compact=True) }}
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% for year in transcript.years[2:] %}
+    <div {% if loop.first %}style="page-break-before:always;"{% endif %}>
+        {{ render_year(year, transcript, compact=False) }}
+    </div>
+    {% endfor %}
+
+    {% if transcript.has_data %}
+    <div class="t-final-summary">
+        <span>Overall Cumulative GPA: <b>{{ '%.1f'|format(transcript.final_cumulative_gpa) }}</b></span>
+        <span>Total Credits Earned: <b>{{ transcript.final_credits_earned }}</b></span>
+        <span>Overall Class Division: <b>{{ transcript.final_class_division }}</b></span>
+    </div>
+
+    <div class="t-sign-row">
+        <div class="t-sign-cell">
+            <div class="t-sign-line"></div>
+            <div class="t-sign-label">Assistant Headmaster's Signature</div>
+        </div>
+        <div class="t-sign-cell">
+            <div class="t-sign-line t-stamp-box">Official Stamp</div>
+            <div class="t-sign-label">&nbsp;</div>
+        </div>
+    </div>
+    {% endif %}
+
+
+    <div class="t-grade-scale">
+        <div class="t-grade-scale-title">GRADE INTERPRETATION</div>
+        <table class="t-scale-table">
+            <thead>
+                <tr><th>Grade</th><th>Points</th><th>Score Ranges</th><th>Interpretation</th></tr>
+            </thead>
+            <tbody>
+                {% for row in grade_scale %}
+                <tr>
+                    <td>{{ row.grade }}</td>
+                    <td>{{ '%.1f'|format(row.gpa) }}</td>
+                    <td>{{ row.range }}</td>
+                    <td>{{ row.interpretation|upper }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="t-footer-note">
+        This is a system-generated transcript. Generated {{ now.strftime('%Y-%m-%d %H:%M') }} UTC.
+    </div>
+</div>
+{% endblock %}
