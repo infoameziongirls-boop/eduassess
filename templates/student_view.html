@@ -1,6 +1,16 @@
 {% extends "base.html" %}
 {% block title %}{{ student.full_name() }}{% endblock %}
 {% block page_title %}Student Profile{% endblock %}
+{% block extra_css %}
+<style>
+/* "Print Result" prints just this profile page's assessment content,
+   hiding all navigation chrome. */
+@media print {
+    .sidebar, .sidebar-overlay, .topbar, .broadcast-bar, .no-print { display: none !important; }
+    .main-content { margin: 0 !important; padding: 0 !important; }
+}
+</style>
+{% endblock %}
 {% block breadcrumbs %}
 <span class="sep">/</span>
 <a href="{{ url_for('students') }}">Students</a>
@@ -21,12 +31,15 @@
         <div style="position:absolute;bottom:-20px;left:40%;width:100px;height:100px;border-radius:50%;background:rgba(0,194,168,.08);pointer-events:none;"></div>
         <div style="display:flex;align-items:flex-start;gap:18px;position:relative;">
             <div style="width:60px;height:60px;border-radius:16px;background:linear-gradient(135deg, var(--brand), var(--teal));display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:800;font-size:1.4rem;color:#fff;flex-shrink:0;box-shadow:0 4px 16px rgba(43,91,255,.4);">
-                {{ student.first_name[0] }}{{ student.last_name[0] }}
+                {{ student.first_name[0] if student.first_name else '' }}{{ student.last_name[0] if student.last_name else '' }}
             </div>
             <div style="flex:1;">
                 <h2 style="font-family:var(--font-display);font-weight:800;font-size:1.3rem;color:#fff;margin:0 0 4px;">{{ student.full_name() }}</h2>
                 <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
                     <span style="background:rgba(255,255,255,.12);color:rgba(255,255,255,.8);padding:3px 10px;border-radius:6px;font-size:.72rem;font-weight:600;">{{ student.student_number }}</span>
+                    {% if student.student_id_code %}
+                    <span style="background:rgba(43,91,255,.25);color:#fff;padding:3px 10px;border-radius:6px;font-size:.72rem;font-weight:700;font-family:monospace;" title="Student ID">{{ student.student_id_code }}</span>
+                    {% endif %}
                     {% if student.reference_number and student.reference_number != student.student_number %}
                     <span style="background:rgba(0,194,168,.2);color:var(--teal);padding:3px 10px;border-radius:6px;font-size:.72rem;font-weight:600;">Ref: {{ student.reference_number }}</span>
                     {% endif %}
@@ -34,6 +47,11 @@
                     <span style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.7);padding:3px 10px;border-radius:6px;font-size:.72rem;">{{ study_areas_dict.get(student.study_area, student.study_area or 'No area') }}</span>
                     {% if grading_class %}
                     <span style="background:rgba(255,255,255,.25);color:#fff;padding:3px 10px;border-radius:6px;font-size:.72rem;font-weight:700;border:1px solid rgba(255,255,255,.3);">{{ grading_class }}</span>
+                    {% endif %}
+                    {% if student_is_incomplete %}
+                    <span style="background:var(--rose);color:#fff;padding:3px 10px;border-radius:6px;font-size:.72rem;font-weight:700;" title="One or more assessment categories are still missing">
+                        <i class="bi bi-exclamation-triangle-fill"></i> IC
+                    </span>
                     {% endif %}
                 </div>
             </div>
@@ -83,6 +101,28 @@
     {% if comment %}
     <div style="padding:12px 20px;background:var(--brand-dim);border-bottom:1px solid var(--border);">
         <span style="font-size:.78rem;font-weight:600;color:var(--brand);"><i class="bi bi-info-circle-fill me-2"></i>{{ comment }}</span>
+    </div>
+    {% endif %}
+
+    {% if student_is_incomplete %}
+    <div style="padding:14px 20px;background:var(--rose-dim);border-bottom:1px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <i class="bi bi-exclamation-triangle-fill" style="color:var(--rose);"></i>
+            <span style="font-size:.8rem;font-weight:700;color:var(--rose);">Assessment Incomplete — missing categories by subject:</span>
+        </div>
+        <div class="d-flex flex-column gap-2">
+            {% for item in student_missing %}
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;">
+                <span style="font-size:.75rem;font-weight:600;color:var(--ink);min-width:110px;">{{ item.subject|replace('_',' ')|title }}:</span>
+                {% for cat in item.missing_categories %}
+                <span class="badge badge-rose" style="font-size:.65rem;">{{ CATEGORY_LABELS.get(cat, cat) }}</span>
+                {% endfor %}
+                <a href="{{ url_for('new_assessment', student_id=student.id) }}" class="btn btn-sm btn-danger" style="font-size:.68rem;padding:3px 8px;margin-left:auto;">
+                    <i class="bi bi-plus-circle"></i> Complete
+                </a>
+            </div>
+            {% endfor %}
+        </div>
     </div>
     {% endif %}
 </div>
@@ -221,11 +261,19 @@
 <div class="card animate-in delay-4">
     <div class="card-header">
         <span class="card-title">All Assessments</span>
-        {% if current_user.is_admin() or current_user.is_teacher() %}
-        <a href="{{ url_for('new_assessment') }}?student={{ student.student_number }}" class="btn btn-primary btn-sm">
-            <i class="bi bi-plus"></i> Add Assessment
-        </a>
-        {% endif %}
+        <div class="d-flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-success btn-sm no-print" onclick="window.print()">
+                <i class="bi bi-printer-fill"></i> Print Result
+            </button>
+            <a href="{{ url_for('student_transcript', student_id=student.id) }}" class="btn btn-outline-success btn-sm no-print">
+                <i class="bi bi-file-earmark-text"></i> Academic Transcript
+            </a>
+            {% if current_user.is_admin() or current_user.is_teacher() %}
+            <a href="{{ url_for('new_assessment') }}?student={{ student.student_number }}" class="btn btn-primary btn-sm">
+                <i class="bi bi-plus"></i> Add Assessment
+            </a>
+            {% endif %}
+        </div>
     </div>
     <div class="table-wrap" style="border-radius:0;border:none;border-top:1px solid var(--border);">
         <table class="table">

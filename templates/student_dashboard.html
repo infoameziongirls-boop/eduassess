@@ -2,6 +2,13 @@
 {% block title %}Student Dashboard - {{ student.full_name() }} - EduAssess Module{% endblock %}
 {% block content %}
 <style>
+/* ── Print: "Print Result" button prints just this dashboard's results,
+   hiding all navigation chrome — separate from the dedicated
+   transcript page, which has its own full print layout. ── */
+@media print {
+    .sidebar, .sidebar-overlay, .topbar, .broadcast-bar, .no-print { display: none !important; }
+    .main-content { margin: 0 !important; padding: 0 !important; }
+}
 /* ── Design tokens ─────────────────────────────────────────────────── */
 :root {
   --edu-blue:        #1a56a0;
@@ -273,7 +280,14 @@
                 </div>
                 <div>
                   <h2 class="hero-title mb-0">{{ time_greeting(student.first_name) }}</h2>
-                  <p class="hero-meta mb-0">{{ student.full_name() }}</p>
+                  <p class="hero-meta mb-0 d-flex align-items-center gap-2">
+                    {{ student.full_name() }}
+                    {% if student_is_incomplete %}
+                    <span class="badge bg-warning text-dark" style="font-weight:700;font-size:.68rem;" title="One or more assessment categories are still missing">
+                      <i class="bi bi-exclamation-triangle-fill"></i> IC
+                    </span>
+                    {% endif %}
+                  </p>
                 </div>
               </div>
                 <!-- Prominent class division banner -->
@@ -292,9 +306,43 @@
                     </div>
                   </div>
                 </div>
+
+                {% if student_is_incomplete %}
+                <!-- Incomplete assessment notice -->
+                <div class="row mb-3 anim-1">
+                  <div class="col-12">
+                    <div class="section-card card p-0" style="border-color:#f0ad4e;border-width:1.5px;">
+                      <div class="card-body">
+                        <div class="d-flex align-items-start gap-2 mb-2">
+                          <i class="bi bi-exclamation-triangle-fill" style="color:#f0ad4e;font-size:1.1rem;"></i>
+                          <div>
+                            <h6 class="mb-0" style="font-weight:700;color:#1a1a2e;">Assessment Not Yet Complete</h6>
+                            <div class="small text-muted">Your teacher(s) still need to enter scores for the categories below before your results are final.</div>
+                          </div>
+                        </div>
+                        <div class="d-flex flex-column gap-2 mt-2">
+                          {% for item in student_missing %}
+                          <div style="border:1px solid #f0e0c0;border-radius:10px;padding:10px 12px;background:#fffaf0;">
+                            <div style="font-weight:600;font-size:.82rem;color:#1a1a2e;margin-bottom:4px;">{{ item.subject|replace('_',' ')|title }}</div>
+                            <div class="d-flex flex-wrap gap-1">
+                              {% for cat in item.missing_categories %}
+                              <span class="badge bg-warning text-dark" style="font-size:.65rem;">{{ CATEGORY_LABELS.get(cat, cat) }}</span>
+                              {% endfor %}
+                            </div>
+                          </div>
+                          {% endfor %}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {% endif %}
               <div class="d-flex flex-wrap gap-2 mt-3">
-                <span class="hero-badge"><i class="bi bi-person-badge"></i>Ref: {{ student.reference_number }}</span>
                 <span class="hero-badge"><i class="bi bi-hash"></i>{{ student.student_number }}</span>
+                {% if student.student_id_code %}
+                <span class="hero-badge"><i class="bi bi-person-vcard"></i>{{ student.student_id_code }}</span>
+                {% endif %}
+                <span class="hero-badge"><i class="bi bi-person-badge"></i>Ref: {{ student.reference_number }}</span>
                 <span class="hero-badge"><i class="bi bi-building"></i>{{ student.get_class_display() or 'No Class' }}</span>
                 {% if student.get_study_area_display() %}
                 <span class="hero-badge"><i class="bi bi-journal-bookmark"></i>{{ student.get_study_area_display() }}</span>
@@ -385,6 +433,12 @@
           <div class="mt-3 d-flex flex-wrap gap-2">
             <a href="#" class="btn btn-sm btn-outline-primary">View Class Division</a>
             <a href="#" class="btn btn-sm btn-outline-secondary">{{ 'Aggregate View' if show_aggregate else 'Subject View' }}</a>
+            <button type="button" class="btn btn-sm btn-success" onclick="window.print()">
+              <i class="bi bi-printer-fill"></i> Print Result
+            </button>
+            <a href="{{ url_for('student_transcript_self') }}" class="btn btn-sm btn-outline-success">
+              <i class="bi bi-file-earmark-text"></i> View Academic Transcript
+            </a>
           </div>
         </div>
       </div>

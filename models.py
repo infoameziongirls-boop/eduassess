@@ -34,6 +34,34 @@ class User(UserMixin, db.Model):
     classes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow)
     last_login = db.Column(db.DateTime, nullable=True)
+    # Updated on a throttle by the before_request hook in app.py (not on
+    # every single request — see there for why), used purely to show a
+    # live "online now" indicator. Distinct from last_login on purpose:
+    # last_login is a one-time login-event timestamp (currently unused
+    # elsewhere in the app — not touched here), this is "have they done
+    # anything at all recently", which is what "online" actually means.
+    last_activity = db.Column(db.DateTime, nullable=True)
+
+    ONLINE_THRESHOLD_SECONDS = 300  # 5 minutes of inactivity = "offline"
+
+    def is_online(self):
+        if not self.last_activity:
+            return False
+        # SQLAlchemy expires in-memory objects on commit by default, so
+        # the value just written by the before_request hook in app.py
+        # (timezone-aware, via this file's own utcnow()) gets re-fetched
+        # from the DB on the very next read within the same request —
+        # and SQLite's DateTime column silently drops timezone info on
+        # that round-trip, coming back naive. Subtracting an aware
+        # datetime from a naive one raises TypeError, which is exactly
+        # what broke every page right after login (this runs in
+        # base.html on every authenticated page). Normalize both sides
+        # to naive UTC before subtracting so this is correct regardless
+        # of what a given DB backend's round-trip does to tzinfo.
+        now = utcnow().replace(tzinfo=None)
+        last = self.last_activity.replace(tzinfo=None) if self.last_activity.tzinfo else self.last_activity
+        delta = now - last
+        return delta.total_seconds() < self.ONLINE_THRESHOLD_SECONDS
 
     assessments = db.relationship(
         "Assessment",
@@ -139,6 +167,15 @@ class Student(UserMixin, db.Model):
     middle_name = db.Column(db.String(120), nullable=True)
     class_name = db.Column(db.String(50), nullable=True)
     reference_number = db.Column(db.String(50), unique=True, nullable=True, index=True)
+    # Distinct from both student_number (login credential, e.g.
+    # STU24003060606C) and reference_number (plain admin-editable
+    # identifier, e.g. STU240030606000). This is the school's admission-
+    # style ID: ZGS/{FAMILY CODE}{YY}/{SEQ}, e.g. ZGS/SC26/001 for the
+    # 1st Science student admitted in 2026 — shared across all variants
+    # of a subject family (Science A and Science B share one "SC"
+    # sequence, not separate ones). See generate_student_id_number() and
+    # STUDY_AREA_FAMILY_CODE in app.py.
+    student_id_code = db.Column(db.String(50), unique=True, nullable=True, index=True)
     date_of_birth = db.Column(db.Date, nullable=True)
     study_area = db.Column(db.String(50), nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow)
@@ -166,9 +203,12 @@ class Student(UserMixin, db.Model):
     )
 
     def full_name(self):
-        if self.middle_name:
-            return f"{self.first_name} {self.middle_name} {self.last_name}"
-        return f"{self.first_name} {self.last_name}"
+        # f-strings render Python's None as the literal text "None", so a
+        # NULL last_name/middle_name (e.g. a mononym student, or legacy
+        # data predating the not-null constraint) must be filtered out
+        # before joining, not just interpolated.
+        parts = [self.first_name, self.middle_name, self.last_name]
+        return " ".join(p for p in parts if p)
 
     def get_class_display(self):
         if not self.class_name:
@@ -396,6 +436,7 @@ class Student(UserMixin, db.Model):
         raw = scores_from_assessments(query)
         return {
             'student_number': self.student_number or '',
+            'student_id':     self.student_id_code or '',
             'last_name':      self.last_name or '',
             'first_name':     self.first_name or '',
             'middle_name':    self.middle_name or '',
@@ -438,27 +479,16 @@ class Assessment(db.Model):
         return 0.0
 
     def get_grade_letter(self):
-        percentage = self.get_percentage()
-        if percentage >= 90:   return "A+"
-        elif percentage >= 80: return "A"
-        elif percentage >= 75: return "B+"
-        elif percentage >= 70: return "B"
-        elif percentage >= 65: return "C+"
-        elif percentage >= 60: return "C"
-        elif percentage >= 55: return "D+"
-        elif percentage >= 50: return "D"
-        else:                  return "F"
+        # Uses the same A1-F9 scale as everywhere else in the app
+        # (template_updater._GPA_TABLE). This used to be a separate
+        # A+/A/B+/B... scale, which meant this per-category badge could
+        # disagree with the subject-level grade shown right next to it.
+        from template_updater import _grade
+        return _grade(self.get_percentage())['grade']
 
     def get_grade_point(self):
-        percentage = self.get_percentage()
-        if percentage >= 80:   return 4.0
-        elif percentage >= 75: return 3.5
-        elif percentage >= 70: return 3.0
-        elif percentage >= 65: return 2.5
-        elif percentage >= 60: return 2.0
-        elif percentage >= 55: return 1.5
-        elif percentage >= 50: return 1.0
-        else:                  return 0.0
+        from template_updater import _grade
+        return _grade(self.get_percentage())['gpa']
 
     def get_subject_display(self):
         return self.subject.replace('_', ' ').title()
@@ -522,6 +552,19 @@ class Setting(db.Model):
     current_academic_year = db.Column(db.String(32), nullable=False, default='2024-2025')
     current_session = db.Column(db.String(32), nullable=False, default='First Term')
     assessment_active = db.Column(db.Boolean, default=True)
+
+    # ------------------------------------------------------------------ #
+    # School identity — shown on printed results and the academic
+    # transcript header (name/address/contact/GPS, matching a standard
+    # Ghanaian school letterhead format). All optional/admin-editable;
+    # a blank field is simply omitted from the transcript header rather
+    # than printing "None".
+    # ------------------------------------------------------------------ #
+    school_name         = db.Column(db.String(200), nullable=True)
+    school_address      = db.Column(db.String(300), nullable=True)
+    school_phone        = db.Column(db.String(50),  nullable=True)
+    school_email        = db.Column(db.String(120), nullable=True)
+    school_gps_address  = db.Column(db.String(50),  nullable=True)
 
     # ------------------------------------------------------------------ #
     # Results release control
@@ -919,12 +962,10 @@ def ensure_default_admin_user(app, bcrypt):
 
 def ensure_settings_columns():
     """
-    Safely add the results-release columns to an existing settings table.
-
-    Must use the correct type name for whichever database is connected —
-    Postgres/Neon does NOT understand "DATETIME" (that's SQLite's
-    spelling; Postgres uses "TIMESTAMP") — and must never let a migration
-    hiccup crash app boot, since this runs on every startup via init_db().
+    Safely add the settings columns needed by the app, including both
+    results-release and school-identity fields. This is required for older
+    SQLite/SQLite-backed local DBs created before the transcript feature was
+    added.
     """
     try:
         inspector = inspect(db.engine)
@@ -936,6 +977,15 @@ def ensure_settings_columns():
 
         if dialect == 'postgresql':
             type_map = {
+                'current_term':          'VARCHAR(32) DEFAULT "term1"',
+                'current_academic_year':'VARCHAR(32) DEFAULT "2024-2025"',
+                'current_session':       'VARCHAR(32) DEFAULT "First Term"',
+                'assessment_active':     'BOOLEAN DEFAULT TRUE',
+                'school_name':          'VARCHAR(200)',
+                'school_address':       'VARCHAR(300)',
+                'school_phone':         'VARCHAR(50)',
+                'school_email':         'VARCHAR(120)',
+                'school_gps_address':   'VARCHAR(50)',
                 'results_released':     'BOOLEAN DEFAULT FALSE',
                 'results_release_date': 'TIMESTAMP',
                 'results_released_at':  'TIMESTAMP',
@@ -943,6 +993,15 @@ def ensure_settings_columns():
             }
         else:
             type_map = {
+                'current_term':          'VARCHAR(32) DEFAULT "term1"',
+                'current_academic_year':'VARCHAR(32) DEFAULT "2024-2025"',
+                'current_session':       'VARCHAR(32) DEFAULT "First Term"',
+                'assessment_active':     'BOOLEAN DEFAULT 1',
+                'school_name':          'VARCHAR(200)',
+                'school_address':       'VARCHAR(300)',
+                'school_phone':         'VARCHAR(50)',
+                'school_email':         'VARCHAR(120)',
+                'school_gps_address':   'VARCHAR(50)',
                 'results_released':     'BOOLEAN DEFAULT 0',
                 'results_release_date': 'DATETIME',
                 'results_released_at':  'DATETIME',
