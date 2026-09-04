@@ -13,13 +13,14 @@ sys.path.insert(0, os.path.dirname(__file__))
 def check_database_health():
     """Check the health of the database configuration."""
     from app import app
+    from db import redact_database_url
     
     with app.app_context():
         db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', 'Not configured')
         print("\n" + "="*60)
         print("DATABASE HEALTH CHECK")
         print("="*60)
-        print(f"Database URI: {db_uri}\n")
+        print(f"Database URI: {redact_database_url(db_uri)}\n")
         
         # Check if using SQLite
         if 'sqlite' in db_uri.lower():
@@ -56,7 +57,7 @@ def check_database_health():
                 print(f"\n[OK] Database connection successful!")
                 
         except Exception as e:
-            print(f"\n[FAIL] Database connection failed: {str(e)}")
+            print(f"\n[FAIL] Database connection failed: {redact_database_url(e)}")
             print("This usually means the database hasn't been initialized yet.")
             print("The app will create the database on first run.")
         

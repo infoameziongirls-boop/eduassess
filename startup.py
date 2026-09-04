@@ -9,6 +9,7 @@ import sys
 import subprocess
 from pathlib import Path
 from sqlalchemy import create_engine, inspect, text
+from db import redact_database_url
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -92,7 +93,7 @@ def initialize_database():
         return True
         
     except Exception as e:
-        print(f"\n[FAIL] Database initialization failed: {str(e)}")
+        print(f"\n[FAIL] Database initialization failed: {redact_database_url(e)}")
         import traceback
         traceback.print_exc()
         return False

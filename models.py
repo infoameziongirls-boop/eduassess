@@ -5,7 +5,7 @@ import time
 import math
 import secrets
 import hashlib
-from db import db
+from db import db, redact_database_url
 from flask_login import UserMixin
 from sqlalchemy.exc import OperationalError
 from sqlalchemy import inspect, text
@@ -1078,7 +1078,10 @@ def init_db(app, bcrypt):
         db.init_app(app)
 
     with app.app_context():
-        print(f"Initializing database at: {app.config['SQLALCHEMY_DATABASE_URI']}")
+        print(
+            "Initializing database: "
+            f"{redact_database_url(app.config['SQLALCHEMY_DATABASE_URI'])}"
+        )
 
         ext = app.extensions.get('sqlalchemy')
         if ext:

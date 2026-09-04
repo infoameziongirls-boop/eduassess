@@ -1,5 +1,20 @@
 from flask_sqlalchemy import SQLAlchemy
 from flask import current_app
+from sqlalchemy.engine import make_url
+import re
+
+
+def redact_database_url(value):
+	"""Return a safe representation of a database URL or error message."""
+	text = str(value)
+	try:
+		return make_url(text).render_as_string(hide_password=True)
+	except Exception:
+		return re.sub(
+			r'((?:postgres(?:ql)?|mysql(?:\+[^:/\s]+)?|sqlite)://[^:/\s]+:)[^@\s]+(@)',
+			r'\1***\2',
+			text,
+		)
 
 db = SQLAlchemy()
 

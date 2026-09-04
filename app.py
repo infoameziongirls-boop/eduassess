@@ -39,7 +39,7 @@ from whitenoise import WhiteNoise
 from wtforms.validators import (InputRequired, Length, Optional,
                                 NumberRange, ValidationError)
 
-from db import db
+from db import db, redact_database_url
 from config import config, Config
 
 # ---------------------------------------------------------------------------
@@ -6313,7 +6313,7 @@ if __name__ == '__main__':
     print('EduAssess – Development Server')
     print('=' * 60)
     print(f'Environment : {env}')
-    print(f'Database    : {app.config["SQLALCHEMY_DATABASE_URI"]}')
+    print(f'Database    : {redact_database_url(app.config["SQLALCHEMY_DATABASE_URI"])}')
     print('Access at   : http://127.0.0.1:5000')
     print('=' * 60 + '\n')
     with app.app_context():
