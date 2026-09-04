@@ -1029,6 +1029,25 @@ def ensure_settings_columns():
         print(f"[ensure_settings_columns] WARNING: could not sync columns: {exc}")
 
 
+def ensure_user_columns():
+    """Safely add user columns introduced after the production schema existed."""
+    try:
+        inspector = inspect(db.engine)
+        if not inspector.has_table('users'):
+            return
+
+        columns = {column['name'] for column in inspector.get_columns('users')}
+        if 'last_activity' not in columns:
+            db.session.execute(text(
+                'ALTER TABLE users ADD COLUMN last_activity TIMESTAMP'
+            ))
+            db.session.commit()
+            print('[ensure_user_columns] Added users.last_activity column')
+    except Exception as exc:
+        db.session.rollback()
+        print(f"[ensure_user_columns] WARNING: could not sync columns: {exc}")
+
+
 def init_db(app, bcrypt):
     if not app.extensions.get('sqlalchemy'):
         db.init_app(app)
@@ -1063,6 +1082,7 @@ def init_db(app, bcrypt):
                 time.sleep(2)
 
         ensure_settings_columns()
+        ensure_user_columns()
 
         if not Setting.query.first():
             default_settings = Setting(
