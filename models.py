@@ -1048,6 +1048,31 @@ def ensure_user_columns():
         print(f"[ensure_user_columns] WARNING: could not sync columns: {exc}")
 
 
+def ensure_student_columns():
+    """Safely add student columns introduced after the production schema existed."""
+    try:
+        inspector = inspect(db.engine)
+        if not inspector.has_table('students'):
+            return
+
+        columns = {column['name'] for column in inspector.get_columns('students')}
+        if 'student_id_code' not in columns:
+            db.session.execute(text(
+                'ALTER TABLE students ADD COLUMN student_id_code VARCHAR(50)'
+            ))
+            db.session.commit()
+            print('[ensure_student_columns] Added students.student_id_code column')
+
+        db.session.execute(text(
+            'CREATE UNIQUE INDEX IF NOT EXISTS '
+            'ix_students_student_id_code ON students (student_id_code)'
+        ))
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        print(f"[ensure_student_columns] WARNING: could not sync columns: {exc}")
+
+
 def init_db(app, bcrypt):
     if not app.extensions.get('sqlalchemy'):
         db.init_app(app)
@@ -1083,6 +1108,7 @@ def init_db(app, bcrypt):
 
         ensure_settings_columns()
         ensure_user_columns()
+        ensure_student_columns()
 
         if not Setting.query.first():
             default_settings = Setting(
