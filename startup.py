@@ -8,8 +8,33 @@ import os
 import sys
 import subprocess
 from pathlib import Path
+from sqlalchemy import create_engine, inspect, text
 
 sys.path.insert(0, os.path.dirname(__file__))
+
+def ensure_required_schema():
+    """Add columns required by the current model before importing the app."""
+    database_url = os.environ.get('DATABASE_URL', 'sqlite:///assessment.db')
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+
+    engine = create_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            inspector = inspect(connection)
+            if not inspector.has_table('users'):
+                return
+            columns = {
+                column['name']
+                for column in inspector.get_columns('users')
+            }
+            if 'last_activity' not in columns:
+                connection.execute(text(
+                    'ALTER TABLE users ADD COLUMN last_activity TIMESTAMP'
+                ))
+                print('[OK] Added users.last_activity column')
+    finally:
+        engine.dispose()
 
 def initialize_database():
     """Initialize the database if needed."""
@@ -97,6 +122,12 @@ def main():
     print(f"\nEnvironment:")
     print(f"  Flask Env: {os.environ.get('FLASK_ENV', 'production')}")
     print(f"  Database: {'PostgreSQL (Render)' if 'postgres' in db_uri else 'SQLite (Local)'}")
+
+    try:
+        ensure_required_schema()
+    except Exception as e:
+        print(f"\n[FAIL] Required schema check failed: {str(e)}")
+        return 1
     
     # Initialize database
     if not initialize_database():
@@ -108,6 +139,7 @@ def main():
     
     print("\n✓ Application startup complete!")
     print("="*60 + "\n")
+    return 0
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
