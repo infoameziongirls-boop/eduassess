@@ -11,6 +11,11 @@ from models import APIKey, Student, Assessment, Quiz, QuizAttempt, Setting, opti
 api_bp = Blueprint('api_v1', __name__, url_prefix='/api/v1')
 
 
+def _invalidate_incomplete_assessments_cache():
+    from app import cache
+    cache.delete('incomplete_assessments')
+
+
 @api_bp.route('/student/profile')
 @login_required
 def student_profile():
@@ -448,6 +453,7 @@ def create_assessment():
 
     assessment, status = _upsert_assessment(payload, student)
     db.session.commit()
+    _invalidate_incomplete_assessments_cache()
 
     return jsonify({
         'success': True,
@@ -497,6 +503,7 @@ def bulk_assessments():
         })
 
     db.session.commit()
+    _invalidate_incomplete_assessments_cache()
 
     return jsonify({
         'success': True,

@@ -6007,6 +6007,14 @@ def admin_teacher_tracking():
         # source (this teacher, an admin, a co-teacher) — see the prefetch
         # comment above for why this is no longer teacher_id-filtered.
         rows = [r for sid in sids for r in assess_by_student.get(sid, [])]
+        teacher_subject_key = (
+            canonical_subject_key(teacher.subject) if teacher.subject else None
+        )
+        if teacher_subject_key:
+            rows = [
+                r for r in rows
+                if canonical_subject_key(r.subject) == teacher_subject_key
+            ]
         if selected_subject_key:
             rows = [r for r in rows if canonical_subject_key(r.subject) == selected_subject_key]
 
