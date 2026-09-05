@@ -1450,6 +1450,26 @@
         document.addEventListener('DOMContentLoaded', initPw);
     })();
 </script>
+<script>
+/* All GET search forms update automatically; pages with richer in-place
+   results can opt out with data-live-search="in-place". */
+document.querySelectorAll('form[method="get"] input[name="search"]').forEach(function (input) {
+    var form = input.closest('form');
+    if (!form || form.dataset.liveSearch === 'in-place') return;
+
+    var timer;
+    input.addEventListener('input', function () {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(function () {
+            if (typeof form.requestSubmit === 'function') {
+                form.requestSubmit();
+            } else {
+                form.submit();
+            }
+        }, 150);
+    });
+});
+</script>
 {% block extra_js %}{% endblock %}
 </body>
 </html>
