@@ -2383,6 +2383,7 @@ def students():
             db.or_(
                 Student.student_number.ilike(f'%{search}%'),
                 Student.first_name.ilike(f'%{search}%'),
+                Student.middle_name.ilike(f'%{search}%'),
                 Student.last_name.ilike(f'%{search}%'),
                 Student.reference_number.ilike(f'%{search}%'),
                 Student.student_id_code.ilike(f'%{search}%'),

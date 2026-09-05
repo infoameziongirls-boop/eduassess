@@ -29,16 +29,16 @@
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
             <!-- Search -->
             <div style="flex:1;min-width:200px;">
-                <form method="GET" style="display:flex;gap:8px;">
+                <form method="GET" id="student-search-form" style="display:flex;gap:8px;">
                     <input type="hidden" name="group_by" value="{{ current_group_by }}">
                     <input type="hidden" name="sort_by" value="{{ current_sort_by }}">
                     <div style="position:relative;flex:1;">
                         <i class="bi bi-search" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--ink-4);font-size:13px;"></i>
-                        <input type="text" name="search" class="form-control" placeholder="Search name, student number, reference…"
+                           <input type="text" name="search" id="student-search-input" class="form-control" placeholder="Search name, student number, reference…"
                                value="{{ request.args.get('search', '') }}"
-                               style="padding-left:32px;">
+                               style="padding-left:32px;" autocomplete="off" aria-label="Search students">
                     </div>
-                    <button type="submit" class="btn btn-primary btn-sm">Search</button>
+                          <button type="submit" class="btn btn-primary btn-sm" aria-label="Search students">Search</button>
                     {% if request.args.get('search') %}
                     <a href="{{ url_for('students') }}" class="btn btn-outline btn-sm"><i class="bi bi-x"></i></a>
                     {% endif %}
@@ -190,7 +190,54 @@
 
 {% block extra_js %}
 <script>
-document.querySelectorAll('.delete-student-form').forEach(function (form) {
+const studentSearchForm = document.getElementById('student-search-form');
+const studentSearchInput = document.getElementById('student-search-input');
+let studentSearchTimer;
+let studentSearchRequest = 0;
+
+if (studentSearchForm && studentSearchInput) {
+    function loadStudentSearchResults() {
+        const params = new URLSearchParams(new FormData(studentSearchForm));
+        const requestNumber = ++studentSearchRequest;
+        const tableBody = document.querySelector('.table-wrap tbody');
+        const submitButton = studentSearchForm.querySelector('button[type="submit"]');
+
+        if (submitButton) submitButton.disabled = true;
+
+        fetch(window.location.pathname + '?' + params.toString(), {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(function (response) {
+                if (!response.ok) throw new Error('Student search failed');
+                return response.text();
+            })
+            .then(function (html) {
+                if (requestNumber !== studentSearchRequest || !tableBody) return;
+                const parsed = new DOMParser().parseFromString(html, 'text/html');
+                const nextBody = parsed.querySelector('.table-wrap tbody');
+                if (nextBody) tableBody.replaceChildren(...nextBody.childNodes);
+                bindDeleteStudentForms();
+                const nextUrl = window.location.pathname + '?' + params.toString();
+                window.history.replaceState({}, '', nextUrl);
+            })
+            .catch(function (error) {
+                console.warn(error);
+            })
+            .finally(function () {
+                if (requestNumber === studentSearchRequest && submitButton) {
+                    submitButton.disabled = false;
+                }
+            });
+    }
+
+    studentSearchInput.addEventListener('input', function () {
+        window.clearTimeout(studentSearchTimer);
+        studentSearchTimer = window.setTimeout(loadStudentSearchResults, 300);
+    });
+}
+
+function bindDeleteStudentForms() {
+     document.querySelectorAll('.delete-student-form').forEach(function (form) {
     form.addEventListener('submit', function (e) {
         var name = form.dataset.studentName || 'this student';
         var number = form.dataset.studentNumber || '';
@@ -201,5 +248,8 @@ document.querySelectorAll('.delete-student-form').forEach(function (form) {
         if (!ok) e.preventDefault();
     });
 });
+}
+
+bindDeleteStudentForms();
 </script>
 {% endblock %}
