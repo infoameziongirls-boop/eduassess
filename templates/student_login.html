@@ -215,7 +215,7 @@
                     
                     <div class="mb-4">
                         {{ form.identifier.label(class='form-label') }}
-                        {{ form.identifier(class='form-control form-control-lg form-control-student', placeholder='Enter your Student Number or Reference Number', autofocus=True, autocomplete='username') }}
+                        {{ form.identifier(class='form-control form-control-lg form-control-student', placeholder='Enter your Student Number, Reference Number, or Student ID', autofocus=True, autocomplete='username') }}
                         {% if form.identifier.errors %}
                             <div class='text-danger small mt-2'>
                                 {% for error in form.identifier.errors %}{{ error }}{% endfor %}
@@ -230,7 +230,7 @@
                     <div class="help-text-student mt-4">
                         <strong><i class="bi bi-question-circle"></i> Login Format:</strong><br>
                         <small>
-                            Enter your Student Number or Reference Number exactly as issued by the school.
+                            Enter your Student Number, Reference Number, or Student ID exactly as issued by the school.
                         </small>
                     </div>
                 </form>

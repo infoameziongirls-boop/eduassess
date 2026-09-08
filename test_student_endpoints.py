@@ -104,8 +104,8 @@ def test_student_login_get_shows_form(client):
     response = client.get('/student/login')
 
     assert response.status_code == 200
-    assert b'Student Number or Reference Number' in response.data
-    assert b'Enter your Student Number or Reference Number' in response.data
+    assert b'Student Number, Reference Number, or Student ID' in response.data
+    assert b'Enter your Student Number, Reference Number, or Student ID' in response.data
 
 
 def test_student_login_with_trimmed_credentials_redirects_to_dashboard(client):
@@ -132,6 +132,27 @@ def test_student_login_with_trimmed_credentials_redirects_to_dashboard(client):
     assert user.role == 'student'
 
 
+def test_student_login_accepts_admission_id(client):
+    student = Student(
+        first_name='Admission',
+        last_name='Tester',
+        student_number='STU_ADMISSION',
+        reference_number='REF_ADMISSION',
+        student_id_code='ZGS/SC26/123',
+    )
+    db.session.add(student)
+    db.session.commit()
+
+    response = client.post(
+        '/student/login',
+        data={'identifier': 'zgs/sc26/123'},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers['Location'].endswith('/student/dashboard')
+
+
 def test_student_login_unknown_identifier_shows_error(client):
     create_student(
         first_name='Jane',
@@ -150,7 +171,7 @@ def test_student_login_unknown_identifier_shows_error(client):
 
     assert response.status_code == 200
     assert b'No student record was found' in response.data or b'No student record' in response.data
-    assert b'Student Number or Reference Number' in response.data
+    assert b'Student Number, Reference Number, or Student ID' in response.data
 
 
 def test_student_new_normalizes_class_and_study_area(client):

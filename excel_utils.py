@@ -377,6 +377,7 @@ class StudentBulkImporter:
                     'middle_name':    normalize(row[3]) if len(row) > 3 else None,
                     'class_name':     normalize(row[4]) if len(row) > 4 else None,
                     'study_area':     normalize(row[5]) if len(row) > 5 else None,
+                    'student_id_code': normalize(row[6]) if len(row) > 6 else None,
                 }
                 if student_data['student_number'] and student_data['first_name'] and student_data['last_name']:
                     students.append(student_data)
@@ -653,22 +654,25 @@ def create_student_import_template(output_path):
     ws.title = "Student Import"
     header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
     header_font = Font(bold=True, color="FFFFFF", size=12)
-    headers = ["Student Number", "First Name", "Last Name", "Middle Name", "Class", "Study Area"]
+    headers = [
+        "Student Number", "First Name", "Last Name", "Middle Name",
+        "Class", "Study Area", "Student ID (Admission Number)",
+    ]
     for idx, header in enumerate(headers):
         cell = ws.cell(row=1, column=idx + 1, value=header)
         cell.font = header_font
         cell.fill = header_fill
 
     sample_data = [
-        ["STU001", "John", "Doe", "Michael", "Form 1", "Home Economics A"],
-        ["STU002", "Jane", "Smith", "", "Form 2", "General Arts 4B"],
-        ["STU003", "Bob", "Johnson", "William", "Form 3", "Business A"],
+        ["STU001", "John", "Doe", "Michael", "Form 1", "Home Economics A", "ZGS/HE26/001"],
+        ["STU002", "Jane", "Smith", "", "Form 2", "General Arts 4B", "ZGS/GA26/001"],
+        ["STU003", "Bob", "Johnson", "William", "Form 3", "Business A", "ZGS/BU26/001"],
     ]
     for row_idx, row_data in enumerate(sample_data, start=2):
         for col_idx, value in enumerate(row_data):
             ws.cell(row=row_idx, column=col_idx + 1, value=value)
 
-    for idx, width in enumerate([15, 15, 15, 15, 10, 20]):
+    for idx, width in enumerate([15, 15, 15, 15, 10, 20, 30]):
         ws.column_dimensions[chr(65 + idx)].width = width
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True) if os.path.dirname(output_path) else None

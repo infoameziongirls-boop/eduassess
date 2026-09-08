@@ -1437,9 +1437,9 @@ def _get_comment(gpa):
 # ---------------------------------------------------------------------------
 class StudentLoginForm(FlaskForm):
     identifier = StringField(
-        'Student Number or Reference Number',
+        'Student Number, Reference Number, or Student ID',
         validators=[InputRequired(), Length(min=1, max=50)],
-        render_kw={'placeholder': 'Enter your Student Number or Reference Number'},
+        render_kw={'placeholder': 'Enter your Student Number, Reference Number, or Student ID'},
     )
 
 
@@ -1912,6 +1912,7 @@ def student_login():
             db.or_(
                 db.func.lower(db.func.trim(Student.student_number)) == identifier.lower(),
                 db.func.lower(db.func.trim(Student.reference_number)) == identifier.lower(),
+                db.func.lower(db.func.trim(Student.student_id_code)) == identifier.lower(),
             )
         ).first()
 
@@ -2784,6 +2785,11 @@ def student_bulk_import():
                         errors.append(f'{snum} already exists')
                         continue
 
+                    supplied_sid = (data.get('student_id_code') or '').strip() or None
+                    if supplied_sid and supplied_sid in existing_sids:
+                        errors.append(f'{supplied_sid} already exists')
+                        continue
+
                     # Plain reference number (STU######) — not tied to
                     # study area, so no batch-collision risk to worry
                     # about beyond the existing_refs set membership check.
@@ -2798,9 +2804,11 @@ def student_bulk_import():
                         ref = f'STU{int(time.time()) % 1000000:06d}'
                         existing_refs.add(ref)
 
-                    sid = generate_student_id_batch(
+                    sid = supplied_sid or generate_student_id_batch(
                         data.get('study_area'), existing_sids, sid_seq_cache
                     )
+                    if supplied_sid:
+                        existing_sids.add(supplied_sid)
 
                     new_students.append(Student(
                         student_number=snum,
