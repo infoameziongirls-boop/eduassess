@@ -12,6 +12,7 @@ import click
 from functools import wraps
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.exceptions import HTTPException
 from datetime import datetime, timezone
 
 import openpyxl
@@ -337,6 +338,8 @@ _orig_dispatch_request = app.dispatch_request
 def _dispatch_request_catch(self, *args, **kwargs):
     try:
         return _orig_dispatch_request()
+    except HTTPException:
+        raise
     except Exception as e:
         return app.handle_exception(e)
 
@@ -346,6 +349,8 @@ app.dispatch_request = _dispatch_request_catch.__get__(app, Flask)
 # receive the rendered 500 page instead of a propagated exception.
 _orig_handle_user_exception = app.handle_user_exception
 def _handle_user_exception(e):
+    if isinstance(e, HTTPException):
+        return _orig_handle_user_exception(e)
     try:
         return app.handle_exception(e)
     except Exception:
@@ -361,6 +366,8 @@ def _route_wrapper(rule, **options):
         def wrapped(*args, **kwargs):
             try:
                 return f(*args, **kwargs)
+            except HTTPException:
+                raise
             except Exception as e:
                 return app.handle_exception(e)
         wrapped.__name__ = getattr(f, '__name__', 'wrapped')
@@ -1437,9 +1444,9 @@ def _get_comment(gpa):
 # ---------------------------------------------------------------------------
 class StudentLoginForm(FlaskForm):
     identifier = StringField(
-        'Student Number, Reference Number, or Student ID',
+        'Student Number or Reference Number',
         validators=[InputRequired(), Length(min=1, max=50)],
-        render_kw={'placeholder': 'Enter your Student Number, Reference Number, or Student ID'},
+        render_kw={'placeholder': 'Enter your Student Number or Reference Number'},
     )
 
 
@@ -1912,7 +1919,6 @@ def student_login():
             db.or_(
                 db.func.lower(db.func.trim(Student.student_number)) == identifier.lower(),
                 db.func.lower(db.func.trim(Student.reference_number)) == identifier.lower(),
-                db.func.lower(db.func.trim(Student.student_id_code)) == identifier.lower(),
             )
         ).first()
 
@@ -2785,11 +2791,6 @@ def student_bulk_import():
                         errors.append(f'{snum} already exists')
                         continue
 
-                    supplied_sid = (data.get('student_id_code') or '').strip() or None
-                    if supplied_sid and supplied_sid in existing_sids:
-                        errors.append(f'{supplied_sid} already exists')
-                        continue
-
                     # Plain reference number (STU######) — not tied to
                     # study area, so no batch-collision risk to worry
                     # about beyond the existing_refs set membership check.
@@ -2804,11 +2805,9 @@ def student_bulk_import():
                         ref = f'STU{int(time.time()) % 1000000:06d}'
                         existing_refs.add(ref)
 
-                    sid = supplied_sid or generate_student_id_batch(
+                    sid = generate_student_id_batch(
                         data.get('study_area'), existing_sids, sid_seq_cache
                     )
-                    if supplied_sid:
-                        existing_sids.add(supplied_sid)
 
                     new_students.append(Student(
                         student_number=snum,

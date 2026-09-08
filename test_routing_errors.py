@@ -104,5 +104,13 @@ def test_error_handler_survives_session_store_and_rollback_failures(monkeypatch)
     assert b'Something Went Wrong' in response.data
 
 
+def test_unknown_paths_remain_404():
+    """Scanner probes must not be converted into application 500 errors."""
+    with app.test_client() as client:
+        response = client.get('/wp-login.php')
+
+    assert response.status_code == 404
+
+
 if __name__ == '__main__':
     test_endpoints()
