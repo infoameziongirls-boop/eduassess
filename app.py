@@ -5985,11 +5985,21 @@ def admin_teacher_tracking():
         .all()
     ) if all_student_ids else []
 
-    # Index: student_id → list of assessment rows
     from collections import defaultdict
-    assess_by_student = defaultdict(list)
+    assess_by_student_subject = defaultdict(lambda: defaultdict(lambda: {
+        'categories': set(),
+        'last_activity': None,
+    }))
     for row in all_assessments:
-        assess_by_student[row.student_id].append(row)
+        subject_key = canonical_subject_key(row.subject)
+        if not subject_key:
+            continue
+        bucket = assess_by_student_subject[row.student_id][subject_key]
+        bucket['categories'].add(row.category)
+        if row.date_recorded and (
+                bucket['last_activity'] is None or
+                row.date_recorded > bucket['last_activity']):
+            bucket['last_activity'] = row.date_recorded
 
     # ── Build per-teacher data rows ───────────────────────────────────────
     teacher_rows = []
@@ -6003,25 +6013,21 @@ def admin_teacher_tracking():
         sids        = teacher_student_ids.get(teacher.id, set())
         student_count = len(sids)
 
-        # Assessments for students in this teacher's scope, from any
-        # source (this teacher, an admin, a co-teacher) — see the prefetch
-        # comment above for why this is no longer teacher_id-filtered.
-        rows = [r for sid in sids for r in assess_by_student.get(sid, [])]
         teacher_subject_key = (
             canonical_subject_key(teacher.subject) if teacher.subject else None
         )
-        if teacher_subject_key:
-            rows = [
-                r for r in rows
-                if canonical_subject_key(r.subject) == teacher_subject_key
-            ]
-        if selected_subject_key:
-            rows = [r for r in rows if canonical_subject_key(r.subject) == selected_subject_key]
+        subject_key = selected_subject_key or teacher_subject_key
 
-        # Build: { student_id: { category: True } }
-        stu_cats = defaultdict(set)
-        for r in rows:
-            stu_cats[r.student_id].add(r.category)
+        stu_cats = {
+            sid: assess_by_student_subject.get(sid, {}).get(subject_key, {}).get(
+                'categories', set())
+            for sid in sids
+        }
+        activity_dates = [
+            assess_by_student_subject.get(sid, {}).get(subject_key, {}).get(
+                'last_activity')
+            for sid in sids
+        ]
 
         # Category stats: { cat_key: { filled, total } }
         category_stats = {}
@@ -6068,8 +6074,7 @@ def admin_teacher_tracking():
         incomplete_students = student_count - fully_complete_students
 
         # Last assessment date for this teacher
-        dated = [r.date_recorded for r in rows if r.date_recorded]
-        last_activity = max(dated) if dated else None
+        last_activity = max((date for date in activity_dates if date), default=None)
 
         agg_filed   += filled_slots
         agg_missing += (total_slots - filled_slots)

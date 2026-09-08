@@ -1,6 +1,8 @@
 import hashlib
 import os
 import tempfile
+from zipfile import ZipFile
+from lxml import etree
 from openpyxl import Workbook, load_workbook
 from flask_login import login_user
 
@@ -90,6 +92,26 @@ def test_assessment_template_updater_copies_row_formulas(tmp_path):
     assert ws['P11'].value == '=MIN(100,(SUM(N11:O11)))'
     assert ws['S11'].value == '=MIN(500,(SUM(J11,M11,P11,Q11,R11)))'
     assert ws['X11'].value == '=MIN(100,(SUM(U11,W11)))'
+
+
+def test_raw_assessment_export_removes_desktop_excel_revision_metadata(tmp_path):
+    template_path = tmp_path / 'student_template.xlsx'
+    output_path = tmp_path / 'assessment_export.xlsx'
+    _create_minimal_school_template(str(template_path))
+
+    updater = AssessmentTemplateUpdater(str(template_path))
+    updater.load_template()
+    updater.export_assessments_raw([], str(output_path))
+
+    with ZipFile(output_path) as archive:
+        workbook_xml = etree.fromstring(archive.read('xl/workbook.xml'))
+        assert not workbook_xml.xpath(
+            './*[local-name()="AlternateContent" or local-name()="revisionPtr"]'
+        )
+
+    workbook = load_workbook(output_path, read_only=True)
+    assert workbook.sheetnames
+    workbook.close()
 
 
 def test_excel_bulk_importer_accepts_reference_number_header(tmp_path):

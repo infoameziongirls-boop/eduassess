@@ -77,6 +77,11 @@ _NS_WB   = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 _NS_R    = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 _NS_CT   = "http://schemas.openxmlformats.org/package/2006/content-types"
 _NS_RELS = "http://schemas.openxmlformats.org/package/2006/relationships"
+_NS_MC   = "http://schemas.openxmlformats.org/markup-compatibility/2006"
+_NS_XR   = "http://schemas.microsoft.com/office/spreadsheetml/2014/revision"
+_NS_XR2  = "http://schemas.microsoft.com/office/spreadsheetml/2015/revision2"
+_NS_XR6  = "http://schemas.microsoft.com/office/spreadsheetml/2016/revision6"
+_NS_XR10 = "http://schemas.microsoft.com/office/spreadsheetml/2016/revision10"
 
 _REL_SHEET = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"
 
@@ -483,6 +488,19 @@ class _ZipSheetDuplicator:
         """
         wb_tree = etree.fromstring(self._files['xl/workbook.xml'])
         ns = {'ns': _NS_WB}
+
+        # The school template was last saved by desktop Excel and contains
+        # local-path/coauthoring metadata. Those revision records are not
+        # needed in an exported workbook and can make Excel repair workbook
+        # properties after the sheet list is duplicated.
+        for child in list(wb_tree):
+            if etree.QName(child).localname in ('AlternateContent', 'revisionPtr'):
+                wb_tree.remove(child)
+        wb_tree.attrib.pop('{%s}Ignorable' % _NS_MC, None)
+        for workbook_view in wb_tree.findall('.//ns:workbookView', ns):
+            for namespace in (_NS_XR, _NS_XR2, _NS_XR6, _NS_XR10):
+                workbook_view.attrib.pop('{%s}uid' % namespace, None)
+
         calc_pr = wb_tree.find('ns:calcPr', ns)
         if calc_pr is None:
             calc_pr = etree.SubElement(wb_tree, '{%s}calcPr' % _NS_WB)

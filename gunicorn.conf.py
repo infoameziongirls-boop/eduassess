@@ -5,6 +5,10 @@ bind = f"0.0.0.0:{os.environ.get('PORT', 10000)}"
 # dashboard can materialize a large roster, so concurrent workers amplify its
 # peak memory use on the small service plan.
 workers = 1
+# Threads let requests waiting on the remote database progress concurrently
+# without the memory cost of starting a second Python worker process.
+worker_class = "gthread"
+threads = 4
 timeout = 120
 preload_app = True
 max_requests = 100
