@@ -253,9 +253,16 @@ class ProductionConfig(Config):
         SESSION_TYPE  = "redis"
         SESSION_REDIS = redis_lib.from_url(_redis_url)
     else:
-        SESSION_TYPE       = "sqlalchemy"
-        SESSION_SQLALCHEMY = None   # Corrected later in app.py after db init
-        SESSION_REDIS      = None
+        # Keep browser sessions, including CSRF tokens, off the remote
+        # PostgreSQL connection. A stale Neon connection can otherwise lose
+        # the session between the login GET and POST, causing "CSRF session
+        # token is missing". Render runs this service as one web instance;
+        # filesystem sessions are a safer fallback until Redis is configured.
+        SESSION_TYPE     = "filesystem"
+        SESSION_FILE_DIR = os.path.join(
+            os.environ.get("PERSISTENT_DIR", "instance"), "flask_sessions"
+        )
+        SESSION_REDIS    = None
 
     SESSION_PERMANENT = False
     SESSION_USE_SIGNER = True
