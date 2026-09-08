@@ -1081,6 +1081,7 @@ class AssessmentTemplateUpdater:
             if sid not in student_meta and a.student:
                 st = a.student
                 student_meta[sid] = {
+                    'student_id': st.student_id_code or '',
                     'student_number': st.student_number or '',
                     'last_name':      st.last_name or '',
                     'first_name':     st.first_name or '',

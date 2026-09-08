@@ -2805,9 +2805,16 @@ def student_bulk_import():
                         ref = f'STU{int(time.time()) % 1000000:06d}'
                         existing_refs.add(ref)
 
-                    sid = generate_student_id_batch(
-                        data.get('study_area'), existing_sids, sid_seq_cache
-                    )
+                    supplied_sid = (data.get('student_id_code') or '').strip()
+                    if supplied_sid:
+                        if supplied_sid in existing_sids:
+                            errors.append(f'{supplied_sid} already exists')
+                            continue
+                        sid = supplied_sid
+                    else:
+                        sid = generate_student_id_batch(
+                            data.get('study_area'), existing_sids, sid_seq_cache
+                        )
 
                     new_students.append(Student(
                         student_number=snum,
@@ -5746,7 +5753,7 @@ def download_template(template_type):
 
     fname, dname, creator = mapping[template_type]
     tpl_path = os.path.join(app.config['TEMPLATE_FOLDER'], fname)
-    if not os.path.exists(tpl_path):
+    if template_type == 'student_import' or not os.path.exists(tpl_path):
         creator(tpl_path)
     return send_file(tpl_path, as_attachment=True, download_name=dname,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

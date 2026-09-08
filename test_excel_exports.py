@@ -1,13 +1,16 @@
 import hashlib
 import os
 import tempfile
+from types import SimpleNamespace
 from zipfile import ZipFile
 from lxml import etree
 from openpyxl import Workbook, load_workbook
 from flask_login import login_user
 
 from app import app, db, export_csv, export_student_csv, export_student_excel, download_template, _get_assessment_template_path
-from excel_utils import ExcelBulkImporter, ClassScoreSheetImporter, create_class_scoresheet_template
+from excel_utils import (ExcelBulkImporter, ClassScoreSheetImporter,
+                         StudentBulkImporter, create_class_scoresheet_template,
+                         create_student_import_template)
 from models import User, Student, Assessment, Setting
 from template_updater import AssessmentTemplateUpdater, calculate_scores_from_template
 
@@ -111,6 +114,42 @@ def test_raw_assessment_export_removes_desktop_excel_revision_metadata(tmp_path)
 
     workbook = load_workbook(output_path, read_only=True)
     assert workbook.sheetnames
+    workbook.close()
+
+
+def test_student_import_template_includes_editable_admission_id(tmp_path):
+    template_path = tmp_path / 'student_import.xlsx'
+    create_student_import_template(str(template_path))
+
+    workbook = load_workbook(template_path, data_only=True)
+    worksheet = workbook.active
+    assert worksheet.cell(row=1, column=1).value == 'Student ID (Admission Number)'
+    assert worksheet.cell(row=2, column=1).value == 'ZGS/HE26/001'
+    workbook.close()
+
+    imported = StudentBulkImporter(str(template_path)).import_students()
+    assert imported[0]['student_id_code'] == 'ZGS/HE26/001'
+    assert imported[0]['student_number'] == 'STU001'
+
+
+def test_assessment_export_includes_admission_id(tmp_path):
+    template_path = tmp_path / 'student_template.xlsx'
+    output_path = tmp_path / 'assessment_export.xlsx'
+    _create_minimal_school_template(str(template_path))
+    student = SimpleNamespace(
+        id=1, student_id_code='ZGS/SC26/001', student_number='STU001',
+        last_name='Doe', first_name='Jane', middle_name='',
+        reference_number='REF001', study_area='science',
+    )
+    assessment = SimpleNamespace(
+        student_id=1, student=student, subject='biology', class_name='Form 1',
+        category='ica1', score=40, max_score=50,
+    )
+
+    updater = AssessmentTemplateUpdater(str(template_path))
+    updater.export_assessments_raw([assessment], str(output_path))
+    workbook = load_workbook(output_path, read_only=True, data_only=False)
+    assert workbook.active['B10'].value == 'ZGS/SC26/001'
     workbook.close()
 
 
