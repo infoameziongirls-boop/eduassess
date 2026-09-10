@@ -215,7 +215,7 @@
             <div><b>Study Area:</b> {{ student.get_study_area_display() or '—' }}</div>
             {% if student.date_of_birth %}<div><b>Date of Birth:</b> {{ student.date_of_birth.strftime('%Y-%m-%d') }}</div>{% endif %}
             <div><b>Year of Admission:</b> {{ student.created_at.strftime('%Y') if student.created_at else '—' }}</div>
-            <div><b>Reference ID:</b> {{ student.reference_number or student.student_id_code or '—' }}</div>
+            <div><b>Student Number:</b> {{ student.student_number or '—' }}</div>
         </div>
     </div>
 
