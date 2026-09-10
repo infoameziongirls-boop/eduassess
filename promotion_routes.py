@@ -239,7 +239,7 @@ def promote_class_view():
 @promotion_bp.route('/admin/promote-class/execute', methods=['POST'])
 @login_required
 def execute_promotion():
-    from models import Student, Setting, ActivityLog
+    from models import Student, Assessment, Setting, ActivityLog
     from db import db
     if not current_user.is_admin():
         abort(403)
@@ -265,25 +265,32 @@ def execute_promotion():
         flash('Invalid source class.', 'danger')
         return redirect(url_for('promotion.promote_class_view'))
 
-    students_by_class = {
-        class_name: Student.query.filter_by(class_name=class_name).all()
-        for class_name in selected_classes
-    }
-    if not any(students_by_class.values()):
+    students = Student.query.filter(Student.class_name.in_(selected_classes)).all()
+    students_by_class = {class_name: [] for class_name in selected_classes}
+    for student in students:
+        students_by_class[student.class_name].append(student)
+
+    if not students:
         flash(f'No students found in {", ".join(selected_classes)}.', 'warning')
         return redirect(url_for('promotion.promote_class_view'))
 
     count = 0
-    for source_class, students in students_by_class.items():
+    for source_class, class_students in students_by_class.items():
         target_class = (_graduation_label(academic_year)
                         if source_class == CLASS_SEQUENCE[-1]
                         else _next_class(source_class))
-        for student in students:
-            student.class_name = target_class
-            for assessment in student.assessments:
-                if not assessment.archived:
-                    assessment.archived = True
-            count += 1
+        student_ids = [student.id for student in class_students]
+        if not student_ids:
+            continue
+
+        Student.query.filter(Student.id.in_(student_ids)).update(
+            {Student.class_name: target_class}, synchronize_session=False
+        )
+        Assessment.query.filter(
+            Assessment.student_id.in_(student_ids),
+            Assessment.archived == False,
+        ).update({Assessment.archived: True}, synchronize_session=False)
+        count += len(student_ids)
 
     # Store the exact academic year selected in the form.
     settings = Setting.query.first()
