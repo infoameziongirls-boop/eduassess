@@ -617,7 +617,7 @@
         </div>
       </div>
 
-      <form method="POST" action="{{ url_for('promotion.promote_class_view') }}" id="promoForm">
+      <form method="POST" action="{{ url_for('promotion.execute_promotion') }}" id="promoForm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="selected_classes" id="selectedClassesInput" value="">
 

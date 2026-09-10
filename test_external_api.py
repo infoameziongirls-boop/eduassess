@@ -186,6 +186,50 @@ def test_update_student(client):
     assert student.class_name == 'Form 3'
 
 
+def test_student_id_code_syncs_in_both_directions(client):
+    _, raw_key = create_key()
+
+    response = client.post(
+        '/api/v1/students',
+        headers=auth_headers(raw_key),
+        json={
+            'student_number': 'STU006',
+            'first_name': 'Ama',
+            'last_name': 'Mensah',
+            'student_id_code': 'ZGS/SC26/001',
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.get_json()['student']['student_id_code'] == 'ZGS/SC26/001'
+
+    response = client.get('/api/v1/students', headers=auth_headers(raw_key))
+
+    assert response.status_code == 200
+    assert response.get_json()['students'][0]['student_id_code'] == 'ZGS/SC26/001'
+
+
+def test_unrecognized_class_does_not_overwrite_existing_value(client):
+    _, raw_key = create_key()
+    student = create_student(student_number='STU007', class_name='Form 2')
+
+    response = client.patch(
+        '/api/v1/students/STU007',
+        headers=auth_headers(raw_key),
+        json={'class_name': 'SHS', 'study_area': 'General Arts A'},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()['student']['class_name'] == 'Form 2'
+    assert response.get_json()['student']['study_area'] == 'general_arts_a'
+    assert len(response.get_json()['warnings']) == 1
+    assert 'Unrecognized class_name "SHS"' in response.get_json()['warnings'][0]
+
+    db.session.refresh(student)
+    assert student.class_name == 'Form 2'
+    assert student.study_area == 'general_arts_a'
+
+
 def test_bulk_students_upserts_by_student_number(client):
     _, raw_key = create_key()
     create_student(student_number='STU004')

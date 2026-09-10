@@ -254,6 +254,7 @@ def _student_payload(student):
         'id': student.id,
         'student_number': student.student_number,
         'reference_number': student.reference_number,
+        'student_id_code': student.student_id_code,
         'first_name': student.first_name,
         'last_name': student.last_name,
         'middle_name': student.middle_name,
@@ -263,9 +264,67 @@ def _student_payload(student):
     }
 
 
+def _normalize_class_name(raw, existing_value=None):
+    """Map an incoming class value onto EduAssess's canonical CLASS_LEVELS
+    ('Form 1' / 'Form 2' / 'Form 3'). Unlike the old code, an unrecognized
+    value (e.g. a generic 'SHS' sent by an external site that doesn't track
+    forms) is never allowed to silently overwrite a known-good value —
+    it's reported as a warning instead and the existing value is kept."""
+    if raw is None or str(raw).strip() == '':
+        return existing_value, None
+
+    raw = str(raw).strip()
+    valid = [v for v, _ in current_app.config.get('CLASS_LEVELS', [])]
+
+    if raw in valid:
+        return raw, None
+
+    compact = raw.lower().replace(' ', '')
+    for v in valid:
+        if v.lower().replace(' ', '') == compact:
+            return v, None
+
+    return existing_value, (
+        f'Unrecognized class_name "{raw}" (expected one of {valid}); kept existing value'
+    )
+
+
+def _normalize_study_area(raw, existing_value=None):
+    """Map an incoming study-area value onto one of EduAssess's STUDY_AREAS
+    codes. Accepts the exact code, a slugified version of a human-readable
+    label, or a case-insensitive label match. Unrecognized values are
+    reported as a warning rather than blanking out the existing value."""
+    if raw is None or str(raw).strip() == '':
+        return existing_value, None
+
+    raw = str(raw).strip()
+    areas = current_app.config.get('STUDY_AREAS', [])
+    valid_keys = [k for k, _ in areas]
+    label_to_key = {label: k for k, label in areas}
+
+    if raw in valid_keys:
+        return raw, None
+
+    slug = raw.lower().replace(' ', '_').replace('-', '_')
+    if slug in valid_keys:
+        return slug, None
+
+    if raw in label_to_key:
+        return label_to_key[raw], None
+
+    for label, key in label_to_key.items():
+        if label.lower() == raw.lower():
+            return key, None
+
+    return existing_value, (
+        f'Unrecognized study_area "{raw}" (expected one of {valid_keys}); kept existing value'
+    )
+
+
 def _validate_student_payload(payload, existing=None):
     payload = payload if isinstance(payload, dict) else {}
     errors = []
+    warnings = []
 
     student_number = str(payload.get('student_number') or (existing.student_number if existing else '')).strip()
     first_name = str(payload.get('first_name') or (existing.first_name if existing else '')).strip()
@@ -295,6 +354,18 @@ def _validate_student_payload(payload, existing=None):
         except ValueError:
             errors.append('date_of_birth must be an ISO date (YYYY-MM-DD)')
 
+    class_name, class_warning = _normalize_class_name(
+        payload.get('class_name'), existing.class_name if existing else None
+    )
+    if class_warning:
+        warnings.append(class_warning)
+
+    study_area, study_area_warning = _normalize_study_area(
+        payload.get('study_area'), existing.study_area if existing else None
+    )
+    if study_area_warning:
+        warnings.append(study_area_warning)
+
     return {
         'student_number': student_number,
         'first_name': first_name,
@@ -302,11 +373,12 @@ def _validate_student_payload(payload, existing=None):
         'middle_name': optional_name(
             payload.get('middle_name') or (existing.middle_name if existing else '')
         ),
-        'class_name': str(payload.get('class_name') or (existing.class_name if existing else '')).strip() or None,
-        'study_area': str(payload.get('study_area') or (existing.study_area if existing else '')).strip() or None,
+        'class_name': class_name,
+        'study_area': study_area,
         'reference_number': str(payload.get('reference_number') or (existing.reference_number if existing else '')).strip() or None,
+        'student_id_code': str(payload.get('student_id_code') or (existing.student_id_code if existing else '')).strip() or None,
         'date_of_birth': date_of_birth,
-    }, errors
+    }, errors, warnings
 
 
 @api_bp.route('/students', methods=['GET'])
@@ -334,7 +406,7 @@ def create_student_api():
     payload = request.get_json(silent=True) or {}
     student_number = str(payload.get('student_number') or '').strip()
     existing = Student.query.filter_by(student_number=student_number).first() if student_number else None
-    data, errors = _validate_student_payload(payload, existing)
+    data, errors, warnings = _validate_student_payload(payload, existing)
 
     if errors:
         return jsonify({'error': 'Validation failed', 'errors': errors}), 422
@@ -346,7 +418,10 @@ def create_student_api():
         student.reference_number = f'STU{int(datetime.now(timezone.utc).timestamp() * 1000) % 1000000:06d}'
     db.session.add(student)
     db.session.commit()
-    return jsonify({'student': _student_payload(student), 'created': True}), 201
+    response = {'student': _student_payload(student), 'created': True}
+    if warnings:
+        response['warnings'] = warnings
+    return jsonify(response), 201
 
 
 @api_bp.route('/students/<string:student_number>', methods=['PUT', 'PATCH'])
@@ -356,14 +431,17 @@ def update_student_api(student_number):
     if not student:
         return jsonify({'error': f'No student found with student_number "{student_number}"'}), 404
 
-    data, errors = _validate_student_payload(request.get_json(silent=True) or {}, student)
+    data, errors, warnings = _validate_student_payload(request.get_json(silent=True) or {}, student)
     if errors:
         return jsonify({'error': 'Validation failed', 'errors': errors}), 422
 
     for key, value in data.items():
         setattr(student, key, value)
     db.session.commit()
-    return jsonify({'student': _student_payload(student), 'updated': True})
+    response = {'student': _student_payload(student), 'updated': True}
+    if warnings:
+        response['warnings'] = warnings
+    return jsonify(response)
 
 
 @api_bp.route('/students/bulk', methods=['POST'])
@@ -376,16 +454,19 @@ def bulk_students_api():
 
     created = updated = 0
     errors = []
+    row_warnings = []
     results = []
 
     for index, item in enumerate(rows, start=1):
         item = item if isinstance(item, dict) else {}
         number = str(item.get('student_number') or '').strip()
         existing = Student.query.filter_by(student_number=number).first() if number else None
-        data, item_errors = _validate_student_payload(item, existing)
+        data, item_errors, item_warnings = _validate_student_payload(item, existing)
         if item_errors:
             errors.append({'row': index, 'student_number': number or None, 'errors': item_errors})
             continue
+        if item_warnings:
+            row_warnings.append({'row': index, 'student_number': number or None, 'warnings': item_warnings})
 
         if existing:
             for key, value in data.items():
@@ -405,7 +486,10 @@ def bulk_students_api():
         return jsonify({'error': 'Validation failed', 'created': 0, 'updated': 0, 'errors': errors}), 422
 
     db.session.commit()
-    return jsonify({'created': created, 'updated': updated, 'students': results}), 200
+    response = {'created': created, 'updated': updated, 'students': results}
+    if row_warnings:
+        response['warnings'] = row_warnings
+    return jsonify(response), 200
 
 
 @api_bp.route('/assessments/validate', methods=['POST'])
