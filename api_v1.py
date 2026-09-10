@@ -366,6 +366,10 @@ def _validate_student_payload(payload, existing=None):
     if study_area_warning:
         warnings.append(study_area_warning)
 
+    student_id_code = payload.get('student_id_code')
+    if not student_id_code and existing:
+        student_id_code = existing.student_id_code
+
     return {
         'student_number': student_number,
         'first_name': first_name,
@@ -376,7 +380,7 @@ def _validate_student_payload(payload, existing=None):
         'class_name': class_name,
         'study_area': study_area,
         'reference_number': str(payload.get('reference_number') or (existing.reference_number if existing else '')).strip() or None,
-        'student_id_code': str(payload.get('student_id_code') or (existing.student_id_code if existing else '')).strip() or None,
+        'student_id_code': optional_name(student_id_code),
         'date_of_birth': date_of_birth,
     }, errors, warnings
 

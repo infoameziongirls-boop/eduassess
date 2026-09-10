@@ -250,6 +250,24 @@ def test_bulk_students_upserts_by_student_number(client):
     assert Student.query.filter_by(student_number='STU005').count() == 1
 
 
+def test_bulk_students_keep_missing_admission_ids_as_null(client):
+    _, raw_key = create_key()
+    create_student(student_number='STU008')
+
+    response = client.post(
+        '/api/v1/students/bulk',
+        headers=auth_headers(raw_key),
+        json={'students': [
+            {'student_number': 'STU008', 'name': 'Updated Doe'},
+            {'student_number': 'STU009', 'name': 'New Student'},
+        ]},
+    )
+
+    assert response.status_code == 200
+    assert Student.query.filter_by(student_number='STU008').one().student_id_code is None
+    assert Student.query.filter_by(student_number='STU009').one().student_id_code is None
+
+
 # ---------------------------------------------------------------------------
 # Single assessment create
 # ---------------------------------------------------------------------------
