@@ -255,6 +255,8 @@ def execute_promotion():
     confirm       = request.form.get('confirm', '')
     academic_year = (request.form.get('academic_year') or
                      request.form.get('new_academic_year', '')).strip()
+    new_term = request.form.get('new_term', '').strip()
+    valid_terms = {term_key for term_key, _ in current_app.config.get('TERMS', [])}
 
     if confirm != 'CONFIRM':
         flash('You must type CONFIRM to proceed.', 'danger')
@@ -263,6 +265,9 @@ def execute_promotion():
     invalid_classes = [value for value in selected_classes if value not in CLASS_SEQUENCE]
     if not selected_classes or invalid_classes:
         flash('Invalid source class.', 'danger')
+        return redirect(url_for('promotion.promote_class_view'))
+    if new_term not in valid_terms:
+        flash('Invalid new academic term.', 'danger')
         return redirect(url_for('promotion.promote_class_view'))
 
     students = Student.query.filter(Student.class_name.in_(selected_classes)).all()
@@ -275,6 +280,7 @@ def execute_promotion():
         return redirect(url_for('promotion.promote_class_view'))
 
     count = 0
+    archived_count = 0
     for source_class, class_students in students_by_class.items():
         target_class = (_graduation_label(academic_year)
                         if source_class == CLASS_SEQUENCE[-1]
@@ -286,7 +292,7 @@ def execute_promotion():
         Student.query.filter(Student.id.in_(student_ids)).update(
             {Student.class_name: target_class}, synchronize_session=False
         )
-        Assessment.query.filter(
+        archived_count += Assessment.query.filter(
             Assessment.student_id.in_(student_ids),
             Assessment.archived == False,
         ).update({Assessment.archived: True}, synchronize_session=False)
@@ -296,6 +302,8 @@ def execute_promotion():
     settings = Setting.query.first()
     if settings and academic_year and '-' in academic_year:
         settings.current_academic_year = academic_year
+    if settings:
+        settings.current_term = new_term
 
     db.session.commit()
 
@@ -307,7 +315,11 @@ def execute_promotion():
     ))
     db.session.commit()
 
-    flash(f'Promoted {count} student(s) from {", ".join(selected_classes)}.', 'success')
+    flash(
+        f'Promoted {count} student(s) from {", ".join(selected_classes)}. '
+        f'Archived {archived_count} assessment(s); active results are reset for {new_term}.',
+        'success'
+    )
     return redirect(url_for('promotion.promote_class_view'))
 
 
