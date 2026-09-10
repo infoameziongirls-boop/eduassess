@@ -162,11 +162,11 @@ def promote_class_view():
     current_ay = settings.current_academic_year if settings else '2024-2025'
     current_term = settings.current_term if settings else 'term1'
 
-    # Parse current AY to compute next AY
+    # The first year identifies the academic year (2026-2027 -> 2027-2028).
     try:
         parts = current_ay.split('-')
         if len(parts) == 2:
-            next_year = int(parts[1]) + 1
+            next_year = int(parts[0]) + 1
             next_academic_year = f'{next_year}-{next_year + 1}'
         else:
             next_academic_year = current_ay
@@ -285,14 +285,10 @@ def execute_promotion():
                     assessment.archived = True
             count += 1
 
-    # Advance academic year in Settings
+    # Store the exact academic year selected in the form.
     settings = Setting.query.first()
     if settings and academic_year and '-' in academic_year:
-        try:
-            yr = int(academic_year.split('-')[1].strip())
-            settings.current_academic_year = f'{yr}-{yr + 1}'
-        except (ValueError, IndexError):
-            pass
+        settings.current_academic_year = academic_year
 
     db.session.commit()
 

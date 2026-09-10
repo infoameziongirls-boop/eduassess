@@ -172,6 +172,15 @@
     color: var(--ink);
     margin-bottom: .25rem;
   }
+  .class-card-selection-label {
+    display: block;
+    font-size: .72rem;
+    font-weight: 700;
+    color: var(--brand);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: .35rem;
+  }
   .class-card-sub {
     font-size: .82rem;
     color: #6b7a8d;
@@ -560,31 +569,35 @@
     {% for cls in class_levels %}
     {% set idx = loop.index0 %}
     <div class="class-card {{ colors[idx % 3] }}" 
-         id="card-{{ cls[0] }}"
-         onclick="toggleCard(this, '{{ cls[0] }}')">
+          id="card-{{ cls }}"
+          onclick="toggleCard(this, '{{ cls }}')"
+          aria-label="Select {{ cls }} for promotion"
+          role="button"
+          tabindex="0">
       <div class="class-card-accent {{ colors[idx % 3] }}"></div>
       <div class="class-card-body">
-        <div class="card-checkbox" id="chk-{{ cls[0] }}"></div>
+        <div class="card-checkbox" id="chk-{{ loop.index }}" aria-hidden="true"></div>
         <div class="class-card-icon {{ colors[idx % 3] }}">{{ icons[idx % 3] }}</div>
-        <div class="class-card-name">{{ cls[1] }}</div>
-        <div class="class-card-sub">{{ class_student_counts.get(cls[0], 0) }} students enrolled</div>
+        <span class="class-card-selection-label">Select class</span>
+        <div class="class-card-name">{{ cls }}</div>
+        <div class="class-card-sub">{{ class_student_counts.get(cls, 0) }} students enrolled</div>
         <div class="promo-progress">
-          <div class="promo-progress-fill" style="width:{{ class_completion.get(cls[0], 0) }}%"></div>
+          <div class="promo-progress-fill" style="width:{{ class_completion.get(cls, 0) }}%"></div>
         </div>
         <div style="font-size:.72rem; color:#8a97a8; margin-top:.3rem;">
-          {{ class_completion.get(cls[0], 0) }}% assessments complete
+          {{ class_completion.get(cls, 0) }}% assessments complete
         </div>
         <div class="class-card-stats">
           <div class="stat-mini">
-            <div class="val">{{ class_student_counts.get(cls[0], 0) }}</div>
+            <div class="val">{{ class_student_counts.get(cls, 0) }}</div>
             <div class="key">Students</div>
           </div>
           <div class="stat-mini">
-            <div class="val">{{ class_assessment_counts.get(cls[0], 0) }}</div>
+            <div class="val">{{ class_assessment_counts.get(cls, 0) }}</div>
             <div class="key">Assessments</div>
           </div>
           <div class="stat-mini">
-            <div class="val" style="color:var(--green);">{% if class_completion.get(cls[0], 0) >= 80 %}Ready{% else %}Pending{% endif %}</div>
+            <div class="val" style="color:var(--green);">{% if class_completion.get(cls, 0) >= 80 %}Ready{% else %}Pending{% endif %}</div>
             <div class="key">Status</div>
           </div>
         </div>
