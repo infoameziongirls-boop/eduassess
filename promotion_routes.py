@@ -244,34 +244,46 @@ def execute_promotion():
     if not current_user.is_admin():
         abort(403)
 
-    source_class  = request.form.get('source_class', '').strip()
+    selected_classes = [
+        value.strip()
+        for value in request.form.get('selected_classes', '').split(',')
+        if value.strip()
+    ]
+    source_class = request.form.get('source_class', '').strip()
+    if source_class and source_class not in selected_classes:
+        selected_classes.append(source_class)
     confirm       = request.form.get('confirm', '')
-    academic_year = request.form.get('academic_year', '').strip()
+    academic_year = (request.form.get('academic_year') or
+                     request.form.get('new_academic_year', '')).strip()
 
     if confirm != 'CONFIRM':
         flash('You must type CONFIRM to proceed.', 'danger')
         return redirect(url_for('promotion.promote_class_view'))
 
-    if source_class not in CLASS_SEQUENCE:
+    invalid_classes = [value for value in selected_classes if value not in CLASS_SEQUENCE]
+    if not selected_classes or invalid_classes:
         flash('Invalid source class.', 'danger')
         return redirect(url_for('promotion.promote_class_view'))
 
-    is_graduating = (source_class == CLASS_SEQUENCE[-1])
-    target_class  = (_graduation_label(academic_year)
-                     if is_graduating else _next_class(source_class))
-
-    students = Student.query.filter_by(class_name=source_class).all()
-    if not students:
-        flash(f'No students found in {source_class}.', 'warning')
+    students_by_class = {
+        class_name: Student.query.filter_by(class_name=class_name).all()
+        for class_name in selected_classes
+    }
+    if not any(students_by_class.values()):
+        flash(f'No students found in {", ".join(selected_classes)}.', 'warning')
         return redirect(url_for('promotion.promote_class_view'))
 
     count = 0
-    for s in students:
-        s.class_name = target_class
-        for a in s.assessments:
-            if not a.archived:
-                a.archived = True
-        count += 1
+    for source_class, students in students_by_class.items():
+        target_class = (_graduation_label(academic_year)
+                        if source_class == CLASS_SEQUENCE[-1]
+                        else _next_class(source_class))
+        for student in students:
+            student.class_name = target_class
+            for assessment in student.assessments:
+                if not assessment.archived:
+                    assessment.archived = True
+            count += 1
 
     # Advance academic year in Settings
     settings = Setting.query.first()
@@ -287,12 +299,12 @@ def execute_promotion():
     db.session.add(ActivityLog(
         user_id=current_user.id,
         action='class_promotion',
-        details=f'Promoted {count} students: {source_class} → {target_class} (AY {academic_year})',
+        details=f'Promoted {count} students: {", ".join(selected_classes)} (AY {academic_year})',
         ip_address=request.remote_addr,
     ))
     db.session.commit()
 
-    flash(f'✅ Promoted {count} student(s) from {source_class} to {target_class}.', 'success')
+    flash(f'Promoted {count} student(s) from {", ".join(selected_classes)}.', 'success')
     return redirect(url_for('promotion.promote_class_view'))
 
 
