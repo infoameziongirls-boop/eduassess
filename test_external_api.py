@@ -268,6 +268,32 @@ def test_bulk_students_keep_missing_admission_ids_as_null(client):
     assert Student.query.filter_by(student_number='STU009').one().student_id_code is None
 
 
+def test_bulk_students_upsert_uses_single_existing_student_lookup(client, monkeypatch):
+    _, raw_key = create_key()
+    create_student(student_number='STU010')
+    original_filter_by = Student.query.filter_by
+    lookup_count = 0
+
+    def count_filter_by(*args, **kwargs):
+        nonlocal lookup_count
+        if 'student_number' in kwargs:
+            lookup_count += 1
+        return original_filter_by(*args, **kwargs)
+
+    monkeypatch.setattr(Student.query, 'filter_by', count_filter_by)
+    response = client.post(
+        '/api/v1/students/bulk',
+        headers=auth_headers(raw_key),
+        json={'students': [
+            {'student_number': 'STU010', 'name': 'Updated One'},
+            {'student_number': 'STU011', 'name': 'New Two'},
+        ]},
+    )
+
+    assert response.status_code == 200
+    assert lookup_count == 0
+
+
 # ---------------------------------------------------------------------------
 # Single assessment create
 # ---------------------------------------------------------------------------

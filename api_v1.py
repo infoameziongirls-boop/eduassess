@@ -460,11 +460,22 @@ def bulk_students_api():
     errors = []
     row_warnings = []
     results = []
+    student_numbers = {
+        str(item.get('student_number') or '').strip()
+        for item in rows
+        if isinstance(item, dict) and str(item.get('student_number') or '').strip()
+    }
+    existing_students = {
+        student.student_number: student
+        for student in Student.query.filter(
+            Student.student_number.in_(student_numbers)
+        ).all()
+    } if student_numbers else {}
 
     for index, item in enumerate(rows, start=1):
         item = item if isinstance(item, dict) else {}
         number = str(item.get('student_number') or '').strip()
-        existing = Student.query.filter_by(student_number=number).first() if number else None
+        existing = existing_students.get(number) if number else None
         data, item_errors, item_warnings = _validate_student_payload(item, existing)
         if item_errors:
             errors.append({'row': index, 'student_number': number or None, 'errors': item_errors})
