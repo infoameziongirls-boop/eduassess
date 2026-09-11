@@ -6,6 +6,8 @@
   <nav aria-label="breadcrumb">
     <ol class="breadcrumb">
       <li class="breadcrumb-item"><a href="{{ url_for('archive.archive_index') }}">Archive</a></li>
+      {% if academic_year %}<li class="breadcrumb-item"><a href="{{ url_for('archive.archive_year', academic_year=academic_year) }}">{{ academic_year }}</a></li>{% endif %}
+      {% if term %}<li class="breadcrumb-item"><a href="{{ url_for('archive.archive_semester', academic_year=academic_year, term=term) }}">{{ term_label }}</a></li>{% endif %}
       <li class="breadcrumb-item active" aria-current="page">{{ label }}</li>
     </ol>
   </nav>
@@ -33,7 +35,7 @@
             <td>{{ student.student_number }}</td>
             <td>{{ student.get_study_area_display() or '—' }}</td>
             <td>
-              <a href="{{ url_for('archive.archive_transcript', label=label, student_id=student.id) }}"
+                <a href="{% if academic_year %}{{ url_for('archive.archive_class_transcript', academic_year=academic_year, term=term, label=label, student_id=student.id) }}{% else %}{{ url_for('archive.archive_transcript', label=label, student_id=student.id) }}{% endif %}"
                  class="btn btn-sm btn-outline-primary">
                 <i class="bi bi-file-earmark-text"></i> View Transcript
               </a>

@@ -6,6 +6,8 @@
   <nav aria-label="breadcrumb">
     <ol class="breadcrumb">
       <li class="breadcrumb-item"><a href="{{ url_for('archive.archive_index') }}">Archive</a></li>
+      {% if academic_year %}<li class="breadcrumb-item"><a href="{{ url_for('archive.archive_year', academic_year=academic_year) }}">{{ academic_year }}</a></li>{% endif %}
+      {% if term %}<li class="breadcrumb-item"><a href="{{ url_for('archive.archive_semester', academic_year=academic_year, term=term) }}">{{ term_label }}</a></li>{% endif %}
       <li class="breadcrumb-item"><a href="{{ url_for('archive.archive_roster', label=label) }}">{{ label }}</a></li>
       <li class="breadcrumb-item active" aria-current="page">{{ student.first_name }} {{ student.last_name }}</li>
     </ol>
@@ -17,7 +19,7 @@
       <p class="text-muted mb-0">
         Student Number: {{ student.student_number }} &nbsp;|&nbsp;
         Study Area: {{ student.get_study_area_display() or '—' }} &nbsp;|&nbsp;
-        {{ label }}
+        {{ label }}{% if term_label %} &nbsp;|&nbsp; {{ term_label }}{% endif %}
       </p>
     </div>
     <button class="btn btn-outline-secondary mt-2" onclick="window.print()">

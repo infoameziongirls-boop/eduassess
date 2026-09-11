@@ -96,6 +96,8 @@ tmp_*
 *.html
 !templates/transcript.html
 !templates/archive_index.html
+!templates/archive_semesters.html
+!templates/archive_classes.html
 !templates/archive_roster.html
 !templates/archive_transcript.html
 

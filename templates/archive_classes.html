@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ academic_year }} {{ term_label }} — Archive{% endblock %}
+{% block content %}
+<div class="container mt-4">
+  <nav aria-label="breadcrumb"><ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('archive.archive_index') }}">Archive</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('archive.archive_year', academic_year=academic_year) }}">{{ academic_year }}</a></li>
+    <li class="breadcrumb-item active">{{ term_label }}</li>
+  </ol></nav>
+  <h2><i class="bi bi-folder2-open"></i> {{ term_label }}</h2>
+  <p class="text-muted">{{ academic_year }} · Select an archived class.</p>
+  <div class="row row-cols-1 row-cols-md-3 g-4 mt-2">
+    {% for class_item in classes %}
+    <div class="col"><a class="text-decoration-none" href="{{ url_for('archive.archive_class_roster', academic_year=academic_year, term=term, label=class_item.label) }}">
+      <div class="card h-100 shadow-sm"><div class="card-body text-center">
+        <i class="bi bi-people-fill" style="font-size:2.5rem;color:#d4a017;"></i>
+        <h5 class="card-title mt-3">{{ class_item.label }}</h5>
+        <p class="card-text text-muted">{{ class_item.count }} student{{ 's' if class_item.count != 1 else '' }}</p>
+      </div></div>
+    </a></div>
+    {% else %}<div class="alert alert-info">No archived classes found.</div>{% endfor %}
+  </div>
+</div>
+{% endblock %}

@@ -27,7 +27,7 @@ Needing Attention" panel — keep that name if you rename anything here.
 from __future__ import annotations
 from datetime import datetime, timezone
 
-from flask import Blueprint, render_template, abort
+from flask import Blueprint, render_template, abort, current_app
 from flask_login import login_required, current_user
 from sqlalchemy import func
 
@@ -62,7 +62,58 @@ def _year_sort_key(label: str):
         return 0
 
 
-def _calc_final_transcript(student_id: int):
+def _academic_year_sort_key(label: str):
+    try:
+        return -int(str(label).split('-', 1)[0])
+    except (TypeError, ValueError):
+        return 0
+
+
+def _term_label(term: str) -> str:
+    labels = {'term1': 'Semester 1', 'term2': 'Semester 2', 'term3': 'Semester 3'}
+    return labels.get(term, term.replace('_', ' ').title() if term else 'Unspecified Semester')
+
+
+def _term_sort_key(term: str):
+    configured = [key for key, _ in current_app.config.get('TERMS', [])]
+    try:
+        return (configured.index(term), '')
+    except ValueError:
+        return (len(configured), term or '')
+
+
+def _archive_rows(academic_year=None, term=None, class_label=None):
+    """Return archived assessment rows that belong to the graduated archive."""
+    from models import Assessment, Student
+
+    query = (Assessment.query
+             .join(Student, Student.id == Assessment.student_id)
+             .filter(Assessment.archived == True,
+                     Student.class_name.ilike(f'{GRADUATION_PREFIX}%')))
+    if academic_year:
+        query = query.filter(Assessment.academic_year == academic_year)
+    if term:
+        query = query.filter(Assessment.term == term)
+    if class_label:
+        query = query.filter(Student.class_name == class_label)
+    return query.all()
+
+
+def _archive_years():
+    rows = _archive_rows()
+    grouped = {}
+    for assessment in rows:
+        year = assessment.academic_year or 'Unspecified Academic Year'
+        grouped.setdefault(year, set()).add(assessment.student_id)
+    return [
+        {'label': year, 'count': len(student_ids)}
+        for year, student_ids in sorted(
+            grouped.items(), key=lambda item: _academic_year_sort_key(item[0])
+        )
+    ]
+
+
+def _calc_final_transcript(student_id: int, academic_year=None, term=None):
     """Reconstruct a graduated student's final-year results from their
     archived FINAL_ACTIVE_CLASS assessments. Read-only — never touches
     non-archived data and never modifies anything."""
@@ -75,6 +126,10 @@ def _calc_final_transcript(student_id: int):
                               class_name=FINAL_ACTIVE_CLASS,
                               archived=True)
                    .all())
+    if academic_year:
+        assessments = [a for a in assessments if a.academic_year == academic_year]
+    if term:
+        assessments = [a for a in assessments if a.term == term]
 
     subject_groups = {}
     for a in assessments:
@@ -115,25 +170,54 @@ def _calc_final_transcript(student_id: int):
 @archive_bp.route('/')
 @login_required
 def archive_index():
-    from models import Student
-    from db import db
-
     if not current_user.is_admin():
         abort(403)
-
-    rows = (
-        db.session.query(Student.class_name, func.count(Student.id))
-        .filter(Student.class_name.ilike(f'{GRADUATION_PREFIX}%'))
-        .group_by(Student.class_name)
-        .all()
-    )
-
-    years = sorted(
-        [{'label': label, 'count': count} for label, count in rows],
-        key=lambda r: _year_sort_key(r['label'])
-    )
+    years = _archive_years()
 
     return render_template('archive_index.html', years=years, now=utcnow())
+
+
+@archive_bp.route('/year/<path:academic_year>')
+@login_required
+def archive_year(academic_year):
+    if not current_user.is_admin():
+        abort(403)
+    rows = _archive_rows(academic_year=academic_year)
+    grouped = {}
+    for assessment in rows:
+        term = assessment.term or 'unspecified'
+        grouped.setdefault(term, set()).add(assessment.student_id)
+    # Always expose every configured semester, even before scores have been
+    # entered for it. This keeps the archive structure predictable.
+    for term, _label in current_app.config.get('TERMS', []):
+        grouped.setdefault(term, set())
+    semesters = [
+        {'key': term, 'label': _term_label(term), 'count': len(student_ids)}
+        for term, student_ids in sorted(grouped.items(), key=lambda item: _term_sort_key(item[0]))
+    ]
+    return render_template(
+        'archive_semesters.html', academic_year=academic_year,
+        semesters=semesters, now=utcnow()
+    )
+
+
+@archive_bp.route('/year/<path:academic_year>/semester/<path:term>')
+@login_required
+def archive_semester(academic_year, term):
+    if not current_user.is_admin():
+        abort(403)
+    rows = _archive_rows(academic_year=academic_year, term=term)
+    grouped = {}
+    for assessment in rows:
+        grouped.setdefault(assessment.student.class_name, set()).add(assessment.student_id)
+    classes = [
+        {'label': label, 'count': len(student_ids)}
+        for label, student_ids in sorted(grouped.items(), key=lambda item: _year_sort_key(item[0]))
+    ]
+    return render_template(
+        'archive_classes.html', academic_year=academic_year, term=term,
+        term_label=_term_label(term), classes=classes, now=utcnow()
+    )
 
 
 @archive_bp.route('/<path:label>')
@@ -154,6 +238,23 @@ def archive_roster(label):
     )
 
     return render_template('archive_roster.html', label=label, students=students, now=utcnow())
+
+
+@archive_bp.route('/year/<path:academic_year>/semester/<path:term>/class/<path:label>')
+@login_required
+def archive_class_roster(academic_year, term, label):
+    from models import Student
+
+    if not current_user.is_admin() or not _is_graduated_label(label):
+        abort(404)
+    student_ids = {a.student_id for a in _archive_rows(academic_year, term, label)}
+    students = (Student.query.filter(Student.id.in_(student_ids))
+                .order_by(Student.last_name, Student.first_name).all()) if student_ids else []
+    return render_template(
+        'archive_roster.html', label=label, students=students,
+        academic_year=academic_year, term=term, term_label=_term_label(term),
+        now=utcnow()
+    )
 
 
 @archive_bp.route('/<path:label>/student/<int:student_id>')
@@ -178,4 +279,24 @@ def archive_transcript(label, student_id):
     return render_template(
         'archive_transcript.html',
         label=label, student=student, transcript=transcript, now=utcnow(),
+    )
+
+
+@archive_bp.route('/year/<path:academic_year>/semester/<path:term>/class/<path:label>/student/<int:student_id>')
+@login_required
+def archive_class_transcript(academic_year, term, label, student_id):
+    from models import Student
+
+    if not current_user.is_admin() or not _is_graduated_label(label):
+        abort(404)
+    student = Student.query.get_or_404(student_id)
+    if student.class_name != label:
+        abort(404)
+    if not any(a.student_id == student.id for a in _archive_rows(academic_year, term, label)):
+        abort(404)
+    return render_template(
+        'archive_transcript.html', label=label, student=student,
+        academic_year=academic_year, term=term, term_label=_term_label(term),
+        transcript=_calc_final_transcript(student.id, academic_year, term),
+        now=utcnow(),
     )

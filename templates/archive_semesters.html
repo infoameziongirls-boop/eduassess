@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ academic_year }} — Archive{% endblock %}
+{% block content %}
+<div class="container mt-4">
+  <nav aria-label="breadcrumb"><ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('archive.archive_index') }}">Archive</a></li>
+    <li class="breadcrumb-item active">{{ academic_year }}</li>
+  </ol></nav>
+  <h2><i class="bi bi-folder2-open"></i> {{ academic_year }}</h2>
+  <p class="text-muted">Choose a semester to view its archived classes.</p>
+  <div class="row row-cols-1 row-cols-md-3 g-4 mt-2">
+    {% for semester in semesters %}
+    <div class="col"><a class="text-decoration-none" href="{{ url_for('archive.archive_semester', academic_year=academic_year, term=semester.key) }}">
+      <div class="card h-100 shadow-sm"><div class="card-body text-center">
+        <i class="bi bi-folder-fill" style="font-size:2.5rem;color:#4b78c2;"></i>
+        <h5 class="card-title mt-3">{{ semester.label }}</h5>
+        <p class="card-text text-muted">{{ semester.count }} student{{ 's' if semester.count != 1 else '' }}</p>
+      </div></div>
+    </a></div>
+    {% else %}<div class="alert alert-info">No semester records found.</div>{% endfor %}
+  </div>
+</div>
+{% endblock %}
