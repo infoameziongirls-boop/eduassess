@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ student.first_name }} {{ student.last_name }} — Transcript{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="{{ url_for('archive.archive_index') }}">Archive</a></li>
+      <li class="breadcrumb-item"><a href="{{ url_for('archive.archive_roster', label=label) }}">{{ label }}</a></li>
+      <li class="breadcrumb-item active" aria-current="page">{{ student.first_name }} {{ student.last_name }}</li>
+    </ol>
+  </nav>
+
+  <div class="d-flex justify-content-between align-items-start flex-wrap">
+    <div>
+      <h2 class="mb-1">{{ student.first_name }} {{ student.middle_name or '' }} {{ student.last_name }}</h2>
+      <p class="text-muted mb-0">
+        Student Number: {{ student.student_number }} &nbsp;|&nbsp;
+        Study Area: {{ student.get_study_area_display() or '—' }} &nbsp;|&nbsp;
+        {{ label }}
+      </p>
+    </div>
+    <button class="btn btn-outline-secondary mt-2" onclick="window.print()">
+      <i class="bi bi-printer"></i> Print
+    </button>
+  </div>
+
+  {% if not transcript.has_data %}
+    <div class="alert alert-warning mt-4">
+      No archived Form 3 assessment records were found for this student.
+    </div>
+  {% else %}
+    <div class="table-responsive mt-4">
+      <table class="table table-bordered align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Subject</th>
+            <th class="text-center">Final %</th>
+            <th class="text-center">Grade</th>
+            <th class="text-center">GPA</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for key, s in transcript.subjects.items() %}
+          <tr>
+            <td>{{ s.subject.replace('_', ' ').title() }}</td>
+            <td class="text-center">{{ s.final_percent }}</td>
+            <td class="text-center">{{ s.grade }}</td>
+            <td class="text-center">{{ s.gpa }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="table-light fw-bold">
+            <td>Overall</td>
+            <td class="text-center">{{ transcript.overall_percent }}</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -625,6 +625,7 @@ from excel_utils import (ExcelTemplateHandler, ExcelBulkImporter,
 from analytics import get_class_performance_summary, get_grade_distribution
 from api_v1 import api_bp
 from promotion_routes import promotion_bp
+from archive_routes import archive_bp
 from support_routes import support_bp
 from template_updater import (
     AssessmentTemplateUpdater,
@@ -755,6 +756,7 @@ else:
 
 app.register_blueprint(api_bp)
 app.register_blueprint(promotion_bp)
+app.register_blueprint(archive_bp)
 app.register_blueprint(support_bp)
 
 # CSRF tokens are a browser/session-cookie defense and don't apply to a
@@ -863,6 +865,18 @@ def get_incomplete_assessments():
     # set used to flag incomplete assessment records.
     required = set(ACTIVE_CATEGORIES)
 
+    # Graduated students (class_name == "Graduated <year>", set by
+    # promotion_routes.execute_promotion()) are done — no one will ever
+    # enter new scores for them, so they must never be treated as
+    # "incomplete". Without this exclusion they'd sit on this panel
+    # forever, every term, from the moment they graduate onward.
+    from archive_routes import GRADUATION_PREFIX
+    graduated_ids = {
+        sid for (sid,) in db.session.query(Student.id)
+        .filter(Student.class_name.ilike(f'{GRADUATION_PREFIX}%'))
+        .all()
+    }
+
     # Single query: one row per (student, subject, category) — archived excluded.
     rows = (
         db.session.query(
@@ -877,7 +891,7 @@ def get_incomplete_assessments():
 
     ssc = {}
     for sid, subj, cat in rows:
-        if not sid or not subj or not cat:
+        if not sid or not subj or not cat or sid in graduated_ids:
             continue
         ssc.setdefault((sid, subj), set()).add(cat)
 
@@ -907,6 +921,8 @@ def get_incomplete_assessments():
             .all()
         )
         for sid, area in students_with_area:
+            if sid in graduated_ids:
+                continue  # graduated — never expect new scores from them
             area_cfg = sas.get(area)
             if not area_cfg:
                 continue  # unresolvable study_area (see class_management's

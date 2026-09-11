@@ -95,6 +95,9 @@ tmp_*
 *.log
 *.html
 !templates/transcript.html
+!templates/archive_index.html
+!templates/archive_roster.html
+!templates/archive_transcript.html
 
 # OS
 .DS_Store
