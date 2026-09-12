@@ -95,6 +95,7 @@ tmp_*
 *.log
 *.html
 !templates/transcript.html
+!templates/error_retry.html
 !templates/archive_index.html
 !templates/archive_semesters.html
 !templates/archive_classes.html

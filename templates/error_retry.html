@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Temporary Connection Issue{% endblock %}
+{% block content %}
+<div class="container py-5 text-center">
+    <div class="card shadow-sm mx-auto" style="max-width: 560px;">
+        <div class="card-body p-5">
+            <i class="bi bi-arrow-repeat text-warning" style="font-size: 3rem;"></i>
+            <h1 class="h3 mt-3">Temporary connection issue</h1>
+            <p class="text-muted mb-0">The server is reconnecting. This page will retry automatically.</p>
+        </div>
+    </div>
+</div>
+<script>
+    window.setTimeout(function () { window.location.reload(); }, 3000);
+</script>
+{% endblock %}{% extends "base.html" %}
+{# Adjust the extends target above to match your actual base template
+   filename if it isn't "base.html". #}
+
+{% block content %}
+<div class="container text-center py-5">
+  <h2>Temporary connection issue</h2>
+  <p class="text-muted">
+    We hit a brief hiccup talking to the database. This page will retry
+    automatically in a few seconds — no need to do anything.
+  </p>
+  <a href="{{ request.path }}" class="btn btn-primary mt-3">Retry now</a>
+</div>
+
+<script>
+  // Auto-retry once after 3s in case the connection blip has already
+  // cleared by then, so most users never have to click anything.
+  setTimeout(() => { window.location.reload(); }, 3000);
+</script>
+{% endblock %}

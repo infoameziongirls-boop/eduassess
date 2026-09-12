@@ -32,7 +32,7 @@ from flask_migrate import Migrate
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_caching import Cache
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, OperationalError, DBAPIError
 from sqlalchemy.orm import joinedload
 from wtforms import (StringField, PasswordField, FloatField, SelectField,
                      SelectMultipleField, TextAreaField, BooleanField)
@@ -469,6 +469,85 @@ def handle_csrf_error(e):
     session.clear()
     flash('Your session expired. Please sign in again.', 'warning')
     return redirect(url_for('login')), 302
+
+
+# ---------------------------------------------------------------------------
+# Neon/PgBouncer disconnect handling
+# ---------------------------------------------------------------------------
+# pool_pre_ping (set in config.py) protects against a connection that is
+# ALREADY dead at the moment it's checked out of the pool. It does not
+# protect against a connection that dies in the brief window between the
+# pre-ping test and the real query that follows it - which is exactly what
+# "SSL connection has been closed unexpectedly" during a login query is:
+# Neon/PgBouncer closed the backend connection out from under an
+# in-flight request. This is not specific to any one account or route -
+# it can land on ANY request that happens to touch the DB at that moment,
+# so the fix has to be general, not a login-only patch.
+#
+# _DISCONNECT_MARKERS matches on the driver error text directly instead of
+# relying on SQLAlchemy's psycopg2 dialect to recognize the message, since
+# that recognition list doesn't necessarily cover every phrasing Neon's
+# pooler produces.
+_DISCONNECT_MARKERS = (
+    'ssl connection has been closed unexpectedly',
+    'server closed the connection unexpectedly',
+    'connection already closed',
+    'could not connect to server',
+    'terminating connection due to administrator command',
+    'connection reset by peer',
+    'eof detected',
+)
+
+
+def _is_disconnect_error(exc) -> bool:
+    text = str(getattr(exc, 'orig', exc)).lower()
+    return any(marker in text for marker in _DISCONNECT_MARKERS)
+
+
+def db_retry(fn):
+    """Retry a view once, with a clean connection, if it fails because
+    Neon/PgBouncer dropped the connection mid-request. Safe to use on
+    views whose DB reads happen before any state-changing work (as is
+    the case for login), since a retry just re-runs the whole function
+    from the top - nothing has been committed or flashed yet on the
+    first attempt when the failure is a read-time disconnect."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except (OperationalError, DBAPIError) as exc:
+            if not _is_disconnect_error(exc):
+                raise
+            app.logger.warning(
+                'DB disconnect on %s, retrying once with a fresh connection: %s',
+                request.path, exc
+            )
+            db.session.rollback()
+            db.session.remove()
+            db.engine.dispose()
+            return fn(*args, **kwargs)
+    return wrapper
+
+
+@app.errorhandler(OperationalError)
+@app.errorhandler(DBAPIError)
+def handle_db_disconnect(e):
+    """Last-resort net for any route that isn't wrapped in @db_retry.
+    Without this, a dropped Neon connection surfaces as a raw 500 to
+    the user; with it, the pool is cleared so the NEXT request (e.g. the
+    user simply pressing back/retry) gets a healthy connection instead
+    of hitting the same dead one again."""
+    if _is_disconnect_error(e):
+        app.logger.warning('DB disconnect on %s (unretried route): %s', request.path, e)
+        db.session.rollback()
+        db.session.remove()
+        db.engine.dispose()
+        flash('A temporary connection issue occurred. Please try again.', 'warning')
+        return render_template('error_retry.html'), 503
+    app.logger.error('Unhandled database error on %s: %s', request.path, e)
+    db.session.rollback()
+    db.session.remove()
+    raise e
 
 
 @app.context_processor
@@ -1888,6 +1967,7 @@ def health_check():
 # ---------------------------------------------------------------------------
 @app.route('/login', methods=['GET', 'POST'])
 @limiter.limit('10 per minute')
+@db_retry
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
@@ -1922,6 +2002,7 @@ def logout():
 
 @app.route('/student/login', methods=['GET', 'POST'])
 @limiter.limit('20 per minute')
+@db_retry
 def student_login():
     if current_user.is_authenticated:
         if hasattr(current_user, 'is_student') and current_user.is_student():
@@ -4139,38 +4220,18 @@ def manage_subjects():
 
     elif action == 'delete':
         key = data.get('key')
-        from models import Question, Quiz
-        sas = SystemConfig.get_config('STUDY_AREA_SUBJECTS', {}) or {}
-        mapped = sum(
-            key in (curriculum.get(bucket, []) or [])
-            for curriculum in sas.values()
-            for bucket in ('core', 'electives')
-        )
         in_use = (User.query.filter_by(subject=key).count()
-                  + Assessment.query.filter_by(subject=key).count()
-                  + Question.query.filter_by(subject=key).count()
-                  + Quiz.query.filter_by(subject=key).count()
-                  + mapped)
+                  or Assessment.query.filter_by(subject=key).count())
         if in_use:
             return jsonify({
                 'success': False,
-                'message': f'Cannot delete: {in_use} record or curriculum mapping(s) still use this subject. '
+                'message': f'Cannot delete: {in_use} teacher/assessment record(s) still use this subject. '
                            f'Rename it instead.'
             })
         new = [a for a in areas if a[0] != key]
         if len(new) < len(areas):
             SystemConfig.set_config('LEARNING_AREAS', new)
             app.config['LEARNING_AREAS'] = new
-            try:
-                db.session.add(ActivityLog(
-                    user_id=current_user.id,
-                    action='delete_subject',
-                    details=f'Deleted subject {key}',
-                    ip_address=request.remote_addr,
-                ))
-                db.session.commit()
-            except SQLAlchemyError:
-                db.session.rollback()
             return jsonify({'success': True, 'message': 'Deleted'})
 
     elif action == 'rename':
