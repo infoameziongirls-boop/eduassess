@@ -4032,9 +4032,208 @@ def manage_study_areas():
         key = data.get('key')
         new = [a for a in areas if a[0] != key]
         if len(new) < len(areas):
+            in_use = Student.query.filter_by(study_area=key).count()
+            if in_use:
+                return jsonify({
+                    'success': False,
+                    'message': f'Cannot delete: {in_use} student(s) still have this study area. '
+                               f'Rename it to the replacement area instead, or reassign those students first.'
+                })
             SystemConfig.set_config('STUDY_AREAS', new)
             app.config['STUDY_AREAS'] = new
+            sas = SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
+            if key in sas:
+                del sas[key]
+                SystemConfig.set_config('STUDY_AREA_SUBJECTS', sas)
+                app.config['STUDY_AREA_SUBJECTS'] = sas
             return jsonify({'success': True, 'message': 'Deleted'})
+    elif action == 'rename':
+        # Renames a study-area key everywhere it's referenced: the
+        # STUDY_AREAS label list, the STUDY_AREA_SUBJECTS mapping, and
+        # every Student row currently carrying the old key. Without this
+        # last step a curriculum rename silently strands students with
+        # an area code that no longer exists anywhere in the config -
+        # that's exactly how the 'business_c' orphans happened before
+        # this action existed.
+        old_key = (data.get('old_key') or '').strip()
+        new_key = (data.get('new_key') or '').strip().lower().replace(' ', '_')
+        new_name = (data.get('new_name') or '').strip().upper()
+
+        if not old_key or not new_key:
+            return jsonify({'success': False, 'message': 'old_key and new_key are required'})
+        if old_key != new_key and any(a[0] == new_key for a in areas):
+            return jsonify({'success': False, 'message': f'"{new_key}" already exists as a study area'})
+
+        old_entry = next((a for a in areas if a[0] == old_key), None)
+        if not old_entry:
+            return jsonify({'success': False, 'message': f'"{old_key}" was not found'})
+
+        label = new_name or old_entry[1]
+        new_areas = [(new_key, label) if a[0] == old_key else a for a in areas]
+        SystemConfig.set_config('STUDY_AREAS', new_areas)
+        app.config['STUDY_AREAS'] = new_areas
+
+        sas = SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
+        if old_key in sas:
+            sas[new_key] = sas.pop(old_key)
+            SystemConfig.set_config('STUDY_AREA_SUBJECTS', sas)
+            app.config['STUDY_AREA_SUBJECTS'] = sas
+
+        affected = 0
+        if old_key != new_key:
+            affected = Student.query.filter_by(study_area=old_key).update(
+                {'study_area': new_key}, synchronize_session=False)
+            db.session.commit()
+
+        try:
+            db.session.add(ActivityLog(
+                user_id=current_user.id,
+                action='rename_study_area',
+                details=f'{old_key} -> {new_key} ("{label}"); {affected} student(s) updated',
+                ip_address=request.remote_addr,
+            ))
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+
+        return jsonify({
+            'success': True,
+            'message': f'Renamed "{old_key}" to "{new_key}" ({label}). '
+                       f'{affected} student record(s) updated.'
+        })
+    return jsonify({'success': False, 'message': 'Invalid action'})
+
+
+@app.route('/admin/api/subjects', methods=['POST'])
+@login_required
+@admin_required
+@csrf.exempt
+def manage_subjects():
+    """Add / delete / rename an entry in LEARNING_AREAS (subject catalog).
+
+    A rename cascades to every place a subject key is stored as plain
+    text, since there's no foreign key tying them together:
+      - User.subject          (teachers' assigned subject)
+      - Assessment.subject, Question.subject, Quiz.subject
+      - STUDY_AREA_SUBJECTS   (core/electives lists per study area)
+    Skipping any of these would silently break that table's filtering
+    the same way the study-area rename bug did.
+    """
+    from models import Question, Quiz
+
+    data   = request.get_json()
+    action = data.get('action')
+    areas  = SystemConfig.get_config('LEARNING_AREAS', app.config.get('LEARNING_AREAS', []))
+
+    if action == 'add':
+        key  = data.get('key', '').strip().lower().replace(' ', '_')
+        name = data.get('name', '').strip()
+        if not key or not name:
+            return jsonify({'success': False, 'message': 'Key and name required'})
+        if any(a[0] == key for a in areas):
+            return jsonify({'success': False, 'message': 'Key already exists'})
+        areas.append((key, name))
+        SystemConfig.set_config('LEARNING_AREAS', areas)
+        app.config['LEARNING_AREAS'] = areas
+        return jsonify({'success': True, 'message': f'Added {name}'})
+
+    elif action == 'delete':
+        key = data.get('key')
+        from models import Question, Quiz
+        sas = SystemConfig.get_config('STUDY_AREA_SUBJECTS', {}) or {}
+        mapped = sum(
+            key in (curriculum.get(bucket, []) or [])
+            for curriculum in sas.values()
+            for bucket in ('core', 'electives')
+        )
+        in_use = (User.query.filter_by(subject=key).count()
+                  + Assessment.query.filter_by(subject=key).count()
+                  + Question.query.filter_by(subject=key).count()
+                  + Quiz.query.filter_by(subject=key).count()
+                  + mapped)
+        if in_use:
+            return jsonify({
+                'success': False,
+                'message': f'Cannot delete: {in_use} record or curriculum mapping(s) still use this subject. '
+                           f'Rename it instead.'
+            })
+        new = [a for a in areas if a[0] != key]
+        if len(new) < len(areas):
+            SystemConfig.set_config('LEARNING_AREAS', new)
+            app.config['LEARNING_AREAS'] = new
+            try:
+                db.session.add(ActivityLog(
+                    user_id=current_user.id,
+                    action='delete_subject',
+                    details=f'Deleted subject {key}',
+                    ip_address=request.remote_addr,
+                ))
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+            return jsonify({'success': True, 'message': 'Deleted'})
+
+    elif action == 'rename':
+        old_key = (data.get('old_key') or '').strip()
+        new_key = (data.get('new_key') or '').strip().lower().replace(' ', '_')
+        new_name = (data.get('new_name') or '').strip()
+
+        if not old_key or not new_key:
+            return jsonify({'success': False, 'message': 'old_key and new_key are required'})
+        if old_key != new_key and any(a[0] == new_key for a in areas):
+            return jsonify({'success': False, 'message': f'"{new_key}" already exists as a subject'})
+
+        old_entry = next((a for a in areas if a[0] == old_key), None)
+        if not old_entry:
+            return jsonify({'success': False, 'message': f'"{old_key}" was not found'})
+
+        label = new_name or old_entry[1]
+        new_areas = [(new_key, label) if a[0] == old_key else a for a in areas]
+        SystemConfig.set_config('LEARNING_AREAS', new_areas)
+        app.config['LEARNING_AREAS'] = new_areas
+
+        affected = 0
+        if old_key != new_key:
+            affected += User.query.filter_by(subject=old_key).update(
+                {'subject': new_key}, synchronize_session=False)
+            affected += Assessment.query.filter_by(subject=old_key).update(
+                {'subject': new_key}, synchronize_session=False)
+            affected += Question.query.filter_by(subject=old_key).update(
+                {'subject': new_key}, synchronize_session=False)
+            affected += Quiz.query.filter_by(subject=old_key).update(
+                {'subject': new_key}, synchronize_session=False)
+
+            sas = SystemConfig.get_config('STUDY_AREA_SUBJECTS', {})
+            sas_changed = False
+            for area_key, subj in sas.items():
+                for bucket in ('core', 'electives'):
+                    lst = subj.get(bucket, [])
+                    if old_key in lst:
+                        subj[bucket] = [new_key if s == old_key else s for s in lst]
+                        sas_changed = True
+            if sas_changed:
+                SystemConfig.set_config('STUDY_AREA_SUBJECTS', sas)
+                app.config['STUDY_AREA_SUBJECTS'] = sas
+
+            db.session.commit()
+
+        try:
+            db.session.add(ActivityLog(
+                user_id=current_user.id,
+                action='rename_subject',
+                details=f'{old_key} -> {new_key} ("{label}"); {affected} record(s) updated',
+                ip_address=request.remote_addr,
+            ))
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+
+        return jsonify({
+            'success': True,
+            'message': f'Renamed "{old_key}" to "{new_key}" ({label}). '
+                       f'{affected} record(s) updated across teachers/assessments/questions/quizzes.'
+        })
+
     return jsonify({'success': False, 'message': 'Invalid action'})
 
 

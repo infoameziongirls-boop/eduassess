@@ -457,6 +457,13 @@
                                 <label class="form-check-label" for="subject_{{ subject_key }}">
                                     {{ subject_name }}
                                 </label>
+                                <button type="button" class="btn btn-link btn-sm p-0 ms-2"
+                                        data-action="rename-subject"
+                                        data-key="{{ subject_key }}"
+                                        data-name="{{ subject_name }}"
+                                        title="Rename subject">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
                             </div>
                             {% endfor %}
                         </div>
@@ -499,6 +506,34 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Rename Subject Modal -->
+<div class="modal fade" id="renameSubjectModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Rename Subject</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="renameSubjectOriginalKey">
+                <div class="mb-3">
+                    <label for="renameSubjectKey" class="form-label">New key</label>
+                    <input type="text" class="form-control" id="renameSubjectKey" required>
+                </div>
+                <div class="mb-3">
+                    <label for="renameSubjectName" class="form-label">Display name</label>
+                    <input type="text" class="form-control" id="renameSubjectName" required>
+                </div>
+                <div id="renameSubjectError" class="alert alert-danger d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveRenameSubject">Save Changes</button>
             </div>
         </div>
     </div>
@@ -637,7 +672,7 @@
 
             apiPost(
                 "/admin/api/study-areas",
-                { action: "edit", original_key: originalKey, key: newKey, name: newName },
+                { action: "rename", old_key: originalKey, new_key: newKey, new_name: newName },
                 function (msg) {
                     // Close the modal
                     var modalElement = document.getElementById("editStudyAreaModal");
@@ -706,6 +741,41 @@
                     showAlert("Error: " + errMsg, "danger");
                 }
             );
+        });
+    }
+
+    // ── Rename Subject ───────────────────────────────────────────────────────
+    document.addEventListener("click", function (e) {
+        var btn = e.target.closest("[data-action='rename-subject']");
+        if (!btn) return;
+        document.getElementById("renameSubjectOriginalKey").value = btn.dataset.key;
+        document.getElementById("renameSubjectKey").value = btn.dataset.key;
+        document.getElementById("renameSubjectName").value = btn.dataset.name;
+        document.getElementById("renameSubjectError").classList.add("d-none");
+        new bootstrap.Modal(document.getElementById("renameSubjectModal")).show();
+    });
+
+    var saveRenameSubject = document.getElementById("saveRenameSubject");
+    if (saveRenameSubject) {
+        saveRenameSubject.addEventListener("click", function () {
+            var oldKey = document.getElementById("renameSubjectOriginalKey").value.trim();
+            var newKey = document.getElementById("renameSubjectKey").value.trim().toLowerCase().replace(/\s+/g, "_");
+            var newName = document.getElementById("renameSubjectName").value.trim();
+            var error = document.getElementById("renameSubjectError");
+            if (!newKey || !newName) {
+                error.textContent = "Both key and display name are required.";
+                error.classList.remove("d-none");
+                return;
+            }
+            apiPost("/admin/api/subjects", {
+                action: "rename", old_key: oldKey, new_key: newKey, new_name: newName
+            }, function (msg) {
+                showAlert(msg, "success");
+                setTimeout(function () { location.reload(); }, 1000);
+            }, function (msg) {
+                error.textContent = "Error: " + msg;
+                error.classList.remove("d-none");
+            });
         });
     }
 
