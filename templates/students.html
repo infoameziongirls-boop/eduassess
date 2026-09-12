@@ -186,6 +186,38 @@
         </table>
     </div>
 </div>
+
+{% if pagination and pagination.pages > 1 %}
+<nav aria-label="Student list pagination" class="mt-3">
+    <ul class="pagination justify-content-center">
+        <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+            <a class="page-link"
+               href="{{ url_for('students', page=pagination.prev_num, search=search, group_by=current_group_by, sort_by=current_sort_by) if pagination.has_prev else '#' }}">
+                Previous
+            </a>
+        </li>
+        {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+            {% if page_num %}
+            <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
+                <a class="page-link" href="{{ url_for('students', page=page_num, search=search, group_by=current_group_by, sort_by=current_sort_by) }}">{{ page_num }}</a>
+            </li>
+            {% else %}
+            <li class="page-item disabled"><span class="page-link">…</span></li>
+            {% endif %}
+        {% endfor %}
+        <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+            <a class="page-link"
+               href="{{ url_for('students', page=pagination.next_num, search=search, group_by=current_group_by, sort_by=current_sort_by) if pagination.has_next else '#' }}">
+                Next
+            </a>
+        </li>
+    </ul>
+    <p class="text-center text-muted small">
+        Showing {{ pagination.items|length }} of {{ pagination.total }} students
+        (page {{ pagination.page }} of {{ pagination.pages }})
+    </p>
+</nav>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}

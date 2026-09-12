@@ -33,7 +33,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_caching import Cache
 from sqlalchemy.exc import SQLAlchemyError, OperationalError, DBAPIError
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from wtforms import (StringField, PasswordField, FloatField, SelectField,
                      SelectMultipleField, TextAreaField, BooleanField)
 from whitenoise import WhiteNoise
@@ -85,6 +85,7 @@ ASSESSMENT_WEIGHTS = {
 ACTIVE_CATEGORIES = ['ica1', 'ica2', 'gp1', 'gp2', 'practical', 'mid_term', 'end_term']
 
 ASSESSMENTS_PER_PAGE = 20
+STUDENTS_PER_PAGE = 50
 
 
 def utcnow():
@@ -547,7 +548,7 @@ def handle_db_disconnect(e):
     app.logger.error('Unhandled database error on %s: %s', request.path, e)
     db.session.rollback()
     db.session.remove()
-    raise e
+    return render_template('error_retry.html'), 500
 
 
 @app.context_processor
@@ -803,6 +804,7 @@ except Exception as exc:
 
 app.config['CATEGORY_LABELS']     = CATEGORY_LABELS
 app.config['ASSESSMENTS_PER_PAGE'] = ASSESSMENTS_PER_PAGE
+app.config['STUDENTS_PER_PAGE'] = STUDENTS_PER_PAGE
 app.config['CATEGORY_MAX_SCORES'] = CATEGORY_MAX_SCORES
 app.config['ASSESSMENT_WEIGHTS']  = ASSESSMENT_WEIGHTS
 migrate = Migrate(app, db)
@@ -2470,6 +2472,8 @@ def students():
     search   = request.args.get('search', '').strip()
     group_by = request.args.get('group_by', 'none')
     sort_by  = request.args.get('sort_by',  'name')
+    page     = request.args.get('page', 1, type=int)
+    per_page = app.config.get('STUDENTS_PER_PAGE', 50)
 
     q = Student.query
 
@@ -2493,7 +2497,30 @@ def students():
                 Student.student_id_code.ilike(f'%{search}%'),
             )
         )
-    all_students = q.order_by(Student.class_name, Student.last_name).all()
+
+    # Every roster row shows a computed grade/average, and every one of
+    # those calculations (calculate_final_grade / get_overall_summary /
+    # to_template_dict) touches student.assessments. That relationship is
+    # lazy by default, so without eager loading this page issued one extra
+    # query PER STUDENT - ~320 round-trips to Neon on a full roster, which
+    # is what turned this into a 60+ second, ~1MB response. selectinload
+    # fixes that with exactly one extra query total, regardless of how
+    # many students are on the page.
+    q = q.options(selectinload(Student.assessments))
+
+    # Grouped views (by class / study area) are used for printable class
+    # rosters, where splitting a class across pages would be confusing -
+    # so those still load the full filtered result set (now cheap, since
+    # eager loading removed the per-student query cost; the single
+    # remaining query no longer scales with enrollment the way N+1 did).
+    # Only the default "All Students" view is paginated at the DB level.
+    if group_by in ('class', 'study_area'):
+        all_students = q.order_by(Student.class_name, Student.last_name).all()
+        pagination = None
+    else:
+        pagination = (q.order_by(Student.class_name, Student.last_name)
+                       .paginate(page=page, per_page=per_page, error_out=False))
+        all_students = pagination.items
 
     if group_by == 'class':
         grouped = {}
@@ -2521,7 +2548,9 @@ def students():
     return render_template('students.html',
                            student_groups=sorted_groups,
                            current_group_by=group_by,
-                           current_sort_by=sort_by)
+                           current_sort_by=sort_by,
+                           search=search,
+                           pagination=pagination)
 
 
 @app.route('/students/new', methods=['GET', 'POST'])
