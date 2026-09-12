@@ -1,5 +1,6 @@
 import os
 import io
+import gzip
 import csv
 import random
 import re
@@ -549,6 +550,65 @@ def handle_db_disconnect(e):
     db.session.rollback()
     db.session.remove()
     return render_template('error_retry.html'), 500
+
+
+# ---------------------------------------------------------------------------
+# Response compression
+# ---------------------------------------------------------------------------
+# Stdlib-only gzip, deliberately not a new dependency (flask-compress etc.):
+# every page render, JSON response, and API payload gets smaller before it
+# leaves the server, which is exactly the lever that helps someone on a
+# weak/slow connection - unlike the earlier Neon/N+1 fixes, which only
+# helped the server-to-database link, this helps the actual link to the
+# person's browser or phone. File downloads (send_file - reports, template
+# exports) are left alone: they're already streamed via direct_passthrough,
+# and buffering a whole .xlsx into memory just to gzip it would cost more
+# than it saves.
+_COMPRESSIBLE_MIMETYPES = {
+    'text/html', 'text/css', 'text/xml', 'text/plain',
+    'application/json', 'application/javascript', 'text/javascript',
+    'application/xml',
+}
+_COMPRESS_MIN_SIZE = 500  # below this, gzip's own overhead isn't worth it
+
+
+@app.after_request
+def compress_response(response):
+    accept_encoding = request.headers.get('Accept-Encoding', '')
+    if 'gzip' not in accept_encoding.lower():
+        return response
+    if response.direct_passthrough:
+        # send_file() / streamed responses - don't buffer these into memory.
+        return response
+    if not (200 <= response.status_code < 300):
+        return response
+    content_type = (response.content_type or '').split(';')[0].strip().lower()
+    if content_type not in _COMPRESSIBLE_MIMETYPES:
+        return response
+    if response.headers.get('Content-Encoding'):
+        # Already compressed by something else upstream - don't double-gzip.
+        return response
+
+    data = response.get_data()
+    if len(data) < _COMPRESS_MIN_SIZE:
+        return response
+
+    buf = io.BytesIO()
+    with gzip.GzipFile(mode='wb', fileobj=buf, compresslevel=6) as gz:
+        gz.write(data)
+    compressed = buf.getvalue()
+
+    response.set_data(compressed)
+    response.headers['Content-Encoding'] = 'gzip'
+    response.headers['Content-Length'] = str(len(compressed))
+    # Vary: Accept-Encoding tells any cache (browser, Cloudflare) in front of
+    # this that the response body depends on that header, so it doesn't
+    # serve a gzipped body to a client that never asked for one, or vice versa.
+    vary_parts = [v.strip() for v in response.headers.get('Vary', '').split(',') if v.strip()]
+    if 'Accept-Encoding' not in vary_parts:
+        vary_parts.append('Accept-Encoding')
+    response.headers['Vary'] = ', '.join(vary_parts)
+    return response
 
 
 @app.context_processor
@@ -2430,13 +2490,24 @@ def student_dashboard():
 @parent_required
 def parent_dashboard():
     parent = Parent.query.filter_by(user_id=current_user.id).first_or_404()
+    # A parent typically has only a handful of children, so this was never
+    # a 63-second problem the way /students was - but it's the same
+    # avoidable pattern, so it gets the same fix for consistency: eager
+    # load once instead of one query per child.
+    children = (Student.query
+                .filter(Student.id.in_([s.id for s in parent.students]))
+                .options(selectinload(Student.assessments))
+                .all()) if parent.students else []
+    children_by_id = {s.id: s for s in children}
+
     students_data = []
     for s in parent.students:
+        student = children_by_id.get(s.id, s)
         students_data.append({
-            'student': s,
-            'final_grade': s.calculate_final_grade(),
+            'student': student,
+            'final_grade': student.calculate_final_grade(),
             'recent_assessments': Assessment.query.filter_by(
-                student_id=s.id, archived=False
+                student_id=student.id, archived=False
             ).order_by(Assessment.date_recorded.desc()).limit(5).all(),
         })
     return render_template('parent_dashboard.html', students_data=students_data)
