@@ -1,5 +1,14 @@
 import os
 
+
+def normalize_database_url(url):
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg2://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return url
+
+
 # Optional redis import – do NOT crash if the package is absent
 try:
     import redis as redis_lib
@@ -27,9 +36,7 @@ class Config:
     # ------------------------------------------------------------------ #
     # Database
     # ------------------------------------------------------------------ #
-    _DATABASE_URL = os.environ.get("DATABASE_URL", "")
-    if _DATABASE_URL.startswith("postgres://"):
-        _DATABASE_URL = _DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    _DATABASE_URL = normalize_database_url(os.environ.get("DATABASE_URL", ""))
 
     SQLALCHEMY_DATABASE_URI = _DATABASE_URL or "sqlite:///assessment.db"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
@@ -241,9 +248,7 @@ class TestingConfig(Config):
 class ProductionConfig(Config):
     DEBUG = False
 
-    _db_url = os.environ.get("DATABASE_URL", "")
-    if _db_url.startswith("postgres://"):
-        _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+    _db_url = normalize_database_url(os.environ.get("DATABASE_URL", ""))
 
     SQLALCHEMY_DATABASE_URI = _db_url or "sqlite:///assessment.db"
     SESSION_COOKIE_SECURE = True
