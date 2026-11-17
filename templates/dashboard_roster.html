@@ -1,0 +1,108 @@
+{# Class Register by Learning Area - admin sees everyone, teachers only their own classes/subject.
+   Include in dashboard.html:  {% include 'dashboard_roster.html' %}  #}
+{% if current_user.is_admin() or current_user.is_teacher() %}
+<style>
+.rg-card .rg-search{max-width:340px}
+.rg-form{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden;background:var(--surface-2)}
+.rg-head{width:100%;display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--surface);border:0;font:700 .88rem var(--font-body);color:var(--ink);text-align:left;cursor:pointer}
+.rg-head .chev{margin-left:auto;transition:transform .2s;color:var(--ink-4)}
+.rg-head[aria-expanded=true] .chev{transform:rotate(90deg)}
+.rg-body{padding:6px 12px 12px}
+.rg-area{margin-top:8px;border:1px solid var(--border);border-radius:10px}
+.rg-area>.rg-head{background:#fff;font-size:.8rem;padding:9px 12px;border-radius:10px}
+.rg-stu{display:flex;align-items:center;gap:10px;padding:7px 12px;border-top:1px solid var(--border);font-size:.8rem}
+.rg-stu .nm{flex:1;min-width:0;font-weight:600}.rg-stu .no{font-family:monospace;font-size:.7rem;color:var(--ink-4)}
+.rg-chip{font-size:.65rem;font-weight:700;padding:2px 8px;border-radius:99px}
+.rg-ok{background:var(--green-dim);color:var(--green)}.rg-part{background:var(--amber-dim);color:#92640a}.rg-none{background:var(--rose-dim);color:var(--rose)}
+.rg-hidden{display:none!important}
+</style>
+<div class="section-gap animate-in delay-2">
+  <div class="card rg-card">
+    <div class="card-header" style="flex-wrap:wrap;gap:10px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:32px;height:32px;background:var(--brand-dim);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--brand-text);"><i class="bi bi-journal-bookmark-fill"></i></div>
+        <div>
+          <div class="card-title">Class Register by Learning Area</div>
+          <div id="rgScope" style="font-size:.7rem;color:var(--ink-4);">Loading…</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input id="rgSearch" class="form-control rg-search" placeholder="Search name or student number…" autocomplete="off">
+        <button class="btn btn-outline btn-sm" type="button" id="rgToggle">Expand all</button>
+      </div>
+    </div>
+    <div class="card-body" style="padding:14px;"><div id="rgTree"></div></div>
+  </div>
+</div>
+<script>
+(function () {
+  const ENTRY = {{ url_for('new_assessment')|tojson }}, VIEW = {{ url_for('students')|tojson }};
+  const KEY = 'roster_tree_v1', tree = document.getElementById('rgTree');
+  let data = null, open = false;
+
+  const el = (t, c, txt) => { const e = document.createElement(t); if (c) e.className = c; if (txt != null) e.textContent = txt; return e; };
+
+  function chip(s, required) {
+    if (s.filled == null) return null;
+    const c = el('span', 'rg-chip ' + (s.filled >= required ? 'rg-ok' : s.filled ? 'rg-part' : 'rg-none'), s.filled + '/' + required);
+    c.title = 'Assessment categories entered for your subject'; return c;
+  }
+  function toggler(btn, body) {
+    btn.setAttribute('aria-expanded', 'false'); body.hidden = true;
+    btn.onclick = () => { const o = btn.getAttribute('aria-expanded') !== 'true'; btn.setAttribute('aria-expanded', o); body.hidden = !o; };
+  }
+  function render() {
+    tree.replaceChildren();
+    if (!data.forms.length) { tree.append(el('p', '', 'No students found in your classes. Please contact the administrator if this looks wrong.')); return; }
+    data.forms.forEach(f => {
+      const wrap = el('div', 'rg-form'), head = el('button', 'rg-head'), body = el('div', 'rg-body');
+      head.type = 'button'; head.append(el('i', 'bi bi-building'), el('span', '', f.name), el('span', 'badge badge-ink', f.count + ' students'), el('i', 'bi bi-chevron-right chev'));
+      toggler(head, body);
+      f.areas.forEach(a => {
+        const aw = el('div', 'rg-area'), ah = el('button', 'rg-head'), ab = el('div');
+        ah.type = 'button'; ah.append(el('i', 'bi bi-book'), el('span', '', a.name), el('span', 'badge badge-teal', a.count), el('i', 'bi bi-chevron-right chev'));
+        toggler(ah, ab);
+        a.students.forEach(s => {
+          const row = el('div', 'rg-stu'); row.dataset.q = (s.name + ' ' + s.number).toLowerCase();
+          const nm = el('div', 'nm', s.name); nm.append(el('div', 'no', s.number));
+          row.append(nm); const c = chip(s, data.required); if (c) row.append(c);
+          const add = el('a', 'btn btn-primary btn-sm', 'Enter scores'); add.href = ENTRY + '?student=' + encodeURIComponent(s.number);
+          row.append(add);
+          if (navigator.onLine) { const v = el('a', 'btn btn-outline btn-sm', 'View'); v.href = VIEW + '/' + s.id; row.append(v); }
+          ab.append(row);
+        });
+        aw.append(ah, ab); body.append(aw);
+      });
+      wrap.append(head, body); tree.append(wrap);
+    });
+  }
+  function setAll(o) {
+    tree.querySelectorAll('.rg-head').forEach(h => { h.setAttribute('aria-expanded', o); h.nextElementSibling.hidden = !o; });
+  }
+  document.getElementById('rgToggle').onclick = function () { open = !open; setAll(open); this.textContent = open ? 'Collapse all' : 'Expand all'; };
+
+  document.getElementById('rgSearch').addEventListener('input', function () {
+    const q = this.value.trim().toLowerCase();
+    tree.querySelectorAll('.rg-stu').forEach(r => r.classList.toggle('rg-hidden', !!q && !r.dataset.q.includes(q)));
+    tree.querySelectorAll('.rg-area').forEach(a => a.classList.toggle('rg-hidden', !!q && !a.querySelector('.rg-stu:not(.rg-hidden)')));
+    tree.querySelectorAll('.rg-form').forEach(f => f.classList.toggle('rg-hidden', !!q && !f.querySelector('.rg-stu:not(.rg-hidden)')));
+    if (q) setAll(true);
+  });
+
+  function scope(offline) {
+    const total = data.forms.reduce((n, f) => n + f.count, 0);
+    document.getElementById('rgScope').textContent =
+      (data.scope === 'teacher' ? 'Your classes' + (data.subject ? ' · ' + data.subject : '') : 'All classes') +
+      ' · ' + total + ' students' + (offline ? ' · offline copy' : '');
+  }
+  fetch({{ url_for('offline.roster_tree')|tojson }}, {credentials: 'same-origin'})
+    .then(r => { if (!r.ok) throw 0; return r.json(); })
+    .then(j => { data = j; try { localStorage.setItem(KEY, JSON.stringify(j)); } catch (_) {} render(); scope(false); })
+    .catch(() => {
+      try { data = JSON.parse(localStorage.getItem(KEY)); } catch (_) {}
+      if (data) { render(); scope(true); }
+      else { document.getElementById('rgScope').textContent = 'Could not load'; tree.textContent = 'Register unavailable. Open the dashboard once while online.'; }
+    });
+})();
+</script>
+{% endif %}

@@ -101,6 +101,7 @@ tmp_*
 !templates/archive_classes.html
 !templates/archive_roster.html
 !templates/archive_transcript.html
+!templates/dashboard_roster.html
 
 # OS
 .DS_Store
