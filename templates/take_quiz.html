@@ -22,7 +22,7 @@
                 </div>
             </div>
             
-            <form method="POST" id="quizForm">
+            <form method="POST" id="quizForm" data-offline="quiz" data-quiz-id="{{ quiz.id }}">
                 <div class="card-body">
                     {% for question_id in quiz.questions %}
                     {% set question = questions.get(question_id|int) %}

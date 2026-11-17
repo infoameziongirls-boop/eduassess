@@ -10,6 +10,7 @@ import shutil
 import filecmp
 import traceback
 import click
+import secrets
 from functools import wraps
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -39,7 +40,7 @@ from wtforms import (StringField, PasswordField, FloatField, SelectField,
                      SelectMultipleField, TextAreaField, BooleanField)
 from whitenoise import WhiteNoise
 from wtforms.validators import (InputRequired, Length, Optional,
-                                NumberRange, ValidationError)
+                                NumberRange, ValidationError, EqualTo)
 
 from db import db, redact_database_url
 from config import config, Config
@@ -611,6 +612,25 @@ def compress_response(response):
     return response
 
 
+@app.after_request
+def scope_authenticated_responses(response):
+    if current_user.is_authenticated and response.mimetype in ('text/html', 'application/json'):
+        response.headers['X-EduAssess-User'] = str(current_user.get_id())
+        cache_directives = {
+            part.strip().lower()
+            for part in response.headers.get('Cache-Control', '').split(',')
+        }
+        if 'no-store' not in cache_directives:
+            response.headers['Cache-Control'] = 'private, no-cache'
+        vary = {part.strip().lower() for part in response.headers.get('Vary', '').split(',') if part.strip()}
+        if 'cookie' not in vary:
+            response.headers['Vary'] = ', '.join(
+                [part.strip() for part in response.headers.get('Vary', '').split(',') if part.strip()]
+                + ['Cookie']
+            )
+    return response
+
+
 @app.context_processor
 def inject_csrf_token():
     return dict(csrf_token=generate_csrf)
@@ -775,11 +795,14 @@ from template_updater import (
     scores_from_assessments,
 )
 
-# Initialise DB
-init_db(app, bcrypt)
-with app.app_context():
-    db.create_all()
-    ensure_default_admin_user(app, bcrypt)
+# Initialise DB. Alembic commands must not run application schema/data
+# bootstrap before applying the migration chain.
+_migration_mode = os.environ.get('EDUASSESS_MIGRATION_MODE') == '1'
+init_db(app, bcrypt, run_bootstrap=not _migration_mode)
+if not _migration_mode:
+    with app.app_context():
+        db.create_all()
+        ensure_default_admin_user(app, bcrypt)
 
 # Session AFTER db is ready
 # SESSION_SQLALCHEMY must be set to the db object BEFORE Session(app) is called.
@@ -787,7 +810,8 @@ with app.app_context():
 if app.config.get("SESSION_TYPE") == "sqlalchemy":
     app.config["SESSION_SQLALCHEMY"] = db
 
-Session(app)
+if not _migration_mode:
+    Session(app)
 
 # ---------------------------------------------------------------------------
 # Defensive session-store wrapper
@@ -854,13 +878,14 @@ def load_persistent_config():
                 SystemConfig.set_config(key, app.config[key])
 
 
-try:
-    load_persistent_config()
-    with app.app_context():
-        normalize_student_records()
-        normalize_teacher_class_keys()
-except Exception as exc:
-    print(f'Warning: Could not load persistent config: {exc}')
+if not _migration_mode:
+    try:
+        load_persistent_config()
+        with app.app_context():
+            normalize_student_records()
+            normalize_teacher_class_keys()
+    except Exception as exc:
+        print(f'Warning: Could not load persistent config: {exc}')
 
 app.config['CATEGORY_LABELS']     = CATEGORY_LABELS
 app.config['ASSESSMENTS_PER_PAGE'] = ASSESSMENTS_PER_PAGE
@@ -906,6 +931,10 @@ app.register_blueprint(support_bp)
 # blueprint only affects its POST routes — the two existing GET routes in
 # it were never subject to CSRF checks either way.
 csrf.exempt(api_bp)
+
+from offline_routes import offline_bp
+app.register_blueprint(offline_bp)
+csrf.exempt(offline_bp)   # JSON-only + login required; avoids stale-CSRF failures on queued sync
 
 
 # ---------------------------------------------------------------------------
@@ -1605,6 +1634,24 @@ class StudentLoginForm(FlaskForm):
         validators=[InputRequired(), Length(min=1, max=50)],
         render_kw={'placeholder': 'Enter your Student Number or Reference Number'},
     )
+    password = PasswordField(
+        'Password',
+        validators=[InputRequired(), Length(min=1, max=128)],
+        render_kw={'autocomplete': 'current-password'},
+    )
+
+
+class StudentChangePasswordForm(FlaskForm):
+    password = PasswordField(
+        'New Password',
+        validators=[InputRequired(), Length(min=12, max=128)],
+        render_kw={'autocomplete': 'new-password'},
+    )
+    confirm_password = PasswordField(
+        'Confirm New Password',
+        validators=[InputRequired(), EqualTo('password', message='Passwords must match.')],
+        render_kw={'autocomplete': 'new-password'},
+    )
 
 
 class LoginForm(FlaskForm):
@@ -1812,9 +1859,43 @@ class QuizForm(FlaskForm):
 @login_manager.user_loader
 def load_user(user_id):
     try:
-        return db.session.get(User, int(user_id))
+        user = db.session.get(User, int(user_id))
+        if user and user.is_student():
+            if not user.credentials_enabled:
+                return None
+            if int(session.get('student_auth_version', -1)) != user.auth_version:
+                return None
+        return user
     except Exception:
         return None
+
+
+@login_manager.unauthorized_handler
+def handle_unauthorized():
+    if session.get('student_auth_version') is not None:
+        return redirect(url_for('student_login'))
+    login_view = login_manager.blueprint_login_views.get(
+        request.blueprint, login_manager.login_view
+    )
+    if not login_view:
+        abort(401)
+    if login_manager.login_message:
+        flash(
+            login_manager.login_message,
+            category=login_manager.login_message_category,
+        )
+    return redirect(url_for(login_view, next=request.url))
+
+
+@app.before_request
+def enforce_student_password_change():
+    if not current_user.is_authenticated or not current_user.is_student():
+        return
+    if not current_user.must_change_password:
+        return
+    allowed = {'student_change_password', 'student_logout', 'static'}
+    if request.endpoint not in allowed:
+        return redirect(url_for('student_change_password'))
 
 
 def admin_required(f):
@@ -1886,6 +1967,30 @@ def parent_required(f):
             abort(403)
         return f(*args, **kwargs)
     return wrapped
+
+
+def consume_student_temporary_password(user):
+    updated = User.query.filter(
+        User.id == user.id,
+        User.must_change_password.is_(True),
+        User.temporary_password_used.is_(False),
+    ).update(
+        {User.temporary_password_used: True},
+        synchronize_session=False,
+    )
+    if updated != 1:
+        db.session.rollback()
+        return False
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        app.logger.exception(
+            'Temporary student password consumption failed for user_id=%s',
+            user.id,
+        )
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -2040,13 +2145,18 @@ def login():
         password = form.password.data
 
         user = User.query.filter_by(username=username).first()
-        if user is None:
-            user = User.query.filter_by(username='admin').first()
+        if user and user.is_student():
+            flash('Please use the student portal to sign in.', 'info')
+            return redirect(url_for('student_login'))
 
         if user and user.check_password(password, bcrypt):
             session.clear()
             login_user(user)
+            if user.is_student():
+                session['student_auth_version'] = user.auth_version
             log_activity(user, 'login', f'User {user.username} logged in')
+            if user.is_student() and user.must_change_password:
+                return redirect(url_for('student_change_password'))
             flash('Logged in successfully', 'success')
             return redirect(request.args.get('next') or url_for('dashboard'))
 
@@ -2092,15 +2202,35 @@ def student_login():
 
         try:
             user = User.query.filter_by(username=snum).first()
-            if not user:
-                pw_hash = bcrypt.generate_password_hash(snum).decode('utf-8')
-                user = User(username=snum, password_hash=pw_hash, role='student')
-                db.session.add(user)
-                db.session.commit()
-            elif user.role != 'student':
+            if not user or not user.credentials_enabled:
+                flash('Student access is not activated. Request a one-time password from the administrator.', 'danger')
+                return render_template('student_login.html', form=form)
+            if user.role != 'student':
                 flash('This identifier belongs to a non-student account.', 'danger')
                 return render_template('student_login.html', form=form)
+            if not user.check_password(form.password.data, bcrypt):
+                flash('Invalid student credentials.', 'danger')
+                return render_template('student_login.html', form=form)
+            if user.must_change_password:
+                if user.temporary_password_used:
+                    flash(
+                        'This temporary password has already been used. '
+                        'Request a new one from the administrator.',
+                        'danger',
+                    )
+                    return render_template('student_login.html', form=form)
+                if not consume_student_temporary_password(user):
+                    flash(
+                        'This temporary password could not be accepted. '
+                        'Request a new one from the administrator.',
+                        'danger',
+                    )
+                    return render_template('student_login.html', form=form)
+            session.clear()
             login_user(user)
+            session['student_auth_version'] = user.auth_version
+            if user.must_change_password:
+                return redirect(url_for('student_change_password'))
             log_activity(user, 'student_login',
                          f'Student {student.full_name()} ({snum}) logged in')
             flash(f'Welcome, {student.first_name}.', 'success')
@@ -2111,6 +2241,37 @@ def student_login():
             flash('A system error occurred. Please try again.', 'danger')
 
     return render_template('student_login.html', form=form)
+
+
+@app.route('/student/change-password', methods=['GET', 'POST'])
+@login_required
+@student_required
+def student_change_password():
+    if not current_user.must_change_password:
+        return redirect(url_for('student_dashboard'))
+    form = StudentChangePasswordForm()
+    if form.validate_on_submit():
+        current_user.password_hash = bcrypt.generate_password_hash(
+            form.password.data).decode('utf-8')
+        current_user.must_change_password = False
+        current_user.temporary_password_used = False
+        current_user.auth_version += 1
+        try:
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            app.logger.exception('Student password change failed for user_id=%s', current_user.id)
+            flash('Password change could not be saved. Please try again.', 'danger')
+        else:
+            session['student_auth_version'] = current_user.auth_version
+            log_activity(current_user, 'student_password_changed',
+                         'Student changed temporary password')
+            flash('Your password has been updated.', 'success')
+            return redirect(url_for('student_dashboard'))
+    response = app.make_response(render_template(
+        'student_change_password.html', form=form))
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 @app.route('/student/logout')
@@ -2761,6 +2922,13 @@ def student_delete(student_id):
 def student_view(student_id):
     student = Student.query.get_or_404(student_id)
     subject = request.args.get('subject')
+
+    if current_user.is_student():
+        own_student = Student.query.filter(
+            db.func.trim(Student.student_number) == current_user.username
+        ).first()
+        if not own_student or own_student.id != student.id:
+            abort(403)
 
     if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
         if not teacher_can_view_student(current_user, student):
@@ -3764,8 +3932,16 @@ def reset_password(user_id):
     user = User.query.get_or_404(user_id)
     form = PasswordResetForm()
     if form.validate_on_submit():
+        if user.is_student() and len(form.password.data) < 12:
+            flash('Student passwords must be at least 12 characters.', 'danger')
+            return render_template('reset_password.html', form=form, user=user)
         new_hash = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
         user.password_hash = new_hash
+        if user.is_student():
+            user.credentials_enabled = True
+            user.must_change_password = True
+            user.temporary_password_used = False
+            user.auth_version += 1
         try:
             db.session.commit()
         except Exception as exc:
@@ -3789,6 +3965,59 @@ def reset_password(user_id):
         flash(f'Password reset for {user.username}', 'success')
         return redirect(url_for('users'))
     return render_template('reset_password.html', form=form, user=user)
+
+
+@app.route('/students/<int:student_id>/issue_login_password', methods=['POST'])
+@login_required
+@admin_required
+def issue_student_login_password(student_id):
+    student = Student.query.get_or_404(student_id)
+    username = (student.student_number or '').strip()
+    if not username:
+        flash('This student has no student number; a login account cannot be issued.', 'danger')
+        return redirect(url_for('student_view', student_id=student.id))
+
+    user = User.query.filter_by(username=username).first()
+    if user and not user.is_student():
+        abort(409)
+
+    temporary_password = secrets.token_urlsafe(18)
+    password_hash = bcrypt.generate_password_hash(temporary_password).decode('utf-8')
+    if user is None:
+        user = User(
+            username=username,
+            password_hash=password_hash,
+            role='student',
+            credentials_enabled=True,
+            must_change_password=True,
+            auth_version=1,
+        )
+        db.session.add(user)
+    else:
+        user.password_hash = password_hash
+        user.credentials_enabled = True
+        user.must_change_password = True
+        user.temporary_password_used = False
+        user.auth_version += 1
+
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        app.logger.exception('Temporary student credential issuance failed for student_id=%s', student.id)
+        flash('A temporary password could not be issued. Please try again.', 'danger')
+        return redirect(url_for('student_view', student_id=student.id))
+
+    log_activity(current_user, 'issue_student_temporary_password',
+                 f'Issued a one-time password for student_id={student.id}')
+    response = app.make_response(render_template(
+        'student_temp_password.html',
+        student=student,
+        temporary_password=temporary_password,
+    ))
+    response.headers['Cache-Control'] = 'no-store'
+    response.headers['Pragma'] = 'no-cache'
+    return response
 
 
 @app.route('/users/<int:user_id>/delete', methods=['POST'])
@@ -6648,51 +6877,19 @@ def admin_send_message():
             flash('Subject and content are required', 'danger')
             return render_template('admin_send_message.html')
 
-        # Student User accounts are created lazily — only the first time
-        # a student actually logs in (see student_login()). A Student
-        # with an academic record who has never logged in has no User
-        # row at all, and Message.recipient_id is a foreign key to
-        # User.id — so a broadcast could only ever reach whichever
-        # students happened to have already logged in at least once,
-        # silently dropping everyone else with no error or warning. Any
-        # broadcast that includes students needs to close that gap first,
-        # provisioning an account for every student who doesn't have one
-        # yet, the same way student_login() does (username=student_number,
-        # password defaulted to the student number) — so a message
-        # actually reaches every current student, not just past logins.
-        # ... (same reasoning as before: "anything other than 'teachers'
-        # explicitly" includes students, matching the routing below exactly)
-        if recipient_type != 'teachers':
-            existing_usernames = {
-                u.username for u in User.query.filter_by(role='student').all()
-            }
-            missing = (Student.query
-                       .filter(Student.student_number.isnot(None))
-                       .filter(~Student.student_number.in_(existing_usernames))
-                       .all())
-            created_count = 0
-            for student in missing:
-                snum = (student.student_number or '').strip()
-                if not snum or snum in existing_usernames:
-                    continue
-                pw_hash = bcrypt.generate_password_hash(snum).decode('utf-8')
-                db.session.add(User(username=snum, password_hash=pw_hash, role='student'))
-                existing_usernames.add(snum)
-                created_count += 1
-            if created_count:
-                db.session.commit()
-                app.logger.info(
-                    f'admin_send_message: provisioned {created_count} missing '
-                    f'student account(s) before broadcast so delivery is not '
-                    f'limited to students who had already logged in.'
-                )
-
         if recipient_type == 'teachers':
             recipients = User.query.filter_by(role='teacher').all()
         elif recipient_type == 'students':
-            recipients = User.query.filter_by(role='student').all()
+            recipients = User.query.filter_by(
+                role='student', credentials_enabled=True
+            ).all()
         else:
-            recipients = User.query.filter(User.role.in_(['teacher', 'student'])).all()
+            recipients = User.query.filter(
+                db.or_(
+                    User.role == 'teacher',
+                    db.and_(User.role == 'student', User.credentials_enabled.is_(True)),
+                )
+            ).all()
 
         try:
             for recipient in recipients:
@@ -6706,10 +6903,7 @@ def admin_send_message():
                 )
                 db.session.add(message)
             db.session.commit()
-            flash(f'Message sent to {len(recipients)} recipient(s)'
-                  + (f' ({created_count} new student account(s) created to receive it)'
-                     if recipient_type != 'teachers' and created_count else ''),
-                  'success')
+            flash(f'Message sent to {len(recipients)} recipient(s)', 'success')
             return redirect(url_for('admin_messages'))
         except Exception as e:
             db.session.rollback()

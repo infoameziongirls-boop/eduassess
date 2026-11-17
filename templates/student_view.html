@@ -56,6 +56,16 @@
                 </div>
             </div>
             <div style="display:flex;gap:8px;flex-shrink:0;">
+                {% if current_user.is_admin() %}
+                <form method="POST" action="{{ url_for('issue_student_login_password', student_id=student.id) }}"
+                      onsubmit="return confirm('Issue a new temporary password? Any existing student password will stop working.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm"
+                            style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.2);">
+                        <i class="bi bi-key"></i> Issue Login Password
+                    </button>
+                </form>
+                {% endif %}
                 {% if current_user.is_admin() or current_user.is_teacher() %}
                 <a href="{{ url_for('student_edit', student_id=student.id) }}" class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.2);">
                     <i class="bi bi-pencil"></i> Edit

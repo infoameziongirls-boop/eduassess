@@ -17,24 +17,39 @@ depends_on = None
 
 
 def upgrade():
-    op.create_table(
+    bind = op.get_bind()
+    if not sa.inspect(bind).has_table('api_keys'):
+        op.create_table(
+            'api_keys',
+            sa.Column('id', sa.Integer(), nullable=False),
+            sa.Column('name', sa.String(length=120), nullable=False),
+            sa.Column('key_hash', sa.String(length=64), nullable=False),
+            sa.Column('key_prefix', sa.String(length=12), nullable=False),
+            sa.Column('user_id', sa.Integer(), nullable=True),
+            sa.Column('is_active', sa.Boolean(), nullable=False),
+            sa.Column('created_at', sa.DateTime(), nullable=True),
+            sa.Column('last_used_at', sa.DateTime(), nullable=True),
+            sa.ForeignKeyConstraint(['user_id'], ['users.id']),
+            sa.PrimaryKeyConstraint('id'),
+        )
+    op.create_index(
+        'ix_api_keys_key_hash',
         'api_keys',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('name', sa.String(length=120), nullable=False),
-        sa.Column('key_hash', sa.String(length=64), nullable=False),
-        sa.Column('key_prefix', sa.String(length=12), nullable=False),
-        sa.Column('user_id', sa.Integer(), nullable=True),
-        sa.Column('is_active', sa.Boolean(), nullable=False),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('last_used_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
-        sa.PrimaryKeyConstraint('id'),
+        ['key_hash'],
+        unique=True,
+        if_not_exists=True,
     )
-    op.create_index('ix_api_keys_key_hash', 'api_keys', ['key_hash'], unique=True)
-    op.create_index('ix_api_keys_is_active', 'api_keys', ['is_active'])
+    op.create_index(
+        'ix_api_keys_is_active',
+        'api_keys',
+        ['is_active'],
+        if_not_exists=True,
+    )
 
 
 def downgrade():
-    op.drop_index('ix_api_keys_is_active', table_name='api_keys')
-    op.drop_index('ix_api_keys_key_hash', table_name='api_keys')
-    op.drop_table('api_keys')
+    bind = op.get_bind()
+    if sa.inspect(bind).has_table('api_keys'):
+        op.drop_index('ix_api_keys_is_active', table_name='api_keys', if_exists=True)
+        op.drop_index('ix_api_keys_key_hash', table_name='api_keys', if_exists=True)
+        op.drop_table('api_keys')

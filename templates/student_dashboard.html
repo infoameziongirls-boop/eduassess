@@ -367,6 +367,59 @@
     </div>
   </div>
 
+  <div class="row mb-4" id="offlineManager" aria-live="polite">
+    <div class="col-12">
+      <section class="section-card card">
+        <div class="section-hdr">
+          <div class="d-flex align-items-center gap-2">
+            <div class="sec-icon" style="background:rgba(15,138,118,.12);color:#0f8a76;">
+              <i class="bi bi-wifi-off" aria-hidden="true"></i>
+            </div>
+            <div>
+              <h5 class="mb-0">Offline learning and sync</h5>
+              <p class="mb-0" style="font-size:.82rem;color:#6b7280;">Downloads and pending work are stored on this device.</p>
+            </div>
+          </div>
+          <span id="offlineConnectionStatus" class="badge rounded-pill bg-secondary">Checking connection</span>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-sm-6 col-lg-3">
+              <div class="small text-muted">Quizzes available offline</div>
+              <div id="offlineQuizCount" class="fw-bold">Checking saved quizzes…</div>
+              <a href="{{ url_for('student_quizzes') }}" class="small">Browse and save quizzes</a>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+              <div class="small text-muted">Pending submissions</div>
+              <div id="offlinePendingCount" class="fw-bold">Checking…</div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+              <div class="small text-muted">Last successful sync on this device</div>
+              <div id="offlineLastSync" class="fw-bold">No sync recorded</div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+              <div class="small text-muted">Answer saving</div>
+              <div id="offlineSavingStatus" class="fw-bold">Automatic for supported forms</div>
+            </div>
+          </div>
+          <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+            <button id="offlineSyncNow" type="button" class="btn btn-sm btn-primary">
+              <i class="bi bi-arrow-repeat me-1" aria-hidden="true"></i>Sync now
+            </button>
+            <button id="offlineClearQueue" type="button" class="btn btn-sm btn-outline-danger" disabled>
+              Clear pending submissions
+            </button>
+            <span id="offlineSyncProgress" class="small text-muted" role="status">Ready</span>
+          </div>
+          <div class="alert alert-light border mt-3 mb-0 py-2 small" role="note">
+            Formal offline examinations are not configured yet. Only examinations explicitly authorized by the school should be downloaded.
+            Offline quizzes run on this device and cannot prevent local clock changes or answer inspection.
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
   <div class="row mb-4 g-4">
     <div class="col-xl-8">
       <div class="section-card card h-100">

@@ -39,6 +39,10 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(200), nullable=False)
     role = db.Column(db.String(20), default="teacher")
+    must_change_password = db.Column(db.Boolean, nullable=False, default=False)
+    credentials_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    temporary_password_used = db.Column(db.Boolean, nullable=False, default=False)
+    auth_version = db.Column(db.Integer, nullable=False, default=1)
     subject = db.Column(db.String(100), nullable=True)
     class_name = db.Column(db.String(50), nullable=True)
     classes = db.Column(db.Text, nullable=True)
@@ -657,6 +661,17 @@ class ActivityLog(db.Model):
         return f"<ActivityLog {username} - {self.action} at {self.timestamp}>"
 
 
+class OfflineSubmission(db.Model):
+    __tablename__ = "offline_submissions"
+
+    submission_id = db.Column(db.String(80), primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    kind = db.Column(db.String(20), nullable=False, index=True)
+    payload_hash = db.Column(db.String(64), nullable=False)
+    result_id = db.Column(db.Integer, nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+
 class Question(db.Model):
     __tablename__ = "questions"
 
@@ -1091,9 +1106,12 @@ def ensure_student_columns():
         print(f"[ensure_student_columns] WARNING: could not sync columns: {exc}")
 
 
-def init_db(app, bcrypt):
+def init_db(app, bcrypt, run_bootstrap=True):
     if not app.extensions.get('sqlalchemy'):
         db.init_app(app)
+
+    if not run_bootstrap:
+        return
 
     with app.app_context():
         print(

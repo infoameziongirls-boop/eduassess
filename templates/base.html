@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="theme-color" content="#0b1623">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='pwa-192.png') }}">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>{% block title %}EduAssess Pro{% endblock %} — EduAssess Pro</title>
     <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap-icons.css') }}">
@@ -1254,6 +1259,10 @@
     </nav>
 
     <div class="topbar-actions">
+        <button id="pwaInstallButton" class="tb-btn" type="button" title="Install EduAssess" hidden>
+            <i class="bi bi-download" aria-hidden="true"></i>
+            <span class="d-none d-md-inline">Install app</span>
+        </button>
         {% if current_user.is_admin() or current_user.is_teacher() %}
         <a href="{{ url_for('new_assessment') }}" class="tb-btn" title="Quick Add Assessment" style="background:var(--brand);border-color:var(--brand);color:var(--ink);font-weight:700;font-size:.75rem;padding:0 12px;width:auto;border-radius:9px;">
             <i class="bi bi-plus"></i> <span class="d-none d-sm-inline">Add Assessment</span>
@@ -1470,6 +1479,10 @@ document.querySelectorAll('form[method="get"] input[name="search"]').forEach(fun
     });
 });
 </script>
+<script src="{{ url_for('static', filename='js/pwa.js') }}" defer></script>
+{% if current_user.is_authenticated and not current_user.must_change_password %}
+<script src="{{ url_for('static', filename='js/offline.js') }}" data-user="{{ current_user.id }}" defer></script>
+{% endif %}
 {% block extra_js %}{% endblock %}
 </body>
 </html>

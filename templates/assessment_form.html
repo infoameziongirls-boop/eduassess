@@ -26,7 +26,7 @@
                 <span class="card-title"><i class="bi bi-pencil-square me-2" style="color:var(--brand);"></i>Assessment Details</span>
             </div>
             <div class="card-body">
-                <form method="POST">
+                <form method="POST" {% if not assessment %}data-offline="assessment"{% endif %}>
                     {{ form.hidden_tag() }}
 
                     <!-- Student + Category -->

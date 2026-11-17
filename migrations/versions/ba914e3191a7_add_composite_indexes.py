@@ -17,24 +17,34 @@ depends_on = None
 
 
 def upgrade():
-    op.create_index(
-        "ix_assessment_student_subject_archived",
-        "assessments",
-        ["student_id", "subject", "archived"],
+    existing = {
+        index["name"]
+        for table in ("assessments", "students")
+        for index in sa.inspect(op.get_bind()).get_indexes(table)
+    }
+    indexes = (
+        (
+            "ix_assessment_student_subject_archived",
+            "assessments",
+            ["student_id", "subject", "archived"],
+        ),
+        ("ix_assessment_teacher_archived", "assessments", ["teacher_id", "archived"]),
+        ("ix_student_class_area", "students", ["class_name", "study_area"]),
     )
-    op.create_index(
-        "ix_assessment_teacher_archived",
-        "assessments",
-        ["teacher_id", "archived"],
-    )
-    op.create_index(
-        "ix_student_class_area",
-        "students",
-        ["class_name", "study_area"],
-    )
+    for name, table, columns in indexes:
+        if name not in existing:
+            op.create_index(name, table, columns)
 
 
 def downgrade():
-    op.drop_index("ix_assessment_student_subject_archived", table_name="assessments")
-    op.drop_index("ix_assessment_teacher_archived",         table_name="assessments")
-    op.drop_index("ix_student_class_area",                  table_name="students")
+    op.drop_index(
+        "ix_assessment_student_subject_archived",
+        table_name="assessments",
+        if_exists=True,
+    )
+    op.drop_index(
+        "ix_assessment_teacher_archived",
+        table_name="assessments",
+        if_exists=True,
+    )
+    op.drop_index("ix_student_class_area", table_name="students", if_exists=True)

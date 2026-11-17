@@ -108,7 +108,7 @@ def test_student_login_get_shows_form(client):
     assert b'Enter your Student Number or Reference Number' in response.data
 
 
-def test_student_login_with_trimmed_credentials_redirects_to_dashboard(client):
+def test_student_login_does_not_create_an_account_from_identifier_alone(client):
     create_student(
         first_name='John',
         last_name='Doe',
@@ -119,17 +119,14 @@ def test_student_login_with_trimmed_credentials_redirects_to_dashboard(client):
     response = client.post(
         '/student/login',
         data={
-            'identifier': 'STU123'
+            'identifier': 'STU123',
+            'password': 'identifier-only-attempt',
         },
         follow_redirects=False
     )
 
-    assert response.status_code == 302
-    assert response.headers['Location'].endswith('/student/dashboard')
-
-    user = User.query.filter_by(username='STU123').first()
-    assert user is not None
-    assert user.role == 'student'
+    assert response.status_code == 200
+    assert User.query.filter_by(username='STU123').first() is None
 
 
 def test_student_login_unknown_identifier_shows_error(client):
@@ -143,7 +140,8 @@ def test_student_login_unknown_identifier_shows_error(client):
     response = client.post(
         '/student/login',
         data={
-            'identifier': 'UNKNOWN123'
+            'identifier': 'UNKNOWN123',
+            'password': 'not-a-valid-password',
         },
         follow_redirects=True
     )

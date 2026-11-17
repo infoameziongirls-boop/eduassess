@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -43,6 +44,7 @@ def test_student_login_page_uses_local_static_asset_links(client):
     assert '/static/css/bootstrap.min.css' in html
     assert '/static/js/bootstrap.bundle.min.js' in html
     assert '/static/css/bootstrap-icons.css' in html
+    assert '/static/manifest.webmanifest' in html
     assert 'https://fonts.googleapis.com' not in html
     assert 'https://cdn.jsdelivr.net' not in html
     assert 'https://cdnjs.cloudflare.com' not in html
@@ -52,8 +54,24 @@ def test_student_login_page_uses_local_static_asset_links(client):
     '/static/css/bootstrap.min.css',
     '/static/js/bootstrap.bundle.min.js',
     '/static/css/bootstrap-icons.css',
+    '/static/js/pwa.js',
+    '/static/pwa-192.png',
+    '/static/pwa-512.png',
 ])
 def test_local_static_assets_are_served(client, asset_path):
     response = client.get(asset_path)
     assert response.status_code == 200
     assert len(response.data) > 0
+
+
+def test_pwa_manifest_declares_installable_app_icons(client):
+    response = client.get('/static/manifest.webmanifest')
+
+    assert response.status_code == 200
+    manifest = json.loads(response.data)
+    assert manifest['start_url'] == '/'
+    assert manifest['scope'] == '/'
+    assert manifest['display'] == 'standalone'
+    assert {'192x192', '512x512'} <= {
+        icon['sizes'] for icon in manifest['icons'] if icon['type'] == 'image/png'
+    }

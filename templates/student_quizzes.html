@@ -48,7 +48,7 @@
                         </div>
                         
                         {% set attempt = attempts.get(quiz.id) %}
-                        {% if attempt %}
+                        {% if attempt and attempt.status == 'completed' %}
                         <div class="alert alert-info">
                             <h6>You have already taken this quiz</h6>
                             <p class="mb-1"><strong>Score:</strong> {{ attempt.correct_answers }}/{{ attempt.total_questions }}</p>
@@ -59,6 +59,14 @@
                                     <i class="bi bi-eye"></i> Review Results
                                 </a>
                             </div>
+                        </div>
+                        {% elif attempt and attempt.status == 'in_progress' %}
+                        <div class="alert alert-warning">
+                            <h6>Quiz in progress</h6>
+                            <p class="mb-2">Your saved answers are ready to resume.</p>
+                            <a href="{{ url_for('take_quiz', quiz_id=quiz.id) }}" class="btn btn-sm btn-primary">
+                                <i class="bi bi-play-circle"></i> Resume Quiz
+                            </a>
                         </div>
                         {% else %}
                         <a href="{{ url_for('take_quiz', quiz_id=quiz.id) }}" class="btn btn-primary">

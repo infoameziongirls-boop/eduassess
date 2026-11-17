@@ -74,8 +74,9 @@
     </div>
 </div>
 
-{% include 'dashboard_archive_panel.html' %}
+{% include 'dashboard_roster.html' %}
 
+{% if false %}
 <!-- ===== STUDENTS BY FORM (Collapsible Trays) ===== -->
 <div class="section-gap animate-in delay-2">
     <div class="card">
@@ -136,6 +137,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <!-- ===== TWO COLUMN: Learning Areas + Quick Actions ===== -->
 <div class="row g-3 section-gap animate-in delay-3">
@@ -268,6 +270,8 @@
         </div>
     </div>
 </div>
+
+{% include 'dashboard_archive_panel.html' %}
 
 {% if teacher_student_summaries %}
 <div class="section-gap animate-in delay-4">

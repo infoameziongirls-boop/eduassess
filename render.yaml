@@ -3,7 +3,12 @@ services:
     name: eduassess
     env: python
     buildCommand: pip install -r requirements.txt
+    preDeployCommand: EDUASSESS_MIGRATION_MODE=1 python -m flask --app app db upgrade
     startCommand: python startup.py && gunicorn app:app --config gunicorn.conf.py
+    disk:
+      name: eduassess-data
+      mountPath: /opt/render/project/src/instance
+      sizeGB: 1
     envVars:
       - key: FLASK_ENV
         value: production
@@ -14,7 +19,7 @@ services:
           name: eduassess-db
           property: connectionString
       - key: PERSISTENT_DIR
-        value: /var/data
+        value: /opt/render/project/src/instance
 
 databases:
   - name: eduassess-db
