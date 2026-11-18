@@ -3422,15 +3422,18 @@ def new_assessment():
     if current_user.is_teacher() and current_user.subject:
         form.subject.data = current_user.subject
 
-    snum_param  = request.args.get('student')
+    snum_param = request.args.get('student')
+    student_id_param = request.args.get('student_id', type=int)
     student_obj = None
-    if snum_param:
+    if student_id_param is not None:
+        student_obj = db.session.get(Student, student_id_param)
+    elif snum_param:
         student_obj = Student.query.filter_by(student_number=snum_param).first()
-        if student_obj and current_user.is_teacher():
-            if not current_user.can_access_student(student_obj, app.config):
-                abort(403)
-        if student_obj:
-            form.student_name.data = student_obj.student_number
+    if student_obj and current_user.is_teacher():
+        if not current_user.can_access_student(student_obj, app.config):
+            abort(403)
+    if student_obj:
+        form.student_name.data = student_obj.student_number
 
     if settings:
         form.term.data          = settings.current_term

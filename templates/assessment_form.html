@@ -37,7 +37,7 @@
                                 <div style="padding:10px 14px;background:var(--surface);border:1.5px solid var(--border);border-radius:9px;font-weight:600;color:var(--ink);">{{ student_full_name }}</div>
                                 <input type="hidden" name="student_name" value="{{ form.student_name.data }}">
                             {% else %}
-                                <select name="student_name" class="form-select" id="student_name">
+                                <select name="student_name" class="form-select" id="student_name" required>
                                     <option value="">— Select Student —</option>
                                     {% for class_name, students_in_class in grouped_students.items() %}
                                     <optgroup label="Form: {{ class_name }}">
