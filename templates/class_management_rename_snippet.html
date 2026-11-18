@@ -1,0 +1,100 @@
+<!--
+  Drop this into class_management.html (wherever the study-area /
+  subject lists are rendered — e.g. next to each row in the
+  study_areas / learning_areas loops). It calls the new 'rename'
+  action added to /admin/api/study-areas and /admin/api/subjects.
+
+  Requires: a CSRF-safe fetch (these endpoints are @csrf.exempt like
+  their add/delete siblings, so a plain POST works) and Bootstrap-ish
+  markup — adjust classes to match your existing template's framework.
+-->
+
+<!-- Example: put this button next to each study area in your existing loop -->
+<!-- {% for key, label in study_areas %} -->
+<button type="button" class="btn btn-sm btn-outline-secondary"
+        onclick="openRenameModal('study-area', '{{ key }}', '{{ label }}')">
+  Rename
+</button>
+<!-- {% endfor %} -->
+
+<!-- Same for subjects: -->
+<!-- {% for key, label in learning_areas %} -->
+<button type="button" class="btn btn-sm btn-outline-secondary"
+        onclick="openRenameModal('subject', '{{ key }}', '{{ label }}')">
+  Rename
+</button>
+<!-- {% endfor %} -->
+
+<!-- Minimal modal (one shared modal for both kinds) -->
+<div class="modal fade" id="renameModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Rename <span id="renameKindLabel"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>Current: <code id="renameOldKey"></code></p>
+        <div class="mb-3">
+          <label class="form-label">New key (lowercase, underscores)</label>
+          <input type="text" class="form-control" id="renameNewKey">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">New display name</label>
+          <input type="text" class="form-control" id="renameNewName">
+        </div>
+        <div class="alert alert-warning small">
+          This updates every student / teacher / assessment record that
+          currently uses the old key. It cannot be undone automatically —
+          double-check before confirming.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="submitRename()">Rename</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let renameKind = null;   // 'study-area' or 'subject'
+let renameOld = null;
+
+function openRenameModal(kind, oldKey, oldLabel) {
+  renameKind = kind;
+  renameOld = oldKey;
+  document.getElementById('renameKindLabel').textContent = kind === 'study-area' ? 'Study Area' : 'Subject';
+  document.getElementById('renameOldKey').textContent = `${oldKey}  (${oldLabel})`;
+  document.getElementById('renameNewKey').value = '';
+  document.getElementById('renameNewName').value = oldLabel;
+  new bootstrap.Modal(document.getElementById('renameModal')).show();
+}
+
+function submitRename() {
+  const newKey  = document.getElementById('renameNewKey').value.trim();
+  const newName = document.getElementById('renameNewName').value.trim();
+  if (!newKey) { alert('New key is required'); return; }
+
+  const endpoint = renameKind === 'study-area'
+    ? '/admin/api/study-areas'
+    : '/admin/api/subjects';
+
+  fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'rename',
+      old_key: renameOld,
+      new_key: newKey,
+      new_name: newName,
+    }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      alert(data.message);
+      if (data.success) location.reload();
+    })
+    .catch(err => alert('Request failed: ' + err));
+}
+</script>

@@ -93,15 +93,10 @@ tmp_*
 *.out
 *.txt
 *.log
-*.html
-!templates/transcript.html
-!templates/error_retry.html
-!templates/archive_index.html
-!templates/archive_semesters.html
-!templates/archive_classes.html
-!templates/archive_roster.html
-!templates/archive_transcript.html
-!templates/dashboard_roster.html
+# Stray HTML dumps in the project ROOT only. Never ignore templates/ -
+# the app cannot render pages that are missing from the deployed repo.
+/*.html
+!templates/**/*.html
 
 # OS
 .DS_Store
