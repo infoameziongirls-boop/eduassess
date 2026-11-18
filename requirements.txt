@@ -3,6 +3,7 @@ flask-sqlalchemy>=3.1.0
 flask-login>=0.6.3
 flask-bcrypt>=1.0.1
 flask-wtf>=1.2.1
+WTForms==3.3.2
 flask-session>=0.8.0
 flask-migrate>=4.0.7
 flask-limiter>=3.5.0

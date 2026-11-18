@@ -18,13 +18,16 @@
             {% endif %}
         </p>
     </div>
-    <div class="page-actions">
+    <div class="page-actions dash-actions">
         {% if current_user.is_admin() or current_user.is_teacher() %}
-        <a href="{{ url_for('new_assessment') }}" class="btn btn-primary">
-            <i class="bi bi-plus-lg"></i> New Assessment
-        </a>
         <a href="{{ url_for('students') }}" class="btn btn-outline">
             <i class="bi bi-people"></i> Students
+        </a>
+        <a href="{{ url_for('assessments_list') }}" class="btn btn-outline">
+            <i class="bi bi-clipboard-data"></i> Assessments
+        </a>
+        <a href="{{ url_for('new_assessment') }}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> New Assessment
         </a>
         {% endif %}
     </div>
@@ -32,7 +35,7 @@
 
 <!-- ===== KPI STRIP ===== -->
 <div class="row g-3 section-gap animate-in delay-1">
-    <div class="col-lg-3 col-sm-6">
+    <div class="col-lg-{{ 3 if current_user.is_admin() else 4 }} col-sm-6">
         <div class="kpi-card kpi-teal">
             <div class="kpi-icon"><i class="bi bi-people-fill"></i></div>
             <div class="kpi-body">
@@ -42,7 +45,7 @@
             </div>
         </div>
     </div>
-    <div class="col-lg-3 col-sm-6">
+    <div class="col-lg-{{ 3 if current_user.is_admin() else 4 }} col-sm-6">
         <div class="kpi-card kpi-brand">
             <div class="kpi-icon"><i class="bi bi-clipboard-data-fill"></i></div>
             <div class="kpi-body">
@@ -52,7 +55,7 @@
             </div>
         </div>
     </div>
-    <div class="col-lg-3 col-sm-6">
+    <div class="col-lg-{{ 3 if current_user.is_admin() else 4 }} col-sm-6">
         <div class="kpi-card kpi-rose">
             <div class="kpi-icon"><i class="bi bi-exclamation-triangle-fill"></i></div>
             <div class="kpi-body">
@@ -62,6 +65,7 @@
             </div>
         </div>
     </div>
+    {% if current_user.is_admin() %}
     <div class="col-lg-3 col-sm-6">
         <div class="kpi-card kpi-violet">
             <div class="kpi-icon"><i class="bi bi-person-gear"></i></div>
@@ -72,6 +76,7 @@
             </div>
         </div>
     </div>
+    {% endif %}
 </div>
 
 {% include 'dashboard_roster.html' %}
@@ -182,90 +187,115 @@
         </div>
     </div>
 
-    <!-- Quick Actions + System Info -->
+    <!-- Quick Actions -->
     <div class="col-lg-7">
-        <div class="row g-3 h-100">
-            <!-- Quick Actions -->
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <span class="card-title">Quick Actions</span>
+        <div class="card h-100">
+            <div class="card-header">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <div style="width:32px;height:32px;background:var(--brand-dim);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--brand-text);">
+                        <i class="bi bi-lightning-charge-fill"></i>
                     </div>
-                    <div class="card-body" style="padding:16px;">
-                        <div class="row g-2">
-                            {% if current_user.is_admin() or current_user.is_teacher() %}
-                            <div class="col-6 col-md-4">
-                                <a href="{{ url_for('new_assessment') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border);border-radius:var(--radius);text-decoration:none;transition:all .2s;background:var(--surface-2);" onmouseover="this.style.borderColor='var(--brand)';this.style.background='var(--brand-dim)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
-                                    <div style="width:36px;height:36px;background:var(--brand-dim);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--brand);font-size:16px;">
-                                        <i class="bi bi-plus-circle-fill"></i>
-                                    </div>
-                                    <span style="font-size:.72rem;font-weight:600;color:var(--ink-2);text-align:center;">Add Assessment</span>
-                                </a>
-                            </div>
-                            <div class="col-6 col-md-4">
-                                <a href="{{ url_for('student_new') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border);border-radius:var(--radius);text-decoration:none;transition:all .2s;background:var(--surface-2);" onmouseover="this.style.borderColor='var(--teal)';this.style.background='var(--teal-dim)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
-                                    <div style="width:36px;height:36px;background:var(--teal-dim);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:16px;">
-                                        <i class="bi bi-person-plus-fill"></i>
-                                    </div>
-                                    <span style="font-size:.72rem;font-weight:600;color:var(--ink-2);text-align:center;">New Student</span>
-                                </a>
-                            </div>
-                            <div class="col-6 col-md-4">
-                                <a href="{{ url_for('assessments_list') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border);border-radius:var(--radius);text-decoration:none;transition:all .2s;background:var(--surface-2);" onmouseover="this.style.borderColor='var(--amber)';this.style.background='var(--amber-dim)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
-                                    <div style="width:36px;height:36px;background:var(--amber-dim);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--amber);font-size:16px;">
-                                        <i class="bi bi-list-check"></i>
-                                    </div>
-                                    <span style="font-size:.72rem;font-weight:600;color:var(--ink-2);text-align:center;">All Assessments</span>
-                                </a>
-                            </div>
-                            {% if current_user.is_admin() %}
-                            <div class="col-6 col-md-4">
-                                {% set released = settings and settings.is_results_visible() %}
-                                <a href="{{ url_for('results_release') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid {{ 'var(--green)' if released else 'var(--rose)' }};border-radius:var(--radius);text-decoration:none;transition:all .2s;background:{{ 'var(--green-dim)' if released else 'var(--rose-dim)' }};position:relative;">
-                                    <span class="badge {{ 'badge-green' if released else 'badge-rose' }}" style="position:absolute;top:6px;right:6px;font-size:.58rem;">{{ 'LIVE' if released else 'HIDDEN' }}</span>
-                                    <div style="width:36px;height:36px;background:{{ 'var(--green)' if released else 'var(--rose)' }};border-radius:9px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;">
-                                        <i class="bi {{ 'bi-unlock-fill' if released else 'bi-lock-fill' }}"></i>
-                                    </div>
-                                    <span style="font-size:.72rem;font-weight:600;color:var(--ink-2);text-align:center;">Release Results</span>
-                                </a>
-                            </div>
-                            <div class="col-6 col-md-4">
-                                <a href="{{ url_for('analytics_dashboard') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border);border-radius:var(--radius);text-decoration:none;transition:all .2s;background:var(--surface-2);" onmouseover="this.style.borderColor='var(--violet)';this.style.background='var(--violet-dim)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
-                                    <div style="width:36px;height:36px;background:var(--violet-dim);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--violet);font-size:16px;">
-                                        <i class="bi bi-bar-chart-line-fill"></i>
-                                    </div>
-                                    <span style="font-size:.72rem;font-weight:600;color:var(--ink-2);text-align:center;">Analytics</span>
-                                </a>
-                            </div>
-                            <div class="col-6 col-md-4">
-                                <a href="{{ url_for('admin_teacher_tracking') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border);border-radius:var(--radius);text-decoration:none;transition:all .2s;background:var(--surface-2);" onmouseover="this.style.borderColor='var(--blue)';this.style.background='var(--blue-dim)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
-                                    <div style="width:36px;height:36px;background:var(--blue-dim);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--blue);font-size:16px;">
-                                        📊
-                                    </div>
-                                    <span style="font-size:.72rem;font-weight:600;color:var(--ink-2);text-align:center;">Teacher Tracker</span>
-                                </a>
-                            </div>
-                            <div class="col-6 col-md-4">
-                                <a href="{{ url_for('export_all_students_excel') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border);border-radius:var(--radius);text-decoration:none;transition:all .2s;background:var(--surface-2);" onmouseover="this.style.borderColor='var(--green)';this.style.background='var(--green-dim)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
-                                    <div style="width:36px;height:36px;background:var(--green-dim);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--green);font-size:16px;">
-                                        <i class="bi bi-file-earmark-excel-fill"></i>
-                                    </div>
-                                    <span style="font-size:.72rem;font-weight:600;color:var(--ink-2);text-align:center;">Export Excel</span>
-                                </a>
-                            </div>
-                            <div class="col-6 col-md-4">
-                                <a href="{{ url_for('admin_messages') }}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 10px;border:1px solid var(--border);border-radius:var(--radius);text-decoration:none;transition:all .2s;background:var(--surface-2);" onmouseover="this.style.borderColor='var(--rose)';this.style.background='var(--rose-dim)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
-                                    <div style="width:36px;height:36px;background:var(--rose-dim);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--rose);font-size:16px;">
-                                        <i class="bi bi-megaphone-fill"></i>
-                                    </div>
-                                    <span style="font-size:.72rem;font-weight:600;color:var(--ink-2);text-align:center;">Broadcast</span>
-                                </a>
-                            </div>
-                            {% endif %}
-                            {% endif %}
-                        </div>
+                    <div>
+                        <span class="card-title">Quick Actions</span>
+                        <div style="font-size:.7rem;color:var(--ink-4);">{% if current_user.is_admin() %}Administrator shortcuts{% else %}Your everyday teaching shortcuts{% endif %}</div>
                     </div>
                 </div>
+            </div>
+            <div class="card-body" style="padding:18px;">
+                {% if current_user.is_admin() or current_user.is_teacher() %}
+
+                <!-- Group 1: shared by admin and teachers -->
+                <div class="qa-group">
+                    <div class="qa-group-title">Assessments &amp; Records</div>
+                    <div class="qa-grid">
+                        <a href="{{ url_for('new_assessment') }}" class="qa-tile">
+                            <span class="qa-ico"><i class="bi bi-plus-circle-fill"></i></span>
+                            <span class="qa-label">Add Assessment</span>
+                        </a>
+                        <a href="{{ url_for('import_class_scoresheet') }}" class="qa-tile qa-violet">
+                            <span class="qa-ico"><i class="bi bi-grid-3x3-gap-fill"></i></span>
+                            <span class="qa-label">Class Scoresheet</span>
+                        </a>
+                        <a href="{{ url_for('assessments_list') }}" class="qa-tile qa-amber">
+                            <span class="qa-ico"><i class="bi bi-list-check"></i></span>
+                            <span class="qa-label">All Assessments</span>
+                        </a>
+                        <a href="{{ url_for('student_new') }}" class="qa-tile qa-teal">
+                            <span class="qa-ico"><i class="bi bi-person-plus-fill"></i></span>
+                            <span class="qa-label">New Student</span>
+                        </a>
+                    </div>
+                </div>
+
+                {% if current_user.is_teacher() %}
+                <!-- Group 2: teacher tools -->
+                <div class="qa-group">
+                    <div class="qa-group-title">Teaching Tools</div>
+                    <div class="qa-grid">
+                        <a href="{{ url_for('teacher_question_bank') }}" class="qa-tile qa-ink">
+                            <span class="qa-ico"><i class="bi bi-database-fill"></i></span>
+                            <span class="qa-label">Question Bank</span>
+                        </a>
+                        <a href="{{ url_for('teacher_quiz_results') }}" class="qa-tile qa-green">
+                            <span class="qa-ico"><i class="bi bi-clipboard-check-fill"></i></span>
+                            <span class="qa-label">Quiz Results</span>
+                        </a>
+                        <a href="{{ url_for('export_assessments_excel') }}" class="qa-tile qa-green">
+                            <span class="qa-ico"><i class="bi bi-file-earmark-excel-fill"></i></span>
+                            <span class="qa-label">Export Report</span>
+                        </a>
+                        <a href="{{ url_for('user_messages') }}" class="qa-tile qa-rose">
+                            <span class="qa-ico"><i class="bi bi-envelope-fill"></i></span>
+                            <span class="qa-label">Messages</span>
+                        </a>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if current_user.is_admin() %}
+                <!-- Group 2: administration -->
+                {% set released = settings and settings.is_results_visible() %}
+                <div class="qa-group">
+                    <div class="qa-group-title">Administration</div>
+                    <div class="qa-grid">
+                        <a href="{{ url_for('results_release') }}" class="qa-tile {{ 'is-live' if released else 'is-hidden' }} {{ 'qa-green' if released else 'qa-rose' }}">
+                            <span class="qa-badge {{ 'badge-green' if released else 'badge-rose' }}">{{ 'LIVE' if released else 'HIDDEN' }}</span>
+                            <span class="qa-ico"><i class="bi {{ 'bi-unlock-fill' if released else 'bi-lock-fill' }}"></i></span>
+                            <span class="qa-label">Release Results</span>
+                        </a>
+                        <a href="{{ url_for('analytics_dashboard') }}" class="qa-tile qa-violet">
+                            <span class="qa-ico"><i class="bi bi-bar-chart-line-fill"></i></span>
+                            <span class="qa-label">Analytics</span>
+                        </a>
+                        <a href="{{ url_for('admin_teacher_tracking') }}" class="qa-tile qa-ink">
+                            <span class="qa-ico"><i class="bi bi-graph-up-arrow"></i></span>
+                            <span class="qa-label">Teacher Tracker</span>
+                        </a>
+                        <a href="{{ url_for('users') }}" class="qa-tile qa-teal">
+                            <span class="qa-ico"><i class="bi bi-person-gear"></i></span>
+                            <span class="qa-label">Manage Users</span>
+                        </a>
+                        <a href="{{ url_for('admin_messages') }}" class="qa-tile qa-rose">
+                            <span class="qa-ico"><i class="bi bi-megaphone-fill"></i></span>
+                            <span class="qa-label">Broadcast</span>
+                        </a>
+                        <a href="{{ url_for('export_all_students_excel') }}" class="qa-tile qa-green">
+                            <span class="qa-ico"><i class="bi bi-file-earmark-excel-fill"></i></span>
+                            <span class="qa-label">Export Excel</span>
+                        </a>
+                        <a href="{{ url_for('admin_settings') }}" class="qa-tile qa-amber">
+                            <span class="qa-ico"><i class="bi bi-sliders"></i></span>
+                            <span class="qa-label">System Settings</span>
+                        </a>
+                        <a href="{{ url_for('support.admin_support_dashboard') }}" class="qa-tile qa-ink">
+                            <span class="qa-ico"><i class="bi bi-list-task"></i></span>
+                            <span class="qa-label">Support Queue</span>
+                        </a>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% endif %}
             </div>
         </div>
     </div>

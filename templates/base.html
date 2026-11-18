@@ -773,7 +773,201 @@
         .delay-4 { animation-delay: .2s; }
         .delay-5 { animation-delay: .25s; }
 
+        /* ===== INSTALL APP BUTTON (PWA) ===== */
+        .pwa-install {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            height: 40px;
+            padding: 0 16px 0 5px;
+            border: 1px solid rgba(201,168,76,.55);
+            border-radius: 999px;
+            background: linear-gradient(135deg, var(--ink) 0%, var(--ink-2) 100%);
+            color: #fff;
+            font-family: var(--font-body);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            white-space: nowrap;
+            box-shadow: 0 4px 14px rgba(11,22,35,.22), inset 0 1px 0 rgba(255,255,255,.08);
+            transition: transform .2s var(--ease-smooth), box-shadow .2s var(--ease-smooth), border-color .2s;
+        }
+        .pwa-install[hidden] { display: none !important; }
+        @media (display-mode: standalone) { .pwa-install { display: none !important; } } /* already installed */
+        .pwa-install::after {            /* subtle shine sweep on hover */
+            content: '';
+            position: absolute; top: 0; bottom: 0; left: -60%;
+            width: 40%;
+            background: linear-gradient(100deg, transparent, rgba(255,255,255,.18), transparent);
+            transform: skewX(-20deg);
+            transition: left .6s var(--ease-smooth);
+            pointer-events: none;
+        }
+        .pwa-install:hover {
+            transform: translateY(-1px);
+            border-color: var(--brand-light);
+            box-shadow: 0 8px 22px rgba(11,22,35,.28), 0 0 0 3px var(--brand-glow);
+            color: #fff;
+        }
+        .pwa-install:hover::after { left: 120%; }
+        .pwa-install:active { transform: translateY(0); }
+        .pwa-install:disabled { opacity: .6; cursor: progress; transform: none; }   /* pwa.js disables it while the prompt is open */
+        .pwa-install:focus-visible { outline: 2px solid var(--brand-light); outline-offset: 2px; }
+        .pwa-install .pi-ico {
+            width: 30px; height: 30px;
+            border-radius: 50%;
+            display: grid; place-items: center;
+            background: linear-gradient(135deg, var(--brand-light), var(--brand));
+            color: var(--ink);
+            font-size: 15px;
+            flex-shrink: 0;
+        }
+        .pwa-install .pi-text { display: flex; flex-direction: column; line-height: 1.15; text-align: left; }
+        .pwa-install .pi-text b { font-size: .76rem; font-weight: 700; letter-spacing: .1px; }
+        .pwa-install .pi-text small { font-size: .6rem; font-weight: 500; color: rgba(255,255,255,.6); }
+
+        /* ===== TOPBAR PRIMARY CTA ===== */
+        .tb-cta {
+            display: inline-flex; align-items: center; gap: 6px;
+            height: 40px; padding: 0 16px;
+            border-radius: 10px;
+            background: var(--brand);
+            border: 1px solid var(--brand-dark);
+            color: var(--ink);
+            font-size: .78rem; font-weight: 700;
+            text-decoration: none;
+            box-shadow: 0 2px 8px rgba(201,168,76,.35);
+            transition: all .2s var(--ease-smooth);
+        }
+        .tb-cta:hover { background: var(--brand-light); color: var(--ink); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(201,168,76,.45); }
+        .tb-cta i { font-size: 15px; }
+        .tb-sep { width: 1px; height: 24px; background: var(--border-2); margin: 0 2px; flex-shrink: 0; }
+        .topbar-actions .tb-btn { width: 40px; height: 40px; border-radius: 10px; }
+
+        .topbar-user.dropdown-toggle::after { display: none; }   /* we draw our own chevron */
+        @media (max-width: 576px) {
+            .dash-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+            .dash-actions .btn { justify-content: center; }
+            .dash-actions .btn-primary { grid-column: 1 / -1; order: -1; padding: 11px 18px; }
+        }
+
+        /* ===== ACCOUNT MENU (topbar) ===== */
+        .acct-menu { min-width: 250px; padding: 0; overflow: hidden; }
+        .acct-head {
+            display: flex; align-items: center; gap: 12px;
+            padding: 14px 16px;
+            background: linear-gradient(135deg, var(--ink) 0%, var(--ink-2) 100%);
+            color: #fff;
+        }
+        .acct-head .acct-av {
+            width: 40px; height: 40px; border-radius: 12px;
+            display: grid; place-items: center;
+            background: linear-gradient(135deg, var(--brand-light), var(--brand));
+            color: var(--ink);
+            font-family: var(--font-display); font-weight: 800; font-size: .85rem;
+            flex-shrink: 0;
+        }
+        .acct-head .acct-name { font-weight: 700; font-size: .85rem; line-height: 1.2; word-break: break-word; }
+        .acct-head .acct-role {
+            display: inline-block; margin-top: 3px;
+            font-size: .6rem; font-weight: 700; letter-spacing: .8px; text-transform: uppercase;
+            padding: 2px 8px; border-radius: 99px;
+            background: rgba(201,168,76,.22); color: var(--brand-light);
+        }
+        .acct-menu .acct-items { padding: 6px; }
+        .acct-menu .dropdown-item { display: flex; align-items: center; gap: 10px; border-radius: 8px; padding: 9px 10px; }
+        .acct-menu .dropdown-item i { width: 18px; text-align: center; font-size: 15px; color: var(--ink-3); }
+        .acct-menu .acct-foot { padding: 6px; border-top: 1px solid var(--border); background: var(--surface); }
+        .acct-menu .dropdown-item.signout { color: var(--rose); font-weight: 700; }
+        .acct-menu .dropdown-item.signout i { color: var(--rose); }
+        .acct-menu .dropdown-item.signout:hover { background: var(--rose-dim); color: var(--rose); }
+
+        /* ===== SIDEBAR FOOTER: USER CARD + SIGN OUT ===== */
+        .sidebar-footer { display: flex; flex-direction: column; gap: 8px; }
+        .sidebar-user {
+            background: rgba(255,255,255,.05);
+            border: 1px solid rgba(255,255,255,.07);
+        }
+        .sidebar-user.static { cursor: default; }
+        .sidebar-user.static:hover { background: rgba(255,255,255,.05); }
+        .sidebar-user.dropdown-toggle::after { display: none; }
+        .sf-signout {
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            width: 100%;
+            padding: 9px 12px;
+            border-radius: 9px;
+            border: 1px solid rgba(248,113,113,.35);
+            background: rgba(248,113,113,.08);
+            color: #fca5a5;
+            font-size: .78rem; font-weight: 700;
+            text-decoration: none;
+            transition: all .2s var(--ease-smooth);
+        }
+        .sf-signout:hover { background: #dc2626; border-color: #dc2626; color: #fff; box-shadow: 0 4px 14px rgba(220,38,38,.35); }
+        .sf-signout i { font-size: 15px; }
+
+        /* ===== DASHBOARD QUICK ACTIONS ===== */
+        .qa-group + .qa-group { margin-top: 18px; }
+        .qa-group-title {
+            display: flex; align-items: center; gap: 10px;
+            font-size: .64rem; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase;
+            color: var(--ink-4);
+            margin: 0 0 10px;
+        }
+        .qa-group-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+        .qa-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 10px; }
+        .qa-tile {
+            --qa-c: var(--brand-text); --qa-d: var(--brand-dim); --qa-b: var(--brand);
+            position: relative;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
+            min-height: 98px;
+            padding: 14px 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--surface-2);
+            text-decoration: none;
+            text-align: center;
+            transition: all .2s var(--ease-smooth);
+        }
+        .qa-tile:hover { border-color: var(--qa-b); background: var(--qa-d); transform: translateY(-2px); box-shadow: var(--shadow); }
+        .qa-tile:focus-visible { outline: 2px solid var(--qa-b); outline-offset: 2px; }
+        .qa-ico {
+            width: 38px; height: 38px; border-radius: 10px;
+            display: grid; place-items: center;
+            background: var(--qa-d); color: var(--qa-c);
+            font-size: 17px;
+            transition: all .2s;
+        }
+        .qa-tile:hover .qa-ico { background: var(--qa-b); color: #fff; }
+        .qa-label { font-size: .73rem; font-weight: 600; color: var(--ink-2); line-height: 1.25; }
+        .qa-badge {
+            position: absolute; top: 7px; right: 7px;
+            font-size: .55rem; font-weight: 800; letter-spacing: .5px;
+            padding: 2px 6px; border-radius: 99px;
+        }
+        .qa-teal   { --qa-c: var(--teal);   --qa-d: var(--teal-dim);   --qa-b: var(--teal); }
+        .qa-amber  { --qa-c: var(--amber);  --qa-d: var(--amber-dim);  --qa-b: var(--amber); }
+        .qa-violet { --qa-c: var(--violet); --qa-d: var(--violet-dim); --qa-b: var(--violet); }
+        .qa-green  { --qa-c: var(--green);  --qa-d: var(--green-dim);  --qa-b: var(--green); }
+        .qa-rose   { --qa-c: var(--rose);   --qa-d: var(--rose-dim);   --qa-b: var(--rose); }
+        .qa-ink    { --qa-c: var(--ink-2);  --qa-d: rgba(30,51,83,.08); --qa-b: var(--ink-2); }
+        .qa-tile.is-live   { border-color: var(--green); background: var(--green-dim); }
+        .qa-tile.is-hidden { border-color: var(--rose);  background: var(--rose-dim); }
+
         /* ===== RESPONSIVE ===== */
+        @media (max-width: 1199px) {
+            .pwa-install .pi-text small { display: none; }
+        }
+        @media (max-width: 767px) {
+            .pwa-install { padding: 0; width: 40px; justify-content: center; gap: 0; }
+            .pwa-install .pi-text { display: none; }
+            .pwa-install .pi-ico { width: 32px; height: 32px; }
+            .tb-sep { display: none; }
+            .topbar { padding: 0 14px; gap: 10px; }
+            .topbar-actions { gap: 8px; }
+            .tb-cta { padding: 0; width: 40px; justify-content: center; }
+            .tb-cta .tb-cta-label { display: none; }
+        }
         @media (max-width: 991px) {
             .sidebar {
                 transform: translateX(-100%);
@@ -1210,30 +1404,31 @@
 
     </nav>
 
+    {% set logout_url = url_for('student_logout') if current_user.is_student() else url_for('logout') %}
     <div class="sidebar-footer">
         <div class="dropdown dropup w-100">
-            <div class="sidebar-user dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+            {% if current_user.is_teacher() %}
+            <div class="sidebar-user dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" role="button" tabindex="0" title="Account options">
+            {% else %}
+            <div class="sidebar-user static">
+            {% endif %}
                 <div class="user-avatar">{{ current_user.username[:2]|upper }}</div>
                 <div class="user-meta">
                     <div class="user-name">{{ current_user.username }}</div>
                     <div class="user-role">{{ current_user.role }}</div>
                 </div>
-                <div class="online-dot"></div>
+                {% if current_user.is_teacher() %}<i class="bi bi-chevron-expand" style="color:rgba(255,255,255,.4);font-size:12px;"></i>{% else %}<div class="online-dot"></div>{% endif %}
             </div>
+            {% if current_user.is_teacher() %}
             <ul class="dropdown-menu dropdown-menu-dark w-100" style="background:var(--ink-2); border-color:rgba(255,255,255,.1);">
                 <li><span class="dropdown-header" style="color:rgba(255,255,255,.35);">Signed in as {{ current_user.username }}</span></li>
-                <li><hr class="dropdown-divider" style="border-color:rgba(255,255,255,.1);"></li>
-                {% if current_user.is_teacher() %}
-                <li><a class="dropdown-item" style="color:rgba(255,255,255,.7);" href="{{ url_for('teacher_subject') }}"><i class="bi bi-person-badge"></i> Subject Assignment</a></li>
-                <li><hr class="dropdown-divider" style="border-color:rgba(255,255,255,.1);"></li>
-                {% endif %}
-                <li>
-                    <a class="dropdown-item" style="color:#f87171;" href="{% if current_user.is_student() %}{{ url_for('student_logout') }}{% else %}{{ url_for('logout') }}{% endif %}">
-                        <i class="bi bi-box-arrow-right"></i> Sign Out
-                    </a>
-                </li>
+                <li><a class="dropdown-item" style="color:rgba(255,255,255,.75);" href="{{ url_for('teacher_subject') }}"><i class="bi bi-person-badge"></i> Subject Assignment</a></li>
             </ul>
+            {% endif %}
         </div>
+        <a class="sf-signout" href="{{ logout_url }}" aria-label="Sign out of EduAssess">
+            <i class="bi bi-box-arrow-right" aria-hidden="true"></i> Sign out
+        </a>
     </div>
 </aside>
 
@@ -1259,18 +1454,28 @@
     </nav>
 
     <div class="topbar-actions">
-        <button id="pwaInstallButton" class="tb-btn" type="button" title="Install EduAssess" hidden>
-            <i class="bi bi-download" aria-hidden="true"></i>
-            <span class="d-none d-md-inline">Install app</span>
+        {# Install button: id + `hidden` attribute are the contract with static/js/pwa.js,
+           which reveals the button when the browser offers installation. #}
+        <button id="pwaInstallButton" class="pwa-install" type="button" title="Install EduAssess on this device" aria-label="Install EduAssess app" hidden>
+            <span class="pi-ico"><i class="bi bi-cloud-arrow-down-fill" aria-hidden="true"></i></span>
+            <span class="pi-text"><b>Install app</b><small>Add to home screen</small></span>
+        </button>
+        {# iPhone/iPad Safari never fires the install event, so show a how-to instead. #}
+        <button id="pwaIosInstallButton" class="pwa-install" type="button" title="How to install EduAssess" aria-label="How to install EduAssess app"
+                data-bs-toggle="modal" data-bs-target="#iosInstallModal" hidden>
+            <span class="pi-ico"><i class="bi bi-cloud-arrow-down-fill" aria-hidden="true"></i></span>
+            <span class="pi-text"><b>Install app</b><small>Add to home screen</small></span>
         </button>
         {% if current_user.is_admin() or current_user.is_teacher() %}
-        <a href="{{ url_for('new_assessment') }}" class="tb-btn" title="Quick Add Assessment" style="background:var(--brand);border-color:var(--brand);color:var(--ink);font-weight:700;font-size:.75rem;padding:0 12px;width:auto;border-radius:9px;">
-            <i class="bi bi-plus"></i> <span class="d-none d-sm-inline">Add Assessment</span>
+        <a href="{{ url_for('new_assessment') }}" class="tb-cta" title="Add Assessment">
+            <i class="bi bi-plus-lg" aria-hidden="true"></i><span class="tb-cta-label">Add Assessment</span>
         </a>
         {% endif %}
 
-        <a href="{{ url_for('user_messages') }}" class="tb-btn" title="Messages">
-            <i class="bi bi-envelope" style="font-size:15px;"></i>
+        <span class="tb-sep" aria-hidden="true"></span>
+
+        <a href="{{ url_for('user_messages') }}" class="tb-btn" title="Messages" aria-label="Messages">
+            <i class="bi bi-envelope" style="font-size:16px;"></i>
             <span class="tb-badge"></span>
         </a>
 
@@ -1283,18 +1488,25 @@
                 </div>
                 <i class="bi bi-chevron-down u-caret"></i>
             </div>
-            <ul class="dropdown-menu dropdown-menu-end">
-                <li><span class="dropdown-header">Account</span></li>
-                {% if current_user.is_teacher() %}
-                <li><a class="dropdown-item" href="{{ url_for('teacher_subject') }}"><i class="bi bi-person-badge"></i> Subject Assignment</a></li>
-                {% endif %}
-                <li><hr class="dropdown-divider"></li>
-                <li>
-                    <a class="dropdown-item text-danger" href="{% if current_user.is_student() %}{{ url_for('student_logout') }}{% else %}{{ url_for('logout') }}{% endif %}">
-                        <i class="bi bi-box-arrow-right"></i> Sign Out
-                    </a>
-                </li>
-            </ul>
+            <div class="dropdown-menu dropdown-menu-end acct-menu">
+                <div class="acct-head">
+                    <div class="acct-av">{{ current_user.username[:2]|upper }}</div>
+                    <div>
+                        <div class="acct-name">{{ current_user.username }}</div>
+                        <span class="acct-role">{{ current_user.role|title }}</span>
+                    </div>
+                </div>
+                <div class="acct-items">
+                    {% if current_user.is_teacher() %}
+                    <a class="dropdown-item" href="{{ url_for('teacher_subject') }}"><i class="bi bi-person-badge"></i> Subject Assignment</a>
+                    {% endif %}
+                    <a class="dropdown-item" href="{{ url_for('user_messages') }}"><i class="bi bi-envelope"></i> Messages</a>
+                    <a class="dropdown-item" href="{{ url_for('support.support_home') }}"><i class="bi bi-life-preserver"></i> Support Centre</a>
+                </div>
+                <div class="acct-foot">
+                    <a class="dropdown-item signout" href="{{ logout_url }}"><i class="bi bi-box-arrow-right"></i> Sign out</a>
+                </div>
+            </div>
         </div>
     </div>
 </header>
@@ -1479,6 +1691,40 @@ document.querySelectorAll('form[method="get"] input[name="search"]').forEach(fun
     });
 });
 </script>
+{% if current_user.is_authenticated %}
+<!-- iPhone / iPad install instructions -->
+<div class="modal fade" id="iosInstallModal" tabindex="-1" aria-labelledby="iosInstallTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header" style="border-bottom:1px solid var(--border);">
+                <h5 class="modal-title" id="iosInstallTitle" style="font-weight:800;font-size:1rem;"><i class="bi bi-phone" style="color:var(--brand);"></i> Install EduAssess on your iPhone / iPad</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" style="font-size:.85rem;color:var(--ink-2);">
+                <ol style="padding-left:1.1rem;margin:0;display:flex;flex-direction:column;gap:10px;">
+                    <li>Open this page in <strong>Safari</strong>.</li>
+                    <li>Tap the <strong>Share</strong> button <i class="bi bi-box-arrow-up"></i> at the bottom (or top) of the screen.</li>
+                    <li>Scroll down and tap <strong>Add to Home Screen</strong> <i class="bi bi-plus-square"></i>.</li>
+                    <li>Tap <strong>Add</strong>. EduAssess now opens like an app from your home screen.</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+/* Reveal the iOS how-to button only on iPhone/iPad Safari when not already installed. */
+(function () {
+    try {
+        var ua = navigator.userAgent || '';
+        var isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        var standalone = window.navigator.standalone === true ||
+            (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+        var btn = document.getElementById('pwaIosInstallButton');
+        if (btn && isIOS && !standalone) btn.hidden = false;
+    } catch (e) { /* non-critical */ }
+})();
+</script>
+{% endif %}
 <script src="{{ url_for('static', filename='js/pwa.js') }}" defer></script>
 {% if current_user.is_authenticated and not current_user.must_change_password %}
 <script src="{{ url_for('static', filename='js/offline.js') }}" data-user="{{ current_user.id }}" defer></script>

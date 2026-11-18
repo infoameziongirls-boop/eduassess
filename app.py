@@ -36,9 +36,36 @@ from flask_limiter.util import get_remote_address
 from flask_caching import Cache
 from sqlalchemy.exc import SQLAlchemyError, OperationalError, DBAPIError
 from sqlalchemy.orm import joinedload, selectinload
-from wtforms import (StringField, PasswordField, FloatField, SelectField,
-                     SelectMultipleField, TextAreaField, BooleanField)
+from wtforms import (StringField, PasswordField, FloatField,
+                     SelectField as _WTSelectField,
+                     SelectMultipleField as _WTSelectMultipleField,
+                     TextAreaField, BooleanField)
 from whitenoise import WhiteNoise
+
+
+# ---------------------------------------------------------------------------
+# WTForms >= 3.3 compatibility
+# ---------------------------------------------------------------------------
+# CLASS_LEVELS / STUDY_AREAS / LEARNING_AREAS are persisted as JSON in the
+# SystemConfig table, so after load_persistent_config() every (key, label)
+# pair comes back as a *list*, not a tuple.  WTForms 3.3 only accepts tuples
+# and silently turns a list into ``None``, which then crashes widget rendering
+# with "'NoneType' object has no attribute 'optgroup'" (HTTP 500 on
+# /assessments).  These subclasses coerce list-shaped pairs back to tuples so
+# the form works with any WTForms version and any choices source.
+class _TupleChoicesMixin:
+    def _choices_from_input(self, choices):
+        if choices is not None and not isinstance(choices, dict) and not callable(choices):
+            choices = [tuple(c) if isinstance(c, list) else c for c in choices]
+        return super()._choices_from_input(choices)
+
+
+class SelectField(_TupleChoicesMixin, _WTSelectField):
+    pass
+
+
+class SelectMultipleField(_TupleChoicesMixin, _WTSelectMultipleField):
+    pass
 from wtforms.validators import (InputRequired, Length, Optional,
                                 NumberRange, ValidationError, EqualTo)
 
@@ -873,6 +900,9 @@ def load_persistent_config():
         for key in ('CLASS_LEVELS', 'STUDY_AREAS', 'STUDY_AREA_SUBJECTS'):
             db_val = SystemConfig.get_config(key)
             if db_val is not None:
+                # JSON round-trips (key, label) tuples as lists; restore them.
+                if key in ('CLASS_LEVELS', 'STUDY_AREAS') and isinstance(db_val, list):
+                    db_val = [tuple(i) if isinstance(i, list) else i for i in db_val]
                 app.config[key] = db_val
             else:
                 SystemConfig.set_config(key, app.config[key])
@@ -3272,7 +3302,9 @@ def user_bulk_import():
 def assessments_list():
     page      = request.args.get('page', 1, type=int)
     subject   = request.args.get('subject', '')
-    class_name = request.args.get('class', '')
+    # The filter form (and its pagination links) submit "class_name"; older
+    # links and the export button use "class". Accept both.
+    class_name = request.args.get('class_name') or request.args.get('class', '')
     category  = request.args.get('category', '')
     per_page  = app.config['ASSESSMENTS_PER_PAGE']
 
