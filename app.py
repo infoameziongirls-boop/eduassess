@@ -1049,113 +1049,224 @@ def log_activity(user, action, details=None):
         app.logger.error('Failed to log activity: %s', exc)
 
 
-@cache.cached(timeout=300, key_prefix="incomplete_assessments")
-def get_incomplete_assessments():
-    """
-    Returns a list of dicts describing students who are missing one or more
-    required assessment categories for any subject.
+# ---------------------------------------------------------------------------
+# Incomplete-assessment tracking
+# ---------------------------------------------------------------------------
+# The aggregation runs entirely in SQL (GROUP BY student, subject) and only
+# small, plain-data summaries are cached. Nothing school-wide is ever
+# pickled into the cache or loaded as ORM objects, so the cost of a student
+# page no longer grows with the size of the school.
+#
+# Invalidation: the key "incomplete_assessments" now holds a short-lived
+# generation token. Every derived cache key embeds that token, so the many
+# existing cache.delete("incomplete_assessments") calls keep working
+# unchanged: deleting the token orphans every derived entry at once.
+_INCOMPLETE_TTL = 300
 
-    The aggregation is performed inside PostgreSQL rather than in Python to
-    avoid loading up to 18,000 rows on every dashboard request.
-    The result is cached for 5 minutes (see /admin/api/refresh-incomplete-
-    assessments for a manual, on-demand bust of that cache).
-    """
-    # ICP1/ICP2 are supplementary, non-contributing categories (see
-    # ACTIVE_CATEGORIES) and are therefore excluded from the "required"
-    # set used to flag incomplete assessment records.
-    required = set(ACTIVE_CATEGORIES)
 
-    # Graduated students (class_name == "Graduated <year>", set by
-    # promotion_routes.execute_promotion()) are done — no one will ever
-    # enter new scores for them, so they must never be treated as
-    # "incomplete". Without this exclusion they'd sit on this panel
-    # forever, every term, from the moment they graduate onward.
+def _incomplete_generation():
+    try:
+        token = cache.get("incomplete_assessments")
+        if not token:
+            import uuid as _uuid
+            token = _uuid.uuid4().hex
+            cache.set("incomplete_assessments", token, timeout=_INCOMPLETE_TTL)
+        return token
+    except Exception:
+        return None
+
+
+def _not_graduated_clause():
+    # Graduated students (class_name "Graduated <year>", set by
+    # promotion_routes.execute_promotion()) are never expected to receive
+    # new scores, so they are never "incomplete".
     from archive_routes import GRADUATION_PREFIX
-    graduated_ids = {
-        sid for (sid,) in db.session.query(Student.id)
-        .filter(Student.class_name.ilike(f'{GRADUATION_PREFIX}%'))
-        .all()
-    }
-
-    # Single query: one row per (student, subject, category) — archived excluded.
-    rows = (
-        db.session.query(
-            Assessment.student_id,
-            Assessment.subject,
-            Assessment.category,
-        )
-        .filter(Assessment.archived == False)
-        .group_by(Assessment.student_id, Assessment.subject, Assessment.category)
-        .all()
+    return db.or_(
+        Student.class_name.is_(None),
+        ~Student.class_name.ilike(f'{GRADUATION_PREFIX}%'),
     )
 
-    ssc = {}
-    for sid, subj, cat in rows:
-        if not sid or not subj or not cat or sid in graduated_ids:
+
+def _expected_subjects_by_area(subjects=None):
+    sas = _get_study_area_subjects_config() or {}
+    out = {}
+    for area, cfg in sas.items():
+        if not cfg:
             continue
-        ssc.setdefault((sid, subj), set()).add(cat)
+        subs = list(cfg.get('core', [])) + list(cfg.get('electives', []))
+        if subjects is not None:
+            subs = [s for s in subs if s in subjects]
+        out[area] = list(dict.fromkeys(subs))
+    return out
 
-    # ------------------------------------------------------------------
-    # The block above only ever looks at (student, subject) pairs that
-    # already have at least one Assessment row. A student with ZERO
-    # assessments recorded for a subject they're actually meant to be
-    # assessed in — e.g. right after execute_promotion() archives every
-    # one of their prior assessments, or simply before a teacher has
-    # entered anything yet this term — never appears in `rows` at all,
-    # so they were silently skipped entirely: the single most incomplete
-    # case (0 of 9 categories done) was exactly the case this never
-    # caught. This is why the "Students Needing Attention" panel could
-    # show nothing even with a school full of freshly-promoted or
-    # not-yet-assessed students.
-    #
-    # Fix: for every student with a resolvable study area, also check
-    # their full expected subject list (core + electives, from
-    # STUDY_AREA_SUBJECTS) — not just subjects they happen to already
-    # have a row for — so a subject with zero assessments is correctly
-    # reported as 100% missing rather than invisible.
-    sas = _get_study_area_subjects_config()
-    if sas:
-        students_with_area = (
-            db.session.query(Student.id, Student.study_area)
-            .filter(Student.study_area.isnot(None))
-            .all()
-        )
-        for sid, area in students_with_area:
-            if sid in graduated_ids:
-                continue  # graduated — never expect new scores from them
-            area_cfg = sas.get(area)
-            if not area_cfg:
-                continue  # unresolvable study_area (see class_management's
-                          # orphaned-students check) — nothing to expect here
-            expected_subjects = list(area_cfg.get('core', [])) + list(area_cfg.get('electives', []))
-            for subj in expected_subjects:
-                ssc.setdefault((sid, subj), set())  # ensure the pair exists,
-                                                     # even with zero categories
 
-    if not ssc:
-        return []
+def _incomplete_pairs(subjects=None):
+    """
+    Return the set of (student_id, subject) pairs that are missing at least
+    one required category. `subjects` optionally restricts the check to a set
+    of subjects (a teacher's assigned subjects).
 
-    student_ids = {sid for sid, _ in ssc}
-    student_map = {
-        s.id: s
-        for s in Student.query.filter(Student.id.in_(student_ids)).all()
-    }
+    Semantics are unchanged from the previous in-Python implementation:
+      * archived assessments are ignored;
+      * only ACTIVE_CATEGORIES are required (ICP1/ICP2 are supplementary);
+      * graduated students are excluded;
+      * every subject expected from the student's study area counts, even
+        when the student has no assessment row for it yet (0 of N done).
+    """
+    from sqlalchemy import case, distinct, func
+    required = list(ACTIVE_CATEGORIES)
+    n_required = len(required)
+    grad_ok = _not_graduated_clause()
 
-    result = []
-    for (sid, subj), cats in ssc.items():
-        missing = [c for c in required if c not in cats]
-        if not missing:
-            continue
-        student = student_map.get(sid)
-        if not student:
-            continue
-        result.append({
-            "student":             student,
-            "subject":             subj,
-            "missing_categories":  missing,
-            "existing_categories": sorted(cats),
+    present = func.count(distinct(case((Assessment.category.in_(required), Assessment.category), else_=None)))
+    q = (db.session.query(Assessment.student_id, Assessment.subject, present)
+         .join(Student, Student.id == Assessment.student_id)
+         .filter(Assessment.archived == False,  # noqa: E712
+                 Assessment.subject.isnot(None), Assessment.subject != '',
+                 Assessment.category.isnot(None), Assessment.category != '',
+                 grad_ok))
+    if subjects is not None:
+        q = q.filter(Assessment.subject.in_(list(subjects)))
+    rows = q.group_by(Assessment.student_id, Assessment.subject).all()
+
+    seen = {(sid, subj) for sid, subj, _n in rows}
+    incomplete = {(sid, subj) for sid, subj, n in rows if n < n_required}
+
+    area_subjects = _expected_subjects_by_area(subjects)
+    if area_subjects:
+        for sid, area in (db.session.query(Student.id, Student.study_area)
+                          .filter(Student.study_area.isnot(None), grad_ok).all()):
+            for subj in area_subjects.get(area, ()):
+                if (sid, subj) not in seen:
+                    incomplete.add((sid, subj))
+    return incomplete
+
+
+def _student_names(student_ids):
+    from sqlalchemy.orm import load_only as _load_only
+    ids = list(student_ids)
+    names = {}
+    for i in range(0, len(ids), 1000):
+        chunk = ids[i:i + 1000]
+        for s in (db.session.query(Student)
+                  .options(_load_only(Student.id, Student.first_name,
+                                        Student.middle_name, Student.last_name))
+                  .filter(Student.id.in_(chunk)).all()):
+            names[s.id] = s.full_name()
+    return names
+
+
+def _build_incomplete_summary(subjects=None, limit=30):
+    required = list(ACTIVE_CATEGORIES)
+    pairs = _incomplete_pairs(subjects)
+    if not pairs:
+        return {'total_count': 0, 'student_count': 0, 'items': []}
+    sids = {sid for sid, _ in pairs}
+    names = _student_names(sids)
+    ordered = sorted((p for p in pairs if p[0] in names),
+                     key=lambda p: (names[p[0]], p[1]))
+    top = ordered if limit is None else ordered[:limit]
+
+    cats = {}
+    top_sids = list({sid for sid, _ in top})
+    for i in range(0, len(top_sids), 1000):
+        chunk = top_sids[i:i + 1000]
+        for sid, subj, cat in (db.session.query(Assessment.student_id, Assessment.subject,
+                                                Assessment.category)
+                               .filter(Assessment.archived == False,  # noqa: E712
+                                       Assessment.student_id.in_(chunk))
+                               .distinct().all()):
+            if subj and cat:
+                cats.setdefault((sid, subj), set()).add(cat)
+    items = []
+    for sid, subj in top:
+        have = cats.get((sid, subj), set())
+        items.append({
+            'student_id': sid,
+            'subject': subj,
+            'missing_categories': [c for c in required if c not in have],
+            'existing_categories': sorted(have),
         })
-    return result
+    return {'total_count': len(ordered), 'student_count': len({s for s, _ in ordered}),
+            'items': items}
+
+
+def get_incomplete_summary(subjects=None):
+    """Cached plain-data summary: total pairs, affected students, first 30 items."""
+    subjects = set(subjects) if subjects else None
+    gen = _incomplete_generation()
+    key = None
+    if gen:
+        import hashlib as _hl
+        tag = _hl.md5(','.join(sorted(subjects)).encode('utf-8')).hexdigest() if subjects else 'all'
+        key = f'incomplete_summary:{gen}:{tag}'
+        try:
+            hit = cache.get(key)
+        except Exception:
+            hit = None
+        if hit is not None:
+            return hit
+    summary = _build_incomplete_summary(subjects)
+    if key:
+        try:
+            cache.set(key, summary, timeout=_INCOMPLETE_TTL)
+        except Exception:
+            pass
+    return summary
+
+
+def _hydrate_incomplete_items(items):
+    ids = [i['student_id'] for i in items]
+    smap = {}
+    if ids:
+        smap = {s.id: s for s in Student.query.filter(Student.id.in_(ids)).all()}
+    return [dict(i, student=smap[i['student_id']]) for i in items if i['student_id'] in smap]
+
+
+def get_incomplete_dashboard(subjects=None):
+    """Summary with the displayed items hydrated to Student objects (<= 30 rows)."""
+    s = get_incomplete_summary(subjects)
+    return {'total_count': s['total_count'], 'student_count': s['student_count'],
+            'items': _hydrate_incomplete_items(s['items'])}
+
+
+def get_incomplete_for_student(student):
+    """
+    Incomplete (subject, missing categories) records for ONE student, computed
+    with a single indexed query on student_id. Same rules as the school-wide
+    summary, so a student's own page always agrees with the dashboard.
+    """
+    from archive_routes import GRADUATION_PREFIX
+    if (student.class_name or '').lower().startswith(GRADUATION_PREFIX.lower()):
+        return []
+    required = list(ACTIVE_CATEGORIES)
+    ssc = {}
+    for subj, cat in (db.session.query(Assessment.subject, Assessment.category)
+                      .filter(Assessment.student_id == student.id,
+                              Assessment.archived == False)  # noqa: E712
+                      .distinct().all()):
+        if subj and cat:
+            ssc.setdefault(subj, set()).add(cat)
+    area_cfg = (_get_study_area_subjects_config() or {}).get(student.study_area) if student.study_area else None
+    if area_cfg:
+        for subj in list(area_cfg.get('core', [])) + list(area_cfg.get('electives', [])):
+            ssc.setdefault(subj, set())
+    out = []
+    for subj, have in ssc.items():
+        missing = [c for c in required if c not in have]
+        if missing:
+            out.append({'student': student, 'subject': subj,
+                        'missing_categories': missing,
+                        'existing_categories': sorted(have)})
+    return out
+
+
+def get_incomplete_assessments():
+    """Deprecated compatibility wrapper: the FULL school-wide list, uncached.
+    Prefer get_incomplete_summary() / get_incomplete_dashboard() /
+    get_incomplete_for_student(); this one is O(school)."""
+    s = _build_incomplete_summary(None, limit=None)
+    return _hydrate_incomplete_items(s['items'])
 
 
 GRADE_SCALE = [
@@ -1624,7 +1735,22 @@ def get_student_groups(cur_user, app_config):
             return {}, {}, {}
         students = q.all()
     else:
-        students = Student.query.all()
+        # Admin: aggregate in SQL. Loading every Student just to count them
+        # grows linearly with the school; this is one GROUP BY. `by_class`
+        # holds counts (not student lists) for admins; the live dashboard
+        # only needs the counts.
+        from sqlalchemy import func
+        probe = Student()   # transient; never added to a session
+        for cn, area_key, n in (db.session.query(Student.class_name, Student.study_area, func.count(Student.id))
+                                .group_by(Student.class_name, Student.study_area).all()):
+            probe.class_name, probe.study_area = cn, area_key
+            cls = probe.get_class_display() or 'Unspecified'
+            area = probe.get_study_area_display() or 'Unspecified'
+            by_class[cls] = by_class.get(cls, 0) + n
+            by_area[area] = by_area.get(area, 0) + n
+            ca = by_class_area.setdefault(cls, {})
+            ca[area] = ca.get(area, 0) + n
+        return by_class, by_area, by_class_area
 
     for s in students:
         cls  = s.get_class_display() or 'Unspecified'
@@ -2330,23 +2456,10 @@ def dashboard():
     assessment_count = Assessment.query.filter_by(archived=False).count()
     users_count      = User.query.count()
 
-    if current_user.is_teacher():
-        incomplete_list = get_incomplete_assessments()
-        assigned = set(current_user.get_assigned_study_areas())
-        if assigned:
-            incomplete_list = [i for i in incomplete_list if i['subject'] in assigned]
-    else:
-        # Previously hardcoded to [] with a comment pointing admins to a
-        # separate "tracker dashboard" instead — but the KPI card right
-        # above this on the SAME page ("Needs Attention") always showed 0
-        # regardless, and the detail panel never rendered at all. That's
-        # exactly what read as "the button doesn't work, nothing shows
-        # there": the number and the panel were permanently empty by
-        # design, not broken by a data bug, but indistinguishable from
-        # one to whoever's looking at it. Admins get the unfiltered,
-        # school-wide list here now, same source of truth as the tracker
-        # dashboard, so the number on this page is never misleading.
-        incomplete_list = get_incomplete_assessments()
+    # Teachers see only their assigned subjects; admins see the whole school.
+    # Both come from the SQL-aggregated, cached summary (<= 30 hydrated rows).
+    assigned = set(current_user.get_assigned_study_areas()) if current_user.is_teacher() else set()
+    incomplete = get_incomplete_dashboard(assigned or None)
 
     if current_user.is_teacher():
         recent = (Assessment.query
@@ -2459,17 +2572,10 @@ def dashboard():
     # person means by "N students need attention", and matching the same
     # dedup done in /admin/api/incomplete-assessments so the number never
     # disagrees between the static page and a live refresh.
-    affected_students_count = len({item['student'].id for item in incomplete_list})
-
-    # Cap what renders inline so a full school's worth of incomplete
-    # records doesn't turn the dashboard into a wall of cards — the
-    # in-depth, paginated/filterable version of this already exists at
-    # /admin/teacher-tracking for admins. Sort so the same students show
-    # first on every load rather than dict-ordering noise.
-    incomplete_display = sorted(
-        incomplete_list, key=lambda i: i['student'].full_name()
-    )[:30]
-    incomplete_display_truncated = len(incomplete_list) > len(incomplete_display)
+    affected_students_count = incomplete['student_count']
+    incomplete_display = incomplete['items']          # first 30, sorted by name
+    incomplete_total = incomplete['total_count']
+    incomplete_display_truncated = incomplete_total > len(incomplete_display)
 
     return render_template(
         'dashboard.html',
@@ -2479,7 +2585,7 @@ def dashboard():
         affected_students_count=affected_students_count,
         incomplete_students=incomplete_display,
         incomplete_display_truncated=incomplete_display_truncated,
-        incomplete_total_count=len(incomplete_list),
+        incomplete_total_count=incomplete_total,
         recent=recent,
         teacher_student_summaries=teacher_student_summaries,
         grouped_students=None,
@@ -2638,10 +2744,7 @@ def student_dashboard():
     # student — no extra query, and it stays consistent with what an
     # admin/teacher sees for the same student rather than being computed
     # by a second, possibly-divergent code path.
-    student_missing = [
-        item for item in get_incomplete_assessments()
-        if item['student'].id == student.id
-    ]
+    student_missing = get_incomplete_for_student(student)
     student_is_incomplete = bool(student_missing)
 
     return render_template(
@@ -3055,10 +3158,7 @@ def student_view(student_id):
     # ── Incomplete-assessment ("IC") flag ───────────────────────────────────
     # Same cached list used by the dashboards and the student's own view —
     # one source of truth, no extra query.
-    student_missing = [
-        item for item in get_incomplete_assessments()
-        if item['student'].id == student.id
-    ]
+    student_missing = get_incomplete_for_student(student)
     student_is_incomplete = bool(student_missing)
 
     return render_template(
@@ -3341,6 +3441,11 @@ def assessments_list():
     )
 
 
+# Above this many authorised students a <select> of every name is unusable
+# (and heavy to render), so the form switches to a type-ahead search box.
+_STUDENT_SELECT_MAX = 150
+
+
 @app.route('/assessments/new', methods=['GET', 'POST'])
 @login_required
 def new_assessment():
@@ -3391,9 +3496,11 @@ def new_assessment():
                     'warning',
                 )
 
-        students_qs = students_query.all()
+        teacher_total = students_query.count()
+        use_student_search = teacher_total > _STUDENT_SELECT_MAX
+        students_qs = [] if use_student_search else students_query.all()
 
-        if not students_qs:
+        if teacher_total == 0:
             flash(
                 'No students are currently enrolled in your assigned class(es) '
                 'or study area(s). Contact the administrator if this appears incorrect.',
@@ -3401,10 +3508,10 @@ def new_assessment():
             )
 
     else:
-        # Admins see all students.
-        students_qs = Student.query.order_by(
-            Student.class_name, Student.last_name
-        ).all()
+        # Admins can assess any student; with thousands of students the form
+        # uses the search box instead of loading a dropdown of everyone.
+        use_student_search = True
+        students_qs = []
 
     # ── Group students by class for the dropdown ──────────────────────────
     grouped = {}
@@ -3423,9 +3530,14 @@ def new_assessment():
         form.subject.data = current_user.subject
 
     snum_param  = request.args.get('student')
+    sid_param   = request.args.get('student_id', type=int)
     student_obj = None
     if snum_param:
         student_obj = Student.query.filter_by(student_number=snum_param).first()
+    elif sid_param:
+        # Links from the dashboard ("Complete") pass ?student_id=<id>.
+        student_obj = db.session.get(Student, sid_param)
+    if snum_param or sid_param:
         if student_obj and current_user.is_teacher():
             if not current_user.can_access_student(student_obj, app.config):
                 abort(403)
@@ -3498,11 +3610,20 @@ def new_assessment():
         flash(f'Assessment saved for {student.full_name()}', 'success')
         return redirect(url_for('student_view', student_id=student.id))
 
+    # Re-display the chosen student in the search box after a failed submit.
+    selected_student = None
+    if use_student_search and not student_obj and form.student_name.data:
+        cand = Student.query.filter_by(student_number=form.student_name.data).first()
+        if cand and (current_user.is_admin() or current_user.can_access_student(cand, app.config)):
+            selected_student = cand
+
     return render_template(
         'assessment_form.html',
         form=form,
         grouped_students=sorted_groups,
         student_dict={},
+        use_student_search=use_student_search,
+        selected_student=selected_student,
         student_full_name=student_obj.full_name() if student_obj else None,
     )
 
@@ -3523,11 +3644,16 @@ def assessment_edit(assessment_id):
     form = AssessmentForm(obj=a)
 
     # ── Restrict the student dropdown to the teacher's authorised students ─
+    # The edit form never re-assigns an assessment to another student, so for
+    # admins and for large teacher rosters the student is shown read-only
+    # instead of loading a dropdown of every student.
+    use_student_search = True
+    students_qs = []
     if current_user.is_teacher():
         students_query = get_teacher_students_query(current_user)
-        students_qs = students_query.all() if students_query is not None else []
-    else:
-        students_qs = Student.query.order_by(Student.class_name, Student.last_name).all()
+        if students_query is not None and students_query.count() <= _STUDENT_SELECT_MAX:
+            use_student_search = False
+            students_qs = students_query.all()
 
     grouped = {}
     for s in students_qs:
@@ -3578,7 +3704,9 @@ def assessment_edit(assessment_id):
 
     return render_template('assessment_form.html', form=form,
                            assessment=a, grouped_students=sorted_groups,
-                           student_dict={})
+                           student_dict={},
+                           use_student_search=use_student_search,
+                           student_full_name=(a.student.full_name() if use_student_search else None))
 
 
 @app.route('/assessments/<int:assessment_id>/delete', methods=['POST'])
@@ -4845,10 +4973,12 @@ def api_incomplete_assessments():
     if request.method == 'POST':
         cache.delete('incomplete_assessments')
 
-    incomplete = get_incomplete_assessments()
+    summary = get_incomplete_dashboard()
     category_labels = app.config.get('CATEGORY_LABELS', {})
 
-    items_all = [{
+    # The summary already holds the first 30 (student, subject) cards sorted
+    # by name, plus the school-wide totals, so nothing school-wide is loaded.
+    items = [{
         'student_id':     item['student'].id,
         'student_name':   item['student'].full_name(),
         'student_number': item['student'].student_number,
@@ -4859,24 +4989,15 @@ def api_incomplete_assessments():
         ],
         'view_url': url_for('student_view', student_id=item['student'].id),
         'entry_url': url_for('new_assessment', student_id=item['student'].id),
-    } for item in incomplete]
-
-    # One card per (student, subject) in get_incomplete_assessments(), but
-    # the dashboard groups by student — collapse here so the count shown
-    # matches affected_students_count on the main dashboard exactly.
-    affected_student_count = len({i['student_id'] for i in items_all})
-
-    # Same 30-item cap as the initial server-rendered page (see dashboard()
-    # above) — a "live" refresh shouldn't suddenly dump the whole school
-    # onto the page just because it went through JS instead of a reload.
-    items_all.sort(key=lambda i: i['student_name'])
-    items = items_all[:30]
+    } for item in summary['items']]
+    affected_student_count = summary['student_count']
+    total_count = summary['total_count']
 
     return jsonify({
         'success': True,
         'count': affected_student_count,
-        'total_count': len(items_all),
-        'truncated': len(items_all) > len(items),
+        'total_count': total_count,
+        'truncated': total_count > len(items),
         'items': items,
         'refreshed_at': utcnow().strftime('%Y-%m-%d %H:%M:%S UTC'),
     })
@@ -6589,13 +6710,13 @@ def upload_template():
 def live_data():
     if hasattr(current_user, 'is_student') and current_user.is_student():
         return jsonify({'error': 'Access denied'}), 403
-    incomplete = get_incomplete_assessments()
+    incomplete = get_incomplete_summary()
     return jsonify({
         'student_count':            Student.query.count(),
         'assessment_count':         Assessment.query.filter_by(archived=False).count(),
         'users_count':              User.query.count(),
-        'affected_students_count':  len(incomplete),
-        'incomplete_students_count': len(incomplete),
+        'affected_students_count':  incomplete['student_count'],
+        'incomplete_students_count': incomplete['student_count'],
     })
 
 
@@ -6603,32 +6724,44 @@ def live_data():
 @login_required
 def student_search():
     """
-    FIX: Teacher-scoped student search.  Teachers now only receive students
-    from their authorised pool; the original returned all matching students
-    regardless of the teacher's class/study-area assignment.
+    Type-ahead student search for the assessment form.
+
+    Staff only (admins and teachers). Teachers only ever receive students
+    from their authorised pool. Every whitespace-separated word of the query
+    must match the name, student number or reference number, so "john smi"
+    works. LIKE wildcards typed by the user are escaped, results are capped
+    at 15, and at least two characters are required.
     """
+    if not (current_user.is_admin() or current_user.is_teacher()):
+        return jsonify({'results': []}), 403
+
     query = request.args.get('q', '').strip()
-    if not query:
+    if len(query) < 2:
         return jsonify({'results': []})
 
-    if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
+    if current_user.is_teacher():
         base_q = get_teacher_students_query(current_user)
         if base_q is None:
             return jsonify({'results': []})
     else:
-        base_q = Student.query
+        base_q = Student.query.order_by(Student.class_name, Student.last_name)
 
-    matches = base_q.filter(
-        db.or_(
-            Student.student_number.ilike(f'%{query}%'),
-            Student.first_name.ilike(f'%{query}%'),
-            Student.last_name.ilike(f'%{query}%'),
-        )
-    ).limit(10).all()
+    for word in query.split()[:5]:
+        esc = word.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        pat = f'%{esc}%'
+        base_q = base_q.filter(db.or_(
+            Student.student_number.ilike(pat, escape='\\'),
+            Student.first_name.ilike(pat, escape='\\'),
+            Student.middle_name.ilike(pat, escape='\\'),
+            Student.last_name.ilike(pat, escape='\\'),
+            Student.reference_number.ilike(pat, escape='\\'),
+        ))
 
+    matches = base_q.limit(15).all()
     return jsonify({'results': [
         {'student_number': s.student_number, 'name': s.full_name(),
-         'reference_number': s.reference_number}
+         'reference_number': s.reference_number or s.student_number,
+         'class': s.get_class_display() or ''}
         for s in matches
     ]})
 

@@ -83,11 +83,17 @@ def roster_tree():
     if not (is_teacher or current_user.is_admin()):
         return _err('Forbidden', 403)
 
+    # Only the seven columns the tree needs are selected (plain rows, not
+    # ORM entities): for an admin on a 5,000-student school this avoids
+    # building 5,000 Student objects on every roster request.
+    cols = (Student.id, Student.student_number, Student.first_name, Student.last_name,
+            Student.middle_name, Student.class_name, Student.study_area)
     if is_teacher:
         q = get_teacher_students_query(current_user)   # same authorisation as the rest of the app
-        students = q.all() if q is not None else []
+        students = q.with_entities(*cols).all() if q is not None else []
     else:
-        students = Student.query.order_by(Student.class_name, Student.last_name).all()
+        students = (db.session.query(*cols)
+                    .order_by(Student.class_name, Student.last_name).all())
 
     filled = {}
     if is_teacher and current_user.subject and students:
@@ -104,8 +110,13 @@ def roster_tree():
     class_order = [k for k, _ in current_app.config.get('CLASS_LEVELS', [])]
 
     forms = {}
+    probe = Student()            # transient; only used for get_class_display()
+    display_cache = {}
     for s in students:
-        cls = s.get_class_display() or 'Unassigned'
+        if s.class_name not in display_cache:
+            probe.class_name = s.class_name
+            display_cache[s.class_name] = probe.get_class_display() or 'Unassigned'
+        cls = display_cache[s.class_name]
         if cls.lower().startswith('graduated'):
             continue
         akey = s.study_area or 'unassigned'

@@ -36,8 +36,21 @@
                             {% if student_full_name %}
                                 <div style="padding:10px 14px;background:var(--surface);border:1.5px solid var(--border);border-radius:9px;font-weight:600;color:var(--ink);">{{ student_full_name }}</div>
                                 <input type="hidden" name="student_name" value="{{ form.student_name.data }}">
+                            {% elif use_student_search %}
+                                <div class="position-relative" id="studentSearchWrap">
+                                    <input type="text" id="studentSearch" class="form-control"
+                                           placeholder="Type a name or student number…"
+                                           autocomplete="off" role="combobox" aria-expanded="false"
+                                           aria-controls="studentResults"
+                                           value="{% if selected_student %}{{ selected_student.full_name() }} ({{ selected_student.student_number }}){% endif %}">
+                                    <input type="hidden" name="student_name" id="student_name"
+                                           value="{{ selected_student.student_number if selected_student else '' }}">
+                                    <div id="studentResults" class="list-group position-absolute w-100 shadow"
+                                         role="listbox" style="z-index:1050;max-height:260px;overflow-y:auto;display:none;"></div>
+                                </div>
+                                <div class="form-text" id="studentSearchHint" style="font-size:.72rem;">Enter at least 2 characters, then choose a student from the list.</div>
                             {% else %}
-                                <select name="student_name" class="form-select" id="student_name" required>
+                                <select name="student_name" class="form-select" id="student_name">
                                     <option value="">— Select Student —</option>
                                     {% for class_name, students_in_class in grouped_students.items() %}
                                     <optgroup label="Form: {{ class_name }}">
@@ -211,6 +224,81 @@ document.addEventListener('DOMContentLoaded', function () {
             if (refInput) refInput.value = studentData[this.value].ref;
         }
     });
+
+    // ── Student type-ahead (used when the roster is too large for a dropdown) ──
+    const sInput = document.getElementById('studentSearch');
+    if (sInput) {
+        const sHidden = document.getElementById('student_name');
+        const sList = document.getElementById('studentResults');
+        const sUrl = {{ url_for('student_search')|tojson }};
+        let timer = null, seq = 0, active = -1, rows = [];
+
+        const hide = () => { sList.style.display = 'none'; sInput.setAttribute('aria-expanded', 'false'); active = -1; };
+        const choose = (r) => {
+            sHidden.value = r.student_number;
+            if (snInput) snInput.value = r.student_number;
+            if (refInput) refInput.value = r.reference_number || r.student_number;
+            sInput.value = r.name + ' (' + r.student_number + ')';
+            hide();
+        };
+        const paint = () => {
+            Array.from(sList.children).forEach((el, i) => el.classList.toggle('active', i === active));
+        };
+        const show = (list) => {
+            rows = list; sList.textContent = '';
+            if (!list.length) {
+                const none = document.createElement('div');
+                none.className = 'list-group-item text-muted small';
+                none.textContent = 'No matching student';
+                sList.appendChild(none);
+            }
+            list.forEach((r, i) => {
+                const b = document.createElement('button');
+                b.type = 'button'; b.setAttribute('role', 'option');
+                b.className = 'list-group-item list-group-item-action py-2';
+                const n = document.createElement('div'); n.className = 'fw-semibold'; n.textContent = r.name;
+                const m = document.createElement('div'); m.className = 'small text-muted';
+                m.textContent = r.student_number + (r.class ? ' · ' + r.class : '');
+                b.append(n, m);
+                b.addEventListener('mousedown', (e) => { e.preventDefault(); choose(r); });
+                sList.appendChild(b);
+            });
+            sList.style.display = 'block'; sInput.setAttribute('aria-expanded', 'true'); active = -1;
+        };
+
+        sInput.addEventListener('input', () => {
+            sHidden.value = '';                    // a typed edit invalidates the previous pick
+            clearTimeout(timer);
+            const q = sInput.value.trim();
+            if (q.length < 2) { hide(); return; }
+            timer = setTimeout(async () => {
+                const mine = ++seq;
+                try {
+                    const resp = await fetch(sUrl + '?q=' + encodeURIComponent(q), {credentials: 'same-origin'});
+                    if (!resp.ok) throw new Error(resp.status);
+                    const data = await resp.json();
+                    if (mine === seq) show(data.results || []);
+                } catch (e) { if (mine === seq) hide(); }
+            }, 250);
+        });
+        sInput.addEventListener('keydown', (e) => {
+            const open = sList.style.display === 'block' && rows.length;
+            if (e.key === 'ArrowDown' && open) { e.preventDefault(); active = Math.min(active + 1, rows.length - 1); paint(); }
+            else if (e.key === 'ArrowUp' && open) { e.preventDefault(); active = Math.max(active - 1, 0); paint(); }
+            else if (e.key === 'Enter') { if (open) { e.preventDefault(); choose(rows[active >= 0 ? active : 0]); } else { e.preventDefault(); } }
+            else if (e.key === 'Escape') { hide(); }
+        });
+        sInput.addEventListener('blur', () => setTimeout(hide, 150));
+        const form = sInput.closest('form');
+        form?.addEventListener('submit', (e) => {
+            if (!sHidden.value) {
+                e.preventDefault();
+                sInput.classList.add('is-invalid');
+                sInput.focus();
+            }
+        });
+        sInput.addEventListener('input', () => sInput.classList.remove('is-invalid'));
+    }
 
     categorySelect?.addEventListener('change', updateMaxScore);
     scoreInput?.addEventListener('input', calcPct);

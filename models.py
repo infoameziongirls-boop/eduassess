@@ -1106,6 +1106,46 @@ def ensure_student_columns():
         print(f"[ensure_student_columns] WARNING: could not sync columns: {exc}")
 
 
+# Indexes that the production query paths rely on. Everything here is
+# CREATE INDEX IF NOT EXISTS, so it is idempotent and safe to run on every
+# boot, on both PostgreSQL (Neon) and SQLite. db.create_all() never adds an
+# index to a table that already exists, which is why this is explicit.
+_PERFORMANCE_INDEXES = [
+    # Dashboard grouping, class filters, teacher-scoped student queries.
+    ("ix_students_class_name",  "students",         "(class_name)"),
+    ("ix_students_study_area",  "students",         "(study_area)"),
+    # Covering index for the incomplete-assessment aggregation:
+    # WHERE archived = false GROUP BY student_id, subject (+ category).
+    ("ix_assessments_active_cover", "assessments",  "(archived, student_id, subject, category)"),
+    ("ix_assessments_teacher_id",   "assessments",  "(teacher_id)"),
+    ("ix_assessments_year_term",    "assessments",  "(academic_year, term)"),
+    ("ix_users_role",           "users",            "(role)"),
+    ("ix_messages_recipient_read", "messages",      "(recipient_id, is_read)"),
+    ("ix_messages_sender_id",   "messages",         "(sender_id)"),
+    ("ix_question_attempts_student_id", "question_attempts", "(student_id)"),
+    ("ix_quiz_attempts_student_id",     "quiz_attempts",     "(student_id)"),
+]
+
+
+def ensure_indexes():
+    """Create missing performance indexes. Never raises: a failure on one
+    index is logged and the rest are still attempted."""
+    try:
+        existing_tables = set(inspect(db.engine).get_table_names())
+    except Exception as exc:
+        print(f"[ensure_indexes] WARNING: could not inspect database: {exc}")
+        return
+    for name, table, cols in _PERFORMANCE_INDEXES:
+        if table not in existing_tables:
+            continue
+        try:
+            db.session.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON {table} {cols}"))
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            print(f"[ensure_indexes] WARNING: index {name} not created: {exc}")
+
+
 def init_db(app, bcrypt, run_bootstrap=True):
     if not app.extensions.get('sqlalchemy'):
         db.init_app(app)
@@ -1148,6 +1188,7 @@ def init_db(app, bcrypt, run_bootstrap=True):
         ensure_settings_columns()
         ensure_user_columns()
         ensure_student_columns()
+        ensure_indexes()
 
         if not Setting.query.first():
             default_settings = Setting(
