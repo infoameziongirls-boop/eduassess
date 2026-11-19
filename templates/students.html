@@ -10,6 +10,11 @@
     </div>
     <div class="page-actions">
         {% if current_user.is_admin() or current_user.is_teacher() %}
+        {% if current_user.is_admin() %}
+        <a href="{{ url_for('class_login_sheets') }}" class="btn btn-outline">
+            <i class="bi bi-key"></i> Class Login Sheets
+        </a>
+        {% endif %}
         <a href="{{ url_for('student_bulk_import') }}" class="btn btn-outline">
             <i class="bi bi-upload"></i> Bulk Import Students
         </a>

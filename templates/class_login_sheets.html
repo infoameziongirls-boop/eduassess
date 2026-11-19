@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Class Login Sheets{% endblock %}
+{% block page_title %}Class Login Sheets{% endblock %}
+{% block breadcrumbs %}
+<span class="sep">/</span>
+<a href="{{ url_for('students') }}">Students</a>
+<span class="sep">/</span>
+<span class="current">Login Sheets</span>
+{% endblock %}
+
+{% block content %}
+<div class="page-header animate-in">
+    <div>
+        <h1 class="page-title">Class Login Sheets</h1>
+        <p class="page-subtitle">Issue random temporary passwords for a whole class and print them as slips</p>
+    </div>
+    <div class="page-actions">
+        <a href="{{ url_for('students') }}" class="btn btn-outline"><i class="bi bi-arrow-left"></i> Students</a>
+    </div>
+</div>
+
+<div class="row g-4 animate-in delay-1">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header"><span class="card-title"><i class="bi bi-1-circle-fill me-2" style="color:var(--brand);"></i>Choose a class</span></div>
+            <div class="card-body">
+                <form method="GET" class="d-flex gap-2 flex-wrap align-items-end">
+                    <div style="flex:1;min-width:220px;">
+                        <label class="form-label" for="class_name">Class</label>
+                        <select name="class_name" id="class_name" class="form-select" onchange="this.form.submit()">
+                            <option value="">— Select a class —</option>
+                            {% for key, label in class_options %}
+                            <option value="{{ key }}" {% if key == selected_class %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-outline"><i class="bi bi-search"></i> Show</button>
+                </form>
+            </div>
+        </div>
+
+        {% if summary %}
+        <div class="card mt-4">
+            <div class="card-header"><span class="card-title"><i class="bi bi-2-circle-fill me-2" style="color:var(--brand);"></i>{{ summary.class_label }} &middot; {{ summary.total }} student{{ '' if summary.total == 1 else 's' }}</span></div>
+            <div class="card-body">
+                <div class="row g-2 mb-4 text-center">
+                    <div class="col-6 col-md-3"><div class="p-2 rounded" style="background:var(--teal-dim);"><div style="font-size:1.4rem;font-weight:800;">{{ summary.counts.none }}</div><div style="font-size:.7rem;">No login yet</div></div></div>
+                    <div class="col-6 col-md-3"><div class="p-2 rounded" style="background:var(--amber-dim);"><div style="font-size:1.4rem;font-weight:800;">{{ summary.counts.pending }}</div><div style="font-size:.7rem;">Slip issued, not used</div></div></div>
+                    <div class="col-6 col-md-3"><div class="p-2 rounded" style="background:var(--green-dim);"><div style="font-size:1.4rem;font-weight:800;">{{ summary.counts.active }}</div><div style="font-size:.7rem;">Signed in already</div></div></div>
+                    <div class="col-6 col-md-3"><div class="p-2 rounded" style="background:var(--rose-dim);"><div style="font-size:1.4rem;font-weight:800;">{{ summary.counts.no_number + summary.counts.conflict }}</div><div style="font-size:.7rem;">Cannot issue</div></div></div>
+                </div>
+
+                {% if summary.total == 0 %}
+                    <p class="text-muted mb-0">This class has no students.</p>
+                {% else %}
+                <form method="POST" action="{{ url_for('issue_class_login_sheet') }}" id="issueForm"
+                      onsubmit="return confirm('Generate the login sheet now? Passwords are shown only once, on the next page.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="class_name" value="{{ summary.class_name }}">
+
+                    <label class="form-label fw-semibold">Who should get a new slip?</label>
+                    <div class="mb-3">
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="scope" id="scopeNew" value="new" checked>
+                            <label class="form-check-label" for="scopeNew"><strong>New students only</strong> (recommended)<br><span class="text-muted" style="font-size:.78rem;">Only students with no login yet. Nobody who already has a password is affected.</span></label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="scope" id="scopePending" value="pending">
+                            <label class="form-check-label" for="scopePending"><strong>New + slips not yet used</strong><br><span class="text-muted" style="font-size:.78rem;">Also re-issues for students whose earlier slip was lost or never used. Their old slip stops working.</span></label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="scope" id="scopeAll" value="all">
+                            <label class="form-check-label" for="scopeAll"><strong>Everyone in the class</strong><br><span class="text-muted" style="font-size:.78rem;">Also resets students who already chose their own password. They will be signed out and must use the new slip.</span></label>
+                        </div>
+                        <div class="form-check mt-2 ms-4 d-none" id="confirmAllWrap">
+                            <input class="form-check-input" type="checkbox" name="confirm_all" id="confirmAll" value="yes">
+                            <label class="form-check-label text-danger" for="confirmAll">I understand this overwrites passwords students chose themselves.</label>
+                        </div>
+                    </div>
+
+                    {% if summary.batches > 1 %}
+                    <div class="mb-3" style="max-width:360px;">
+                        <label class="form-label fw-semibold" for="batch">Batch</label>
+                        <select name="batch" id="batch" class="form-select">
+                            {% for b in range(1, summary.batches + 1) %}
+                            {% set first = (b - 1) * summary.batch_size + 1 %}
+                            {% set last = [b * summary.batch_size, summary.total]|min %}
+                            <option value="{{ b }}">Batch {{ b }} of {{ summary.batches }} (students {{ first }}–{{ last }})</option>
+                            {% endfor %}
+                        </select>
+                        <div class="text-muted mt-1" style="font-size:.75rem;">Large classes are issued in batches of {{ summary.batch_size }} so the server does not time out. Do each batch once.</div>
+                    </div>
+                    {% else %}
+                    <input type="hidden" name="batch" value="1">
+                    {% endif %}
+
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-printer"></i> Generate printable sheet</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header"><span class="card-title">How it works</span></div>
+            <div class="card-body" style="font-size:.82rem;color:var(--ink-2);">
+                <ol class="ps-3 mb-3" style="display:flex;flex-direction:column;gap:8px;">
+                    <li>Each student gets a <strong>random</strong> password. Their username is their student number.</li>
+                    <li>The sheet is shown <strong>once</strong>. Print it before leaving the page, and do not refresh it.</li>
+                    <li>Cut the slips and hand one to each student, in person.</li>
+                    <li>At first sign-in the student must choose a new password.</li>
+                </ol>
+                <div class="alert alert-warning mb-0" style="font-size:.78rem;">Passwords cannot be shown again. If a slip is lost, issue a new one from the student's profile or use "New + slips not yet used".</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var wrap = document.getElementById('confirmAllWrap');
+    var radios = document.querySelectorAll('input[name="scope"]');
+    function sync() {
+        var all = document.getElementById('scopeAll');
+        if (!wrap || !all) return;
+        wrap.classList.toggle('d-none', !all.checked);
+        if (!all.checked) document.getElementById('confirmAll').checked = false;
+    }
+    radios.forEach(function (r) { r.addEventListener('change', sync); });
+    sync();
+});
+</script>
+{% endblock %}

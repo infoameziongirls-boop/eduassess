@@ -3422,18 +3422,15 @@ def new_assessment():
     if current_user.is_teacher() and current_user.subject:
         form.subject.data = current_user.subject
 
-    snum_param = request.args.get('student')
-    student_id_param = request.args.get('student_id', type=int)
+    snum_param  = request.args.get('student')
     student_obj = None
-    if student_id_param is not None:
-        student_obj = db.session.get(Student, student_id_param)
-    elif snum_param:
+    if snum_param:
         student_obj = Student.query.filter_by(student_number=snum_param).first()
-    if student_obj and current_user.is_teacher():
-        if not current_user.can_access_student(student_obj, app.config):
-            abort(403)
-    if student_obj:
-        form.student_name.data = student_obj.student_number
+        if student_obj and current_user.is_teacher():
+            if not current_user.can_access_student(student_obj, app.config):
+                abort(403)
+        if student_obj:
+            form.student_name.data = student_obj.student_number
 
     if settings:
         form.term.data          = settings.current_term
@@ -4049,6 +4046,161 @@ def issue_student_login_password(student_id):
         'student_temp_password.html',
         student=student,
         temporary_password=temporary_password,
+    ))
+    response.headers['Cache-Control'] = 'no-store'
+    response.headers['Pragma'] = 'no-cache'
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Class login sheets: issue one random temporary password per student for a
+# whole class and print them as cut-out slips (admin only).
+#
+# Safety rules (deliberate):
+#   * passwords are random and shown ONCE, on the printed sheet only;
+#   * the default scope never touches a student who already has a login;
+#   * a student who already chose their own password is reset only if the
+#     admin explicitly picks the "everyone" scope;
+#   * a class is processed in batches so bcrypt hashing cannot exceed the web
+#     worker timeout; every batch is one transaction (all or nothing);
+#   * every student must still choose a new password at first sign-in.
+# ---------------------------------------------------------------------------
+_SLIP_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'  # no 0/O/1/l/I
+_SLIP_PASSWORD_LENGTH = 10   # ~58 bits; temporary, rate-limited and must be changed
+
+
+def _slip_password():
+    return ''.join(secrets.choice(_SLIP_ALPHABET) for _ in range(_SLIP_PASSWORD_LENGTH))
+
+
+def _login_state(user):
+    """none | pending (slip not yet used) | active (student has signed in) | conflict"""
+    if user is None:
+        return 'none'
+    if not user.is_student():
+        return 'conflict'
+    if user.must_change_password and not user.temporary_password_used:
+        return 'pending'
+    return 'active'
+
+
+def _class_login_context(class_name):
+    batch_size = max(1, int(app.config.get('CLASS_LOGIN_BATCH_SIZE', 40)))
+    roster = (Student.query.filter(Student.class_name == class_name)
+              .order_by(Student.last_name, Student.first_name, Student.id).all())
+    numbers = [(s.student_number or '').strip() for s in roster]
+    users = {}
+    if any(numbers):
+        users = {u.username: u for u in
+                 User.query.filter(User.username.in_([n for n in numbers if n])).all()}
+    return batch_size, roster, users
+
+
+@app.route('/students/login-sheets')
+@login_required
+@admin_required
+def class_login_sheets():
+    class_name = request.args.get('class_name', '').strip()
+    labels = {k: v for k, v in (app.config.get('CLASS_LEVELS') or [])}
+    names = sorted({n for (n,) in db.session.query(Student.class_name).distinct() if n})
+    class_options = [(n, labels.get(n, n)) for n in names]
+
+    summary = None
+    if class_name:
+        if class_name not in names:
+            flash('Unknown class selected.', 'danger')
+            return redirect(url_for('class_login_sheets'))
+        batch_size, roster, users = _class_login_context(class_name)
+        counts = {'none': 0, 'pending': 0, 'active': 0, 'conflict': 0, 'no_number': 0}
+        for s in roster:
+            num = (s.student_number or '').strip()
+            if not num:
+                counts['no_number'] += 1
+            else:
+                counts[_login_state(users.get(num))] += 1
+        summary = {
+            'class_name': class_name,
+            'class_label': labels.get(class_name, class_name),
+            'total': len(roster),
+            'counts': counts,
+            'batch_size': batch_size,
+            'batches': max(1, -(-len(roster) // batch_size)),
+        }
+    return render_template('class_login_sheets.html', class_options=class_options,
+                           selected_class=class_name, summary=summary)
+
+
+@app.route('/students/login-sheets/issue', methods=['POST'])
+@login_required
+@admin_required
+@limiter.limit('10 per minute')
+def issue_class_login_sheet():
+    class_name = request.form.get('class_name', '').strip()
+    scope = request.form.get('scope', 'new')
+    batch = request.form.get('batch', 1, type=int) or 1
+    if scope not in ('new', 'pending', 'all'):
+        abort(400)
+    if scope == 'all' and request.form.get('confirm_all') != 'yes':
+        flash('Tick the confirmation box to reset passwords students chose themselves.', 'warning')
+        return redirect(url_for('class_login_sheets', class_name=class_name))
+
+    batch_size, roster, users = _class_login_context(class_name)
+    if not roster:
+        flash('That class has no students.', 'warning')
+        return redirect(url_for('class_login_sheets'))
+    total_batches = max(1, -(-len(roster) // batch_size))
+    if batch < 1 or batch > total_batches:
+        abort(400)
+    chunk = roster[(batch - 1) * batch_size: batch * batch_size]
+
+    allowed = {'new': {'none'}, 'pending': {'none', 'pending'},
+               'all': {'none', 'pending', 'active'}}[scope]
+    slips, skipped = [], []
+    for s in chunk:
+        username = (s.student_number or '').strip()
+        if not username:
+            skipped.append((s, 'No student number'))
+            continue
+        user = users.get(username)
+        state = _login_state(user)
+        if state == 'conflict':
+            skipped.append((s, 'Username belongs to a non-student account'))
+            continue
+        if state not in allowed:
+            skipped.append((s, 'Already has a login password' if state == 'active'
+                            else 'Slip already issued and not yet used'))
+            continue
+        password = _slip_password()
+        password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+        if user is None:
+            user = User(username=username, password_hash=password_hash, role='student',
+                        credentials_enabled=True, must_change_password=True, auth_version=1)
+            db.session.add(user)
+        else:
+            user.password_hash = password_hash
+            user.credentials_enabled = True
+            user.must_change_password = True
+            user.temporary_password_used = False
+            user.auth_version += 1
+        slips.append({'student': s, 'username': username, 'password': password})
+
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        app.logger.exception('Class login sheet failed for class=%s batch=%s', class_name, batch)
+        flash('The login sheet could not be created and nothing was changed. Please try again.', 'danger')
+        return redirect(url_for('class_login_sheets', class_name=class_name))
+
+    log_activity(current_user, 'issue_class_temporary_passwords',
+                 f'class={class_name} batch={batch}/{total_batches} scope={scope} issued={len(slips)}')
+    labels = {k: v for k, v in (app.config.get('CLASS_LEVELS') or [])}
+    response = app.make_response(render_template(
+        'class_login_sheet_print.html',
+        slips=slips, skipped=skipped, class_label=labels.get(class_name, class_name),
+        class_name=class_name, batch=batch, total_batches=total_batches,
+        login_address=request.host + url_for('student_login'),
+        issued_on=datetime.now(timezone.utc), issued_by=current_user.username,
     ))
     response.headers['Cache-Control'] = 'no-store'
     response.headers['Pragma'] = 'no-cache'

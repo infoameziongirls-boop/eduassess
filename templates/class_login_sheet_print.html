@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Login slips - {{ class_label }}</title>
+<style>
+    :root { --ink:#0f1c2e; --muted:#5b6778; --line:#9aa5b4; --brand:#a8851f; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: "Segoe UI", Arial, sans-serif; color:var(--ink); background:#eef1f5; }
+    .toolbar { position:sticky; top:0; z-index:5; background:var(--ink); color:#fff; padding:12px 20px;
+               display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    .toolbar .info { flex:1; min-width:240px; font-size:14px; line-height:1.35; }
+    .toolbar .info small { color:#cbd5e1; }
+    .btn { border:0; border-radius:8px; padding:10px 18px; font-size:14px; font-weight:700; cursor:pointer; text-decoration:none; display:inline-block; }
+    .btn-print { background:#c9a84c; color:#0f1c2e; }
+    .btn-back  { background:transparent; color:#fff; border:1px solid #64748b; }
+    .notice { max-width:210mm; margin:16px auto 0; padding:12px 16px; background:#fff7e0; border:1px solid #e4c75b; border-radius:8px; font-size:13px; }
+    .skipped { max-width:210mm; margin:16px auto 0; padding:12px 16px; background:#fff; border:1px solid #d5dbe3; border-radius:8px; font-size:13px; }
+    .skipped table { width:100%; border-collapse:collapse; margin-top:6px; }
+    .skipped td, .skipped th { text-align:left; padding:4px 6px; border-bottom:1px solid #e6eaf0; }
+    .sheet { max-width:210mm; margin:16px auto 40px; background:#fff; padding:8mm; display:grid; grid-template-columns:1fr 1fr; gap:0; }
+    .slip { border:1px dashed var(--line); padding:5mm 6mm; height:54mm; break-inside:avoid; page-break-inside:avoid; display:flex; flex-direction:column; }
+    .slip .school { font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--brand); font-weight:700; }
+    .slip .name { font-size:15px; font-weight:800; margin:2px 0 0; line-height:1.2; }
+    .slip .cls { font-size:11px; color:var(--muted); margin-bottom:4px; }
+    .slip .site { font-size:10.5px; margin:0 0 5px; color:var(--ink); white-space:nowrap; }
+    .slip .site span { font-size:9.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-family:inherit; margin-right:4px; }
+    .slip .site { font-family: Consolas, "Courier New", monospace; font-weight:700; }
+    .slip dl { margin:0; display:grid; grid-template-columns:auto 1fr; column-gap:8px; row-gap:2px; align-items:baseline; }
+    .slip dt { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+    .slip dd { margin:0; font-family: Consolas, "Courier New", monospace; font-size:15px; font-weight:700; word-break:break-all; }
+    .slip dd.pw { font-size:19px; letter-spacing:.06em; background:#f3f5f8; padding:1px 5px; border-radius:4px; display:inline-block; }
+    .slip .how { margin-top:auto; font-size:9.5px; line-height:1.35; color:var(--muted); }
+    @page { size:A4; margin:8mm; }
+    @media print {
+        body { background:#fff; }
+        .toolbar, .notice, .skipped { display:none !important; }
+        .sheet { margin:0; padding:0; max-width:none; }
+    }
+</style>
+</head>
+<body>
+<div class="toolbar">
+    <div class="info">
+        <strong>{{ class_label }}</strong> &middot; {{ slips|length }} slip{{ '' if slips|length == 1 else 's' }}
+        {% if total_batches > 1 %}&middot; batch {{ batch }} of {{ total_batches }}{% endif %}<br>
+        <small>Issued by {{ issued_by }} on {{ issued_on.strftime('%d %b %Y, %H:%M') }} UTC</small>
+    </div>
+    <button type="button" class="btn btn-print" onclick="window.print()">Print slips</button>
+    <a class="btn btn-back" href="{{ url_for('class_login_sheets', class_name=class_name) }}">Done &mdash; back</a>
+</div>
+
+<div class="notice">
+    <strong>Print now.</strong> These passwords are shown only on this page and cannot be recovered later.
+    Do not refresh or reload (that would show an error, and re-submitting would invalidate these slips).
+    After handing out the slips, shred any spare copies.
+</div>
+
+{% if skipped %}
+<div class="skipped">
+    <strong>{{ skipped|length }} student{{ '' if skipped|length == 1 else 's' }} skipped (no slip printed)</strong>
+    <table>
+        <tr><th>Student</th><th>Number</th><th>Reason</th></tr>
+        {% for s, reason in skipped %}
+        <tr><td>{{ s.full_name() }}</td><td>{{ s.student_number or '—' }}</td><td>{{ reason }}</td></tr>
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
+
+{% if slips %}
+<div class="sheet">
+    {% for slip in slips %}
+    <div class="slip">
+        <div class="school">EduAssess &middot; Student login</div>
+        <div class="name">{{ slip.student.full_name() }}</div>
+        <div class="cls">{{ class_label }}</div>
+        <div class="site"><span>Sign in at</span> {{ login_address }}</div>
+        <dl>
+            <dt>Username</dt><dd>{{ slip.username }}</dd>
+            <dt>Password</dt><dd><span class="pw">{{ slip.password }}</span></dd>
+        </dl>
+        <div class="how">Temporary password &mdash; you will choose your own at first sign-in. Keep this slip private and do not share it.</div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="notice">No slips were generated in this batch. See the skipped list above.</div>
+{% endif %}
+</body>
+</html>
