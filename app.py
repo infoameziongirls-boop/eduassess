@@ -246,6 +246,41 @@ def refresh_study_area_config():
     return study_areas, study_area_subjects
 
 
+def find_student_by_number(value, for_update=False):
+    """
+    Resolve a student from the identifier a form or the offline outbox sends.
+
+    The old lookups compared `student_number` exactly, after the caller had
+    stripped whitespace from the incoming value. A stored number with a stray
+    space (common after Excel imports) or different letter case could then
+    never be found, and the teacher saw "Student record not found". Order:
+      1. exact match on the trimmed value;
+      2. case-insensitive match on the TRIMMED stored value;
+      3. the same against reference_number, then student_id_code.
+    Returns None when nothing matches or when a looser match is ambiguous
+    (two students would match), so a score is never saved to a guess.
+    """
+    raw = str(value).strip() if value is not None else ''
+    if not raw:
+        return None
+    found = Student.query.filter(Student.student_number == raw).first()
+    if found is None:
+        key = raw.lower()
+        for col in (Student.student_number, Student.reference_number, Student.student_id_code):
+            hits = (Student.query
+                    .filter(db.func.lower(db.func.trim(col)) == key)
+                    .limit(2).all())
+            if len(hits) == 1:
+                found = hits[0]
+                break
+            if len(hits) > 1:
+                return None
+    if found is not None and for_update:
+        found = (Student.query.filter_by(id=found.id)
+                 .with_for_update().populate_existing().first())
+    return found
+
+
 def get_teacher_students_query(teacher):
     """
     Return a SQLAlchemy query restricted to students that the given teacher
@@ -2616,7 +2651,7 @@ def dashboard_alias():
 @app.route('/student/dashboard')
 @login_required
 def student_dashboard():
-    student = Student.query.filter_by(student_number=current_user.username).first()
+    student = find_student_by_number(current_user.username)
 
     if not student:
         logout_user()
@@ -3210,7 +3245,9 @@ def student_transcript_self():
     if not (hasattr(current_user, 'is_student') and current_user.is_student()):
         abort(403)
 
-    student = Student.query.filter_by(student_number=current_user.username).first_or_404()
+    student = find_student_by_number(current_user.username)
+    if student is None:
+        abort(404)
 
     settings = Setting.query.first()
     if not settings or not settings.is_results_visible():
@@ -3533,7 +3570,7 @@ def new_assessment():
     sid_param   = request.args.get('student_id', type=int)
     student_obj = None
     if snum_param:
-        student_obj = Student.query.filter_by(student_number=snum_param).first()
+        student_obj = find_student_by_number(snum_param)
     elif sid_param:
         # Links from the dashboard ("Complete") pass ?student_id=<id>.
         student_obj = db.session.get(Student, sid_param)
@@ -3552,7 +3589,7 @@ def new_assessment():
     # ── Handle form submission ────────────────────────────────────────────
     if form.validate_on_submit():
         snum    = form.student_name.data or (form.student_number.data or '').strip()
-        student = Student.query.filter_by(student_number=snum).first()
+        student = find_student_by_number(snum)
         if not student:
             flash('Invalid student selected.', 'danger')
             return redirect(url_for('new_assessment'))
@@ -3613,7 +3650,7 @@ def new_assessment():
     # Re-display the chosen student in the search box after a failed submit.
     selected_student = None
     if use_student_search and not student_obj and form.student_name.data:
-        cand = Student.query.filter_by(student_number=form.student_name.data).first()
+        cand = find_student_by_number(form.student_name.data)
         if cand and (current_user.is_admin() or current_user.can_access_student(cand, app.config)):
             selected_student = cand
 
@@ -3670,7 +3707,7 @@ def assessment_edit(assessment_id):
 
     if form.validate_on_submit():
         snum    = form.student_name.data or (form.student_number.data or '').strip()
-        student = Student.query.filter_by(student_number=snum).first()
+        student = find_student_by_number(snum)
         if not student:
             flash('Invalid student.', 'danger')
             return redirect(url_for('assessment_edit', assessment_id=assessment_id))

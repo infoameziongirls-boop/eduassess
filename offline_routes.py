@@ -158,7 +158,7 @@ def roster_tree():
 @offline_bp.route('/api/offline/assessment', methods=['POST'])
 @api_login_required
 def sync_assessment():
-    from app import ACTIVE_CATEGORIES, log_activity
+    from app import ACTIVE_CATEGORIES, log_activity, find_student_by_number
 
     if not (current_user.is_teacher() or current_user.is_admin()):
         return _err('Forbidden', 403)
@@ -212,10 +212,13 @@ def sync_assessment():
     if not submission_id:
         return _err('Invalid submission identifier.')
 
-    student = (Student.query.filter_by(student_number=snum)
-               .with_for_update().first())
+    student = find_student_by_number(snum, for_update=True)
     if not student:
-        return _err('Student record not found.')
+        shown = snum[:40] or '(empty)'
+        current_app.logger.warning(
+            'offline assessment sync: no unique student for %r (user %s)', snum, current_user.id)
+        return _err(f'Student record not found for number {shown}. Reload the page and try again; '
+                    'if it keeps happening, tell the administrator the number shown here.')
     if current_user.is_teacher() and not current_user.can_access_student(student, current_app.config):
         return _err('You are not allowed to enter results for this student.', 403)
     tid = current_user.id if current_user.is_teacher() else None
