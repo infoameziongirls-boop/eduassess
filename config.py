@@ -264,6 +264,9 @@ class ProductionConfig(Config):
         # token is missing". Render runs this service as one web instance;
         # filesystem sessions are a safer fallback until Redis is configured.
         SESSION_TYPE     = "filesystem"
+        # Cachelib's 500-entry default can evict still-valid login/CSRF
+        # sessions as anonymous and authenticated sessions accumulate.
+        SESSION_FILE_THRESHOLD = 10000
         SESSION_FILE_DIR = os.path.join(
             os.environ.get("PERSISTENT_DIR", "instance"), "flask_sessions"
         )
