@@ -1,5 +1,5 @@
 /* EduAssess service worker - lets key pages open with no network. */
-const VERSION = 'eduassess-v3';
+const VERSION = 'eduassess-v4';
 const SHELL = VERSION + '-shell';
 const PAGE_CACHE_PREFIX = VERSION + '-pages-';
 const META = VERSION + '-meta';

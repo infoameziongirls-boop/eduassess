@@ -90,9 +90,26 @@
       return;
     }
     if (!draft || !draft.values || typeof draft.values !== 'object') return;
+
+    /* Who the entry is FOR always comes from the page, never from a draft.
+       The draft key is per user, not per student, so a draft left over from
+       student A used to overwrite the hidden student fields on student B's
+       page: the screen named B but the score was sent for A (or, if A's
+       number had since changed or been removed, the server answered
+       "Student record not found"). If the page already names a student and
+       the draft belongs to a different one, the draft is stale: drop it. */
+    const IDENTITY = ['student_name', 'student_number', 'reference_number'];
+    const pageField = form.querySelector('[name=student_name]');
+    const pageStudent = pageField ? String(pageField.value || '').trim() : '';
+    const draftStudent = String((draft.values.student_name || [])[0] || '').trim();
+    if (pageStudent && draftStudent && pageStudent !== draftStudent) {
+      try { localStorage.removeItem(draftKey(form)); } catch (_) {}
+      return;
+    }
     if (typeof draft.submission_id === 'string') form.dataset.submissionId = draft.submission_id;
     for (const element of Array.from(form.elements)) {
       if (!element.name || element.name === 'csrf_token') continue;
+      if (IDENTITY.includes(element.name)) continue;
       const values = draft.values[element.name] || [];
       if (element.type === 'radio' || element.type === 'checkbox') {
         element.checked = values.includes(element.value);
@@ -328,7 +345,9 @@
           time_taken: Math.round((Date.now() - PAGE_START) / 1000)}};
     }
     const sel = form.querySelector('select[name=student_name]');
-    const who = sel ? sel.options[sel.selectedIndex].text : fd.student_name;
+    const search = form.querySelector('#studentSearch');
+    const who = sel ? sel.options[sel.selectedIndex].text
+      : ((search && search.value.trim()) || fd.student_name);
     const cat = form.querySelector('[name=category]');
     return {id: 'as-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7), type, user: USER,
       created: Date.now(), label: `${who} - ${cat ? cat.options[cat.selectedIndex].text : fd.category}: ${fd.score}`,
