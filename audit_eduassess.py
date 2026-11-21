@@ -726,6 +726,53 @@ def flows():
         r = new_client('teacher').post(url('issue_class_login_sheet'), data={'class_name': CTX['class_keys'][0], 'scope': 'new'})
         record(S, 'a teacher cannot issue class sheets', 'PASS' if r.status_code in (302, 401, 403) else 'FAIL', f'HTTP {r.status_code}')
 
+    @guarded(S, 'bulk student import scope')
+    def _():
+        if 'student_bulk_import' not in app.view_functions:
+            record(S, 'student bulk import scope', 'SKIP', 'endpoint not found')
+            return
+        try:
+            from openpyxl import Workbook
+        except ImportError:
+            record(S, 'student bulk import scope', 'SKIP', 'openpyxl is not installed')
+            return
+        import io
+        from models import Student
+
+        def workbook(rows):
+            wb = Workbook()
+            ws = wb.active
+            ws.append(['Admission', 'Student Number', 'First', 'Last', 'Middle', 'Class', 'Study Area'])
+            for r in rows:
+                ws.append(r)
+            buf = io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            return buf
+
+        in_area, out_area = CTX['area_keys'][0], (CTX['area_keys'][1] if len(CTX['area_keys']) > 1 else None)
+        cls_a, cls_b = CTX['class_keys'][0], CTX['class_keys'][1]
+        rows = [['', 'AUDIMP-OK', 'In', 'Scope', '', cls_a, in_area],
+                ['', 'AUDIMP-OTHERCLASS', 'Other', 'Class', '', cls_b, in_area]]
+        if out_area:
+            rows.append(['', 'AUDIMP-OTHERAREA', 'Other', 'Area', '', cls_a, out_area])
+        t = new_client('teacher', fresh=True)
+        r = t.post(url('student_bulk_import'), data={'excel_file': (workbook(rows), 'students.xlsx')},
+                   content_type='multipart/form-data')
+        with app.app_context():
+            got = {s.student_number for s in Student.query.filter(Student.student_number.like('AUDIMP-%')).all()}
+        want = {'AUDIMP-OK'}
+        record(S, 'teacher bulk import adds only students in their own class and study area',
+               'PASS' if got == want else 'FAIL', f'HTTP {r.status_code}; imported {sorted(got)}, expected {sorted(want)}')
+        rows_admin = [[a, 'AUDIMPA-' + str(i), 'Adm', 'In', '', cls, ar] for i, (a, cls, ar) in
+                      enumerate([('', cls_a, in_area), ('', cls_b, in_area)] + ([('', cls_a, out_area)] if out_area else []))]
+        a = new_client('admin', fresh=True)
+        a.post(url('student_bulk_import'), data={'excel_file': (workbook(rows_admin), 'students.xlsx')},
+               content_type='multipart/form-data')
+        with app.app_context():
+            n = Student.query.filter(Student.student_number.like('AUDIMPA-%')).count()
+        record(S, 'admin bulk import is not restricted', 'PASS' if n == len(rows_admin) else 'FAIL', f'{n} of {len(rows_admin)} imported')
+
     # ---- offline sync -----------------------------------------------------
     def sync(client, **over):
         d = dict(student_name=CTX['num_a'], category='ica2', subject=CTX['subj'], score=20,

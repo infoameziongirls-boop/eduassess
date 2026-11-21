@@ -693,6 +693,23 @@ def scope_authenticated_responses(response):
     return response
 
 
+@app.after_request
+def add_security_headers(response):
+    """
+    Baseline browser hardening. setdefault() means a route that sets one of
+    these itself keeps its own value.
+      * nosniff          - the browser must trust the declared content type
+      * SAMEORIGIN       - the site cannot be framed by another origin (clickjacking)
+      * Referrer-Policy  - other sites receive only the origin, never the full URL
+    A Content-Security-Policy is deliberately not set here: the templates use
+    inline scripts and styles, so an enforced policy would break pages.
+    """
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    return response
+
+
 @app.context_processor
 def inject_csrf_token():
     return dict(csrf_token=generate_csrf)
@@ -3316,6 +3333,8 @@ def student_bulk_import():
             ok = 0
             errors = []
             new_students = []
+            out_of_scope = 0
+            limit_to_teacher_scope = current_user.is_teacher()
 
             with db.session.no_autoflush:
                 for data in data_list:
@@ -3326,6 +3345,20 @@ def student_bulk_import():
                     if snum in existing_numbers:
                         errors.append(f'{snum} already exists')
                         continue
+
+                    # A teacher may only add students they would be allowed to
+                    # assess: the class must be one of theirs and the study area
+                    # must teach their subject. This is the same rule that
+                    # governs saving scores (User.can_access_student), applied
+                    # to the row before the student exists. Admins are unrestricted.
+                    if limit_to_teacher_scope:
+                        candidate_student = Student(
+                            class_name=(data.get('class_name') or '').strip() or None,
+                            study_area=(data.get('study_area') or '').strip() or None,
+                        )
+                        if not current_user.can_access_student(candidate_student, app.config):
+                            out_of_scope += 1
+                            continue
 
                     # Plain reference number (STU######) — not tied to
                     # study area, so no batch-collision risk to worry
@@ -3370,6 +3403,10 @@ def student_bulk_import():
             os.remove(filepath)
 
             flash(f'Imported {ok} students. {len(errors)} errors.', 'success')
+            if out_of_scope:
+                flash(f'{out_of_scope} row(s) were not imported because their class or study area '
+                      'is outside the classes and subject assigned to you. Ask an administrator to add them.',
+                      'warning')
             if errors:
                 flash('Errors: ' + '; '.join(errors[:5]), 'warning')
             return redirect(url_for('students'))
