@@ -2651,6 +2651,10 @@ def dashboard_alias():
 @app.route('/student/dashboard')
 @login_required
 def student_dashboard():
+    # Staff who land here (an old bookmark, a cached PWA start page) used to be
+    # signed out with "Student record not found". Send them to their own dashboard.
+    if not current_user.is_student():
+        return redirect(url_for('dashboard'))
     student = find_student_by_number(current_user.username)
 
     if not student:

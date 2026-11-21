@@ -1,0 +1,45 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "EduAssess audit (full)",
+      "type": "shell",
+      "command": "python audit_eduassess.py",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "EduAssess audit (quick, no performance)",
+      "type": "shell",
+      "command": "python audit_eduassess.py --skip-perf",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "EduAssess audit (5,000 students)",
+      "type": "shell",
+      "command": "python audit_eduassess.py --scale 5000",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "EduAssess audit + live data check (read-only)",
+      "type": "shell",
+      "command": "python audit_eduassess.py --skip-perf --live-db-url \"${input:liveDbUrl}\"",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "liveDbUrl",
+      "type": "promptString",
+      "description": "Neon connection string (used READ-ONLY, counts only; not saved)",
+      "password": true
+    }
+  ]
+}

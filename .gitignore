@@ -49,6 +49,9 @@ env/
 
 # IDE / Editor
 .vscode/
+!.vscode/
+.vscode/*
+!.vscode/tasks.json
 .idea/
 *.swp
 *.swo
@@ -67,6 +70,7 @@ celerybeat-schedule
 celery_results/
 
 # Testing
+audit_report.md
 .tox/
 .coverage
 .coverage.*
